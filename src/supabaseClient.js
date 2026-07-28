@@ -23,4 +23,21 @@ try {
   throw err;
 }
 
+// One-off live connection test — pops an alert with the raw error the
+// instant the page loads, so we can see exactly what's failing.
+(async () => {
+  try {
+    const res = await fetch(`${url}/auth/v1/settings`, {
+      headers: { apikey: anonKey },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      alert(`Supabase test — HTTP ${res.status}: ${text}`);
+    }
+    // if res.ok, say nothing — connection is fine
+  } catch (err) {
+    alert(`Supabase test failed — ${err.name}: ${err.message}`);
+  }
+})();
+
 export { supabase };
