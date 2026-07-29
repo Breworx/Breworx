@@ -2174,7 +2174,7 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory }) {
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem }) {
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
@@ -2206,8 +2206,21 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     }
   };
 
-  const updateBatchIngredient = (id, qty) =>
-    setBatchIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, qty } : ing)));
+  const updateBatchIngredient = (id, patch) =>
+    setBatchIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, ...patch } : ing)));
+
+  const addBatchIngredientRow = () =>
+    setBatchIngredients((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 0, unit: "kg" }]);
+
+  const removeBatchIngredientRow = (id) =>
+    setBatchIngredients((prev) => prev.filter((ing) => ing.id !== id));
+
+  const [focusedBatchIngredientId, setFocusedBatchIngredientId] = useState(null);
+
+  const batchIngredientMatches = (query) =>
+    query.trim().length === 0
+      ? inventory
+      : inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   const stockFor = (ingName) => {
     const item = inventory.find((it) => it.name.toLowerCase() === ingName.toLowerCase());
@@ -2240,7 +2253,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       recipeName: activeRecipe ? activeRecipe.name : null,
       tankId: tank ? tank.id : null,
       tankName: tank ? tank.name : null,
-      ingredients: activeRecipe ? batchIngredients : [],
+      ingredients: batchIngredients.filter((ing) => ing.name.trim().length > 0 && Number(ing.qty) > 0),
       readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
     });
     onClose();
@@ -2381,50 +2394,171 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           <NumberField label="Pre-boil gravity" value={preBoilGravity} onChange={setPreBoilGravity} step="0.001" />
           <NumberField label="Top-up water" value={topUpWater} onChange={setTopUpWater} step="0.1" suffix="L" />
         </div>
-        {activeRecipe && (
-          <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
-            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
-              Ingredients to assign — adjust here if you're short on brew day
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {batchIngredients.map((ing) => {
-                const stock = stockFor(ing.name);
-                const short = stock != null && Number(ing.qty) > stock;
-                return (
-                  <div key={ing.id}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <span style={{ color: "#EDE7D9", fontSize: 12.5, flex: 1 }}>{ing.name}</span>
+        <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+            Ingredients — swap, adjust, or add extras for this brew day
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {batchIngredients.map((ing) => {
+              const stock = stockFor(ing.name);
+              const short = ing.name.trim().length > 0 && stock != null && Number(ing.qty) > stock;
+              return (
+                <div key={ing.id} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "8px 8px" }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
                       <input
-                        type="number"
-                        step="0.01"
-                        value={ing.qty}
-                        onChange={(e) => updateBatchIngredient(ing.id, e.target.value)}
+                        type="text"
+                        value={ing.name}
+                        onChange={(e) => updateBatchIngredient(ing.id, { name: e.target.value })}
+                        onFocus={() => setFocusedBatchIngredientId(ing.id)}
+                        onBlur={() => setTimeout(() => setFocusedBatchIngredientId((cur) => (cur === ing.id ? null : cur)), 150)}
+                        placeholder="Ingredient name"
                         style={{
-                          width: 72,
+                          width: "100%",
                           boxSizing: "border-box",
-                          background: "#1F2422",
-                          border: `1px solid ${short ? "#6B4A2F" : "#2C332F"}`,
+                          background: "#16191A",
+                          border: "1px solid #2C332F",
                           borderRadius: 4,
-                          padding: "6px 8px",
-                          color: short ? "#C17A3D" : "#EDE7D9",
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: 12.5,
-                          textAlign: "right",
+                          padding: "8px 9px",
+                          color: "#EDE7D9",
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 13,
                         }}
                       />
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", fontSize: 12, width: 28 }}>{ing.unit}</span>
+                      {focusedBatchIngredientId === ing.id && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            right: 0,
+                            marginTop: 4,
+                            maxHeight: 200,
+                            overflowY: "auto",
+                            background: "#1B1F1D",
+                            border: "1px solid #2C332F",
+                            borderRadius: 6,
+                            zIndex: 20,
+                          }}
+                        >
+                          {batchIngredientMatches(ing.name).map((it) => (
+                            <button
+                              key={it.id}
+                              onMouseDown={() => {
+                                updateBatchIngredient(ing.id, { name: it.name, category: it.category, unit: it.unit });
+                                setFocusedBatchIngredientId(null);
+                              }}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                width: "100%",
+                                textAlign: "left",
+                                background: "none",
+                                border: "none",
+                                borderBottom: "1px solid #262C29",
+                                padding: "8px 9px",
+                                color: "#EDE7D9",
+                                fontSize: 12.5,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <span>{it.name}</span>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#5C6B63", marginLeft: 8, flexShrink: 0 }}>
+                                {it.qty} {it.unit}
+                              </span>
+                            </button>
+                          ))}
+                          {ing.name.trim().length > 0 &&
+                            !inventory.some((it) => it.name.toLowerCase() === ing.name.trim().toLowerCase()) && (
+                              <button
+                                onMouseDown={() => {
+                                  const newName = ing.name.trim();
+                                  onAddInventoryItem({ id: uid(), name: newName, category: ing.category, qty: 0, unit: ing.unit, threshold: 0 });
+                                  setFocusedBatchIngredientId(null);
+                                }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  width: "100%",
+                                  textAlign: "left",
+                                  background: "none",
+                                  border: "none",
+                                  padding: "8px 9px",
+                                  color: "#C17A3D",
+                                  fontSize: 12.5,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <Plus size={12} /> Add "{ing.name.trim()}" to inventory
+                              </button>
+                            )}
+                        </div>
+                      )}
                     </div>
-                    {short && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, color: "#C17A3D", fontSize: 11.5, marginTop: 3 }}>
-                        <AlertTriangle size={11} /> Only {stock} {ing.unit} in stock — adjust the amount or top up inventory first.
-                      </div>
-                    )}
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={ing.qty}
+                      onChange={(e) => updateBatchIngredient(ing.id, { qty: e.target.value })}
+                      style={{
+                        width: 64,
+                        flexShrink: 0,
+                        boxSizing: "border-box",
+                        background: "#16191A",
+                        border: `1px solid ${short ? "#6B4A2F" : "#2C332F"}`,
+                        borderRadius: 4,
+                        padding: "8px 6px",
+                        color: short ? "#C17A3D" : "#EDE7D9",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 12.5,
+                        textAlign: "right",
+                      }}
+                    />
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", fontSize: 11.5, width: 24, flexShrink: 0, paddingTop: 9 }}>
+                      {ing.unit}
+                    </span>
+                    <button
+                      onClick={() => removeBatchIngredientRow(ing.id)}
+                      aria-label="Remove ingredient"
+                      style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", padding: "6px 0 0", flexShrink: 0 }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                  {short && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, color: "#C17A3D", fontSize: 11.5, marginTop: 6 }}>
+                      <AlertTriangle size={11} /> Only {stock} {ing.unit} in stock — adjust the amount or top up inventory first.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {batchIngredients.length === 0 && (
+              <div style={{ color: "#5C6B63", fontSize: 12.5 }}>No ingredients added yet.</div>
+            )}
+            <button
+              onClick={addBatchIngredientRow}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                background: "none",
+                border: "1px dashed #3A413D",
+                borderRadius: 5,
+                padding: "8px",
+                color: "#8A9591",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: "pointer",
+              }}
+            >
+              <Plus size={13} /> Add ingredient
+            </button>
           </div>
-        )}
+        </div>
         <button
           onClick={submit}
           style={{
@@ -4459,6 +4593,7 @@ export default function TankLog() {
           tanks={tanks}
           batches={batches}
           inventory={inventory}
+          onAddInventoryItem={addInventoryItem}
         />
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
