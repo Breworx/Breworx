@@ -2522,7 +2522,8 @@ export default function TankLog() {
     }
   };
 
-  const activeBatches = batches.filter((b) => b.stage !== "Packaged");
+  const fermentingBatches = batches.filter((b) => ["Brewing", "Primary", "Secondary"].includes(b.stage));
+  const conditioningBatches = batches.filter((b) => b.stage === "Conditioning");
   const inProgressBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) > 0);
   const packagedBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) === 0);
 
@@ -2661,18 +2662,31 @@ export default function TankLog() {
             {!loadingData && view === "batches" && (
               <>
                 <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
-                  Active ({activeBatches.length})
+                  Fermenting ({fermentingBatches.length})
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
-                  {activeBatches.map((b) => (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (conditioningBatches.length || inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
+                  {fermentingBatches.map((b) => (
                     <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
                   ))}
-                  {activeBatches.length === 0 && (
+                  {fermentingBatches.length === 0 && (
                     <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-                      No active batches. Start one to get fermentation going.
+                      No batches fermenting right now. Start one to get going.
                     </div>
                   )}
                 </div>
+
+                {conditioningBatches.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                      Conditioning ({conditioningBatches.length})
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
+                      {conditioningBatches.map((b) => (
+                        <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {inProgressBatches.length > 0 && (
                   <>
