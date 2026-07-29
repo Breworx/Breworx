@@ -1318,7 +1318,7 @@ function RecipeCard({ recipe, onOpen }) {
   );
 }
 
-function AddRecipeModal({ onClose, onAdd }) {
+function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
   const [name, setName] = useState("");
   const [style, setStyle] = useState("");
   const [styleFocused, setStyleFocused] = useState(false);
@@ -1326,6 +1326,7 @@ function AddRecipeModal({ onClose, onAdd }) {
   const [og, setOg] = useState(1.05);
   const [fg, setFg] = useState(1.01);
   const [ingredients, setIngredients] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
+  const [focusedIngredientId, setFocusedIngredientId] = useState(null);
 
   const updateLine = (id, patch) =>
     setIngredients((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -1334,6 +1335,11 @@ function AddRecipeModal({ onClose, onAdd }) {
     setIngredients((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
 
   const removeLine = (id) => setIngredients((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const ingredientMatches = (query) =>
+    query.trim().length === 0
+      ? inventory
+      : inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   const styleMatches =
     style.trim().length === 0
@@ -1477,8 +1483,109 @@ function AddRecipeModal({ onClose, onAdd }) {
                 <Trash2 size={14} />
               </button>
             )}
-            <div style={{ marginBottom: 10 }}>
-              <TextField label={`Ingredient ${i + 1}`} value={line.name} onChange={(v) => updateLine(line.id, { name: v })} />
+            <div style={{ marginBottom: 10, position: "relative" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
+                  Ingredient {i + 1}
+                </span>
+                <input
+                  type="text"
+                  value={line.name}
+                  onChange={(e) => updateLine(line.id, { name: e.target.value })}
+                  onFocus={() => setFocusedIngredientId(line.id)}
+                  onBlur={() => setTimeout(() => setFocusedIngredientId((cur) => (cur === line.id ? null : cur)), 150)}
+                  placeholder="e.g. Maris Otter"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: "#16191A",
+                    border: "1px solid #2C332F",
+                    borderRadius: 4,
+                    padding: "9px 10px",
+                    color: "#EDE7D9",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+              {focusedIngredientId === line.id && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    marginTop: 4,
+                    maxHeight: 220,
+                    overflowY: "auto",
+                    background: "#1B1F1D",
+                    border: "1px solid #2C332F",
+                    borderRadius: 6,
+                    zIndex: 20,
+                  }}
+                >
+                  {ingredientMatches(line.name).map((it) => (
+                    <button
+                      key={it.id}
+                      onMouseDown={() => {
+                        updateLine(line.id, { name: it.name, category: it.category, unit: it.unit });
+                        setFocusedIngredientId(null);
+                      }}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        width: "100%",
+                        textAlign: "left",
+                        background: "none",
+                        border: "none",
+                        borderBottom: "1px solid #262C29",
+                        padding: "9px 10px",
+                        color: "#EDE7D9",
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span>{it.name}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#5C6B63", marginLeft: 8, flexShrink: 0 }}>
+                        {it.qty} {it.unit}
+                      </span>
+                    </button>
+                  ))}
+                  {line.name.trim().length > 0 &&
+                    !inventory.some((it) => it.name.toLowerCase() === line.name.trim().toLowerCase()) && (
+                      <button
+                        onMouseDown={() => {
+                          const newName = line.name.trim();
+                          onAddInventoryItem({
+                            id: uid(),
+                            name: newName,
+                            category: line.category,
+                            qty: 0,
+                            unit: line.unit,
+                            threshold: 0,
+                          });
+                          setFocusedIngredientId(null);
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          width: "100%",
+                          textAlign: "left",
+                          background: "none",
+                          border: "none",
+                          padding: "9px 10px",
+                          color: "#C17A3D",
+                          fontSize: 13,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Plus size={13} /> Add "{line.name.trim()}" to inventory
+                      </button>
+                    )}
+                </div>
+              )}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={CATEGORIES} />
@@ -3882,7 +3989,14 @@ export default function TankLog() {
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
-      {showAddRecipe && <AddRecipeModal onClose={() => setShowAddRecipe(false)} onAdd={addRecipe} />}
+      {showAddRecipe && (
+        <AddRecipeModal
+          onClose={() => setShowAddRecipe(false)}
+          onAdd={addRecipe}
+          inventory={inventory}
+          onAddInventoryItem={addInventoryItem}
+        />
+      )}
       {showAddTank && <AddTankModal onClose={() => setShowAddTank(false)} onAdd={addTank} />}
       {editTankTarget && (
         <EditTankModal tank={editTankTarget} onClose={() => setEditTankTarget(null)} onSave={updateTank} />
