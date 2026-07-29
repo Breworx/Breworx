@@ -293,6 +293,14 @@ const ALL_STYLES = [
 // BeerSmith, and most other brewing software) into the shape this app's
 // recipe form expects. Returns null if the file doesn't look like BeerXML.
 // BeerXML amounts for fermentables/hops/misc are always in kilograms.
+function buildScheduleLabel(use, time, name) {
+  if (use === "Dry Hop") return `Dry hop — day ${time ?? "?"}: add ${name}`;
+  if (use === "Boil") return `Boil, ${time ?? "?"} min remaining: add ${name}`;
+  if (use === "Mash") return `Mash, ${time ?? "?"} min: add ${name}`;
+  if (use === "First Wort") return `First wort: add ${name}`;
+  return `${use || "Add"}${time != null && time !== "" ? `, ${time} min` : ""}: add ${name}`;
+}
+
 function parseBeerXML(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, "text/xml");
   if (doc.getElementsByTagName("parsererror").length > 0) return null;
@@ -349,12 +357,7 @@ function parseBeerXML(xmlText) {
       if (!use && time == null) return;
       const itemName = text(el, "NAME") || itemTag;
       const amount = qtyFn(el);
-      let label;
-      if (use === "Dry Hop") label = `Dry hop — day ${time ?? "?"}: add ${itemName}`;
-      else if (use === "Boil") label = `Boil, ${time ?? "?"} min remaining: add ${itemName}`;
-      else if (use === "Mash") label = `Mash, ${time ?? "?"} min: add ${itemName}`;
-      else if (use === "First Wort") label = `First wort: add ${itemName}`;
-      else label = `${use || "Add"}${time != null ? `, ${time} min` : ""}: add ${itemName}`;
+      const label = buildScheduleLabel(use, time, itemName);
       schedule.push({
         id: uid(),
         label,
@@ -1763,6 +1766,15 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
   const [importError, setImportError] = useState("");
   const [schedule, setSchedule] = useState([]);
 
+  const addScheduleStep = () =>
+    setSchedule((prev) => [...prev, { id: uid(), use: "Boil", time: 60, name: "", amount: 0, unit: "kg" }]);
+
+  const updateScheduleStep = (id, patch) =>
+    setSchedule((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
+  const removeScheduleStep = (id) => setSchedule((prev) => prev.filter((s) => s.id !== id));
+
+
   const handleImportFile = (file) => {
     if (!file) return;
     setImportError("");
@@ -1806,6 +1818,9 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
   const submit = () => {
     const clean = ingredients.filter((l) => l.name.trim());
     if (!name.trim() || clean.length === 0) return;
+    const cleanSchedule = schedule
+      .filter((s) => s.name.trim())
+      .map((s) => ({ ...s, name: s.name.trim(), amount: Number(s.amount) || 0, label: buildScheduleLabel(s.use, s.time, s.name.trim()) }));
     onAdd({
       id: uid(),
       name: name.trim(),
@@ -1814,7 +1829,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
       og: Number(og),
       fg: Number(fg),
       ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
-      schedule,
+      schedule: cleanSchedule,
     });
     onClose();
   };
@@ -2102,20 +2117,68 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
           <Plus size={14} /> Add ingredient
         </button>
 
-        {schedule.length > 0 && (
-          <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
-            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
-              Brew day schedule (from import)
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {schedule.map((s) => (
-                <div key={s.id} style={{ color: "#8A9591", fontSize: 12.5 }}>
-                  {s.label} <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63" }}>({s.amount} {s.unit})</span>
-                </div>
-              ))}
-            </div>
+        <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+            Brew day schedule — timed additions like hops or finings
           </div>
-        )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {schedule.map((s) => (
+              <div key={s.id} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "8px 8px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  <SelectField
+                    label="When"
+                    value={s.use}
+                    onChange={(v) => updateScheduleStep(s.id, { use: v })}
+                    options={["Boil", "Dry Hop", "Mash", "First Wort", "Other"]}
+                  />
+                  <NumberField
+                    label={s.use === "Dry Hop" ? "Day" : "Minutes"}
+                    value={s.time}
+                    onChange={(v) => updateScheduleStep(s.id, { time: v })}
+                    step="1"
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+                  <div style={{ flex: 1 }}>
+                    <TextField label="What to add" value={s.name} onChange={(v) => updateScheduleStep(s.id, { name: v })} />
+                  </div>
+                  <div style={{ width: 64, flexShrink: 0 }}>
+                    <NumberField label="Amt" value={s.amount} onChange={(v) => updateScheduleStep(s.id, { amount: v })} step="0.01" />
+                  </div>
+                  <button
+                    onClick={() => removeScheduleStep(s.id)}
+                    aria-label="Remove schedule step"
+                    style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", padding: "0 0 9px" }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {schedule.length === 0 && (
+              <div style={{ color: "#5C6B63", fontSize: 12.5 }}>No timed additions added yet.</div>
+            )}
+            <button
+              onClick={addScheduleStep}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                background: "none",
+                border: "1px dashed #3A413D",
+                borderRadius: 5,
+                padding: "8px",
+                color: "#8A9591",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: "pointer",
+              }}
+            >
+              <Plus size={13} /> Add schedule step
+            </button>
+          </div>
+        </div>
 
         <button
           onClick={submit}
