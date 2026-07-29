@@ -1249,13 +1249,13 @@ function POCard({ po, onOpen }) {
 
 function AddPOModal({ onClose, onAdd, nextPONumber }) {
   const [supplier, setSupplier] = useState("");
-  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", lotNumber: "" }]);
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
 
   const updateLine = (id, patch) =>
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
   const addLine = () =>
-    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", lotNumber: "" }]);
+    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
 
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
 
@@ -1323,7 +1323,6 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
               />
               <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
               <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.1" suffix={line.unit} />
-              <TextField label="Lot / batch #" value={line.lotNumber} onChange={(v) => updateLine(line.id, { lotNumber: v })} />
             </div>
           </div>
         ))}
@@ -1370,11 +1369,81 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
   );
 }
 
+function ReceivePOModal({ po, onClose, onConfirm }) {
+  const [lotNumbers, setLotNumbers] = useState(() => {
+    const init = {};
+    po.lines.forEach((l) => (init[l.id] = ""));
+    return init;
+  });
+
+  const submit = () => {
+    onConfirm(lotNumbers);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Receive ${po.poNumber}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13 }}>
+          Enter the lot or batch number printed on each item as it arrives — this is what ties inventory back to this
+          specific delivery.
+        </div>
+        {po.lines.map((l) => (
+          <div
+            key={l.id}
+            style={{
+              background: "#16191A",
+              border: "1px solid #2C332F",
+              borderRadius: 6,
+              padding: "12px 12px",
+            }}
+          >
+            <div style={{ color: "#EDE7D9", fontSize: 13.5, marginBottom: 8 }}>
+              {l.name} <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({l.qty} {l.unit})</span>
+            </div>
+            <TextField
+              label="Lot / batch #"
+              value={lotNumbers[l.id]}
+              onChange={(v) => setLotNumbers((prev) => ({ ...prev, [l.id]: v }))}
+            />
+          </div>
+        ))}
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 4,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          <Truck size={16} /> Confirm receipt & add to inventory
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
-  const batchesForLine = (lineName) => {
+  const [showReceive, setShowReceive] = useState(false);
+  const batchesForLine = (lineName, lotNumber) => {
     const item = inventory.find((it) => it.name.toLowerCase() === lineName.toLowerCase());
     if (!item || !item.history) return [];
-    const notes = item.history.filter((h) => h.type === "batch").map((h) => h.note);
+    const targetLot = lotNumber || "no lot #";
+    const notes = item.history
+      .filter((h) => h.type === "batch" && Array.isArray(h.lots) && h.lots.some((l) => l.lotNumber === targetLot))
+      .map((h) => h.note);
     return [...new Set(notes)];
   };
 
@@ -1418,7 +1487,7 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
         {po.lines.map((l) => {
-          const usedIn = po.status === "Received" ? batchesForLine(l.name) : [];
+          const usedIn = po.status === "Received" ? batchesForLine(l.name, l.lotNumber) : [];
           return (
             <div
               key={l.id}
@@ -1438,9 +1507,11 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
                   {l.qty} {l.unit}
                 </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 90, flexShrink: 0, textAlign: "right" }}>
-                  {l.lotNumber || "no lot #"}
-                </span>
+                {po.status === "Received" && (
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 90, flexShrink: 0, textAlign: "right" }}>
+                    {l.lotNumber || "no lot #"}
+                  </span>
+                )}
               </div>
               {po.status === "Received" && (
                 <div style={{ color: "#5C6B63", fontSize: 11.5, marginTop: 6 }}>
@@ -1478,7 +1549,7 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
 
       {po.status === "Sent" && (
         <button
-          onClick={() => onReceive(po.id)}
+          onClick={() => setShowReceive(true)}
           style={{
             width: "100%",
             display: "flex",
@@ -1498,6 +1569,14 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
         >
           <Truck size={16} /> Mark received & add to inventory
         </button>
+      )}
+
+      {showReceive && (
+        <ReceivePOModal
+          po={po}
+          onClose={() => setShowReceive(false)}
+          onConfirm={(lotNumbers) => onReceive(po.id, lotNumbers)}
+        />
       )}
     </div>
   );
@@ -3539,6 +3618,22 @@ export default function TankLog() {
       for (const ing of b.ingredients) {
         const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
         if (!item) continue;
+
+        // Draw down lots oldest-first so we know exactly which lot(s) this
+        // batch actually consumed from, not just the ingredient in general.
+        let remainingToDeduct = ing.qty;
+        const lotsUsed = [];
+        const updatedLots = (item.lots || []).map((lot) => {
+          const currentRemaining = lot.remainingQty ?? lot.qty;
+          if (remainingToDeduct <= 0 || currentRemaining <= 0) {
+            return { ...lot, remainingQty: currentRemaining };
+          }
+          const take = Math.round(Math.min(currentRemaining, remainingToDeduct) * 100) / 100;
+          remainingToDeduct = Math.round((remainingToDeduct - take) * 100) / 100;
+          if (take > 0) lotsUsed.push({ lotNumber: lot.lotNumber, qty: take });
+          return { ...lot, remainingQty: Math.round((currentRemaining - take) * 100) / 100 };
+        });
+
         const newQty = Math.max(0, Math.round((item.qty - ing.qty) * 100) / 100);
         const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
         const historyEntry = {
@@ -3548,11 +3643,15 @@ export default function TankLog() {
           type: "batch",
           delta: actualDelta,
           note: `${b.name} (#${b.number})`,
+          lots: lotsUsed,
         };
         const newHistory = [...(item.history || []), historyEntry];
-        const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", item.id);
+        const { error: invError } = await supabase
+          .from("inventory_items")
+          .update({ qty: newQty, lots: updatedLots, history: newHistory })
+          .eq("id", item.id);
         if (invError) console.error(invError);
-        else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, history: newHistory } : it)));
+        else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
       }
     }
   };
@@ -3648,14 +3747,17 @@ export default function TankLog() {
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
   };
 
-  const receivePO = async (id) => {
+  const receivePO = async (id, lotNumbers) => {
     const po = purchaseOrders.find((p) => p.id === id);
     if (!po) return;
 
     let nextInventory = [...inventory];
+    const finalizedLines = [];
     for (const line of po.lines) {
+      const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
+      finalizedLines.push({ ...line, lotNumber });
       const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
-      const lotEntry = { id: uid(), lotNumber: line.lotNumber || "no lot #", qty: line.qty, date: today(), poNumber: po.poNumber };
+      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: po.poNumber };
       const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
 
       if (idx >= 0) {
@@ -3683,10 +3785,10 @@ export default function TankLog() {
 
     const { error: poError } = await supabase
       .from("purchase_orders")
-      .update({ status: "Received", received_date: today() })
+      .update({ status: "Received", received_date: today(), lines: finalizedLines })
       .eq("id", id);
     if (poError) return console.error(poError);
-    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today() } : p)));
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today(), lines: finalizedLines } : p)));
   };
 
   const advance = async (id) => {
