@@ -1120,6 +1120,56 @@ function EditTankModal({ tank, onClose, onSave }) {
   );
 }
 
+function ConfirmDeleteBatchModal({ batch, onClose, onConfirm }) {
+  const [confirmText, setConfirmText] = useState("");
+  const canDelete = confirmText.trim().toUpperCase() === "DELETE";
+
+  return (
+    <Modal title={`Delete ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div
+          style={{
+            color: "#C17A3D",
+            fontSize: 13,
+            background: "#241D14",
+            border: "1px solid #4A3420",
+            borderRadius: 5,
+            padding: "10px 12px",
+            lineHeight: 1.5,
+          }}
+        >
+          This permanently removes batch #{batch.number} and all its readings, packaging history, and schedule. Any
+          ingredients already deducted for this batch stay deducted — inventory isn't restored automatically. If you
+          need it back, use "Log adjustment with a batch ID" on the ingredient afterward. This can't be undone.
+        </div>
+        <TextField label='Type "DELETE" to confirm' value={confirmText} onChange={setConfirmText} />
+        <button
+          onClick={() => {
+            if (!canDelete) return;
+            onConfirm(batch.id);
+            onClose();
+          }}
+          disabled={!canDelete}
+          style={{
+            background: canDelete ? "#B5502F" : "#3A2A22",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: canDelete ? "#EDE7D9" : "#8A6A5A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: canDelete ? "pointer" : "default",
+          }}
+        >
+          Delete batch
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ConfirmDeleteRecipeModal({ recipe, onClose, onConfirm }) {
   return (
     <Modal title={`Delete ${recipe.name}`} onClose={onClose}>
@@ -3172,7 +3222,7 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging, onDiscardRemaining, onAssignTank, onToggleScheduleStep }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDay, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -3422,6 +3472,7 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
+                      gap: 8,
                       padding: "8px 12px",
                       background: "#1B1F1D",
                       border: "1px solid #262C29",
@@ -3429,11 +3480,18 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
                       fontSize: 12.5,
                     }}
                   >
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63" }}>{(e.date || "").slice(5)}</span>
-                    <span style={{ color: "#8A9591" }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", flexShrink: 0 }}>{(e.date || "").slice(5)}</span>
+                    <span style={{ color: "#8A9591", flex: 1 }}>
                       {CONTAINERS.filter((c) => (e[c.key] || 0) > 0).map((c) => `${e[c.key]}× ${c.shortLabel}`).join(" · ") || "—"}
                     </span>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9" }}>{packagedVolume(e).toFixed(2)} L</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", flexShrink: 0 }}>{packagedVolume(e).toFixed(2)} L</span>
+                    <button
+                      onClick={() => onDeletePackagingEvent(batch.id, e.id)}
+                      aria-label="Delete packaging run"
+                      style={{ background: "none", border: "none", color: "#5C6B63", cursor: "pointer", padding: 0, flexShrink: 0 }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -3490,7 +3548,7 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
         );
       })()}
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 26 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
         <button
           onClick={() => onLogReading(batch)}
           style={{
@@ -3538,6 +3596,25 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
         )}
       </div>
 
+      {stageIdx > 0 && batch.stage !== "Packaged" && (
+        <button
+          onClick={() => onMoveBack(batch.id)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#8A9591",
+            cursor: "pointer",
+            fontSize: 12,
+            fontFamily: "'Inter', sans-serif",
+            padding: 0,
+            marginBottom: 26,
+            display: "block",
+          }}
+        >
+          ← Move back to {STAGES[stageIdx - 1]}
+        </button>
+      )}
+
       {chartData.length > 1 && (
         <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
@@ -3579,10 +3656,37 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
-            {r.note && <span style={{ color: "#8A9591", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
+            {r.note && <span style={{ flex: 1, color: "#8A9591", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
+            {batch.readings.length > 1 && (
+              <button
+                onClick={() => onDeleteReading(batch.id, r.id)}
+                aria-label="Delete reading"
+                style={{ background: "none", border: "none", color: "#5C6B63", cursor: "pointer", padding: 0, marginLeft: "auto", flexShrink: 0 }}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         ))}
       </div>
+
+      <button
+        onClick={() => onDeleteBatch(batch)}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "1px solid #4A3420",
+          borderRadius: 5,
+          padding: "11px",
+          color: "#C17A3D",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginTop: 26,
+        }}
+      >
+        Delete batch
+      </button>
     </div>
   );
 }
@@ -4179,6 +4283,7 @@ export default function TankLog() {
   const [editTankTarget, setEditTankTarget] = useState(null);
   const [deleteTankTarget, setDeleteTankTarget] = useState(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState(null);
+  const [deleteBatchTarget, setDeleteBatchTarget] = useState(null);
   const [assignTankTarget, setAssignTankTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -4333,6 +4438,13 @@ export default function TankLog() {
     }
   };
 
+  const deleteBatch = async (id) => {
+    const { error } = await supabase.from("batches").delete().eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.filter((b) => b.id !== id));
+    setSelectedId(null);
+  };
+
   const addRecipe = async (r) => {
     const { data, error } = await supabase.from("recipes").insert(recipeToRow(r, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
@@ -4479,6 +4591,17 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage } : b)));
   };
 
+  const moveStageBack = async (id) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const idx = STAGES.indexOf(batch.stage);
+    if (idx <= 0) return;
+    const prevStage = STAGES[idx - 1];
+    const { error } = await supabase.from("batches").update({ stage: prevStage }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: prevStage } : b)));
+  };
+
   const logReading = async (id, reading) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
@@ -4486,6 +4609,15 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ readings }).eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, readings } : b)));
+  };
+
+  const deleteReading = async (batchId, readingId) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch || batch.readings.length <= 1) return;
+    const readings = batch.readings.filter((r) => r.id !== readingId);
+    const { error } = await supabase.from("batches").update({ readings }).eq("id", batchId);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, readings } : b)));
   };
 
   const updateBrewDay = async (id, patch) => {
@@ -4517,6 +4649,16 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
+  };
+
+  const deletePackagingEvent = async (id, eventId) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const events = packagingEvents(batch).filter((e) => e.id !== eventId);
+    const newPackaging = { events, discarded: packagingDiscarded(batch) };
+    const { error } = await supabase.from("batches").update({ packaging: newPackaging }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging } : b)));
   };
 
   const discardRemaining = async (id) => {
@@ -5114,12 +5256,16 @@ export default function TankLog() {
             batch={selected}
             onBack={() => setSelectedId(null)}
             onAdvance={advance}
+            onMoveBack={moveStageBack}
             onLogReading={setLogTarget}
+            onDeleteReading={deleteReading}
             onEditBrewDay={setBrewDayTarget}
             onOpenPackaging={setPackagingTarget}
+            onDeletePackagingEvent={deletePackagingEvent}
             onDiscardRemaining={setDiscardTarget}
             onAssignTank={setAssignTankTarget}
             onToggleScheduleStep={toggleScheduleStep}
+            onDeleteBatch={setDeleteBatchTarget}
           />
         )}
 
@@ -5187,6 +5333,9 @@ export default function TankLog() {
       )}
       {deleteRecipeTarget && (
         <ConfirmDeleteRecipeModal recipe={deleteRecipeTarget} onClose={() => setDeleteRecipeTarget(null)} onConfirm={deleteRecipe} />
+      )}
+      {deleteBatchTarget && (
+        <ConfirmDeleteBatchModal batch={deleteBatchTarget} onClose={() => setDeleteBatchTarget(null)} onConfirm={deleteBatch} />
       )}
       {adjustTarget && (
         <AdjustInventoryModal item={adjustTarget} onClose={() => setAdjustTarget(null)} onSave={adjustInventoryWithNote} />
