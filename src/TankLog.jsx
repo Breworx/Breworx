@@ -61,6 +61,39 @@ const remainingVolume = (batch) => {
   return Math.max(0, Math.round(rem * 100) / 100);
 };
 
+function monthKeyFromDate(dateStr) {
+  return dateStr && dateStr.length >= 7 ? dateStr.slice(0, 7) : "unknown";
+}
+
+function monthLabelFromKey(key) {
+  if (key === "unknown") return "Unknown date";
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+// Groups every packaging event across every batch by month, with a running
+// volume/container total per month and a per-batch breakdown within it.
+function packagingByMonth(batches) {
+  const groups = {};
+  batches.forEach((b) => {
+    packagingEvents(b).forEach((e) => {
+      const key = monthKeyFromDate(e.date);
+      if (!groups[key]) groups[key] = { volume: 0, counts: {}, batches: {} };
+      const vol = packagedVolume(e);
+      groups[key].volume = Math.round((groups[key].volume + vol) * 100) / 100;
+      CONTAINERS.forEach((c) => {
+        groups[key].counts[c.key] = (groups[key].counts[c.key] || 0) + (e[c.key] || 0);
+      });
+      if (!groups[key].batches[b.id]) groups[key].batches[b.id] = { id: b.id, name: b.name, number: b.number, volume: 0 };
+      groups[key].batches[b.id].volume = Math.round((groups[key].batches[b.id].volume + vol) * 100) / 100;
+    });
+  });
+  return Object.keys(groups)
+    .sort()
+    .reverse()
+    .map((key) => ({ key, label: monthLabelFromKey(key), ...groups[key], batches: Object.values(groups[key].batches) }));
+}
+
 // A tank is occupied if some batch is sitting on it and hasn't been fully
 // packaged out yet. excludeBatchId lets a batch ignore its own current
 // assignment when checking whether it can stay put.
@@ -3221,6 +3254,140 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
   );
 }
 
+function PackagedView({ batches, onOpenBatch }) {
+  const [query, setQuery] = useState("");
+
+  const matchingBatches =
+    query.trim().length === 0
+      ? []
+      : batches.filter(
+          (b) =>
+            (b.packaging && packagingEvents(b).length > 0) &&
+            (b.name.toLowerCase().includes(query.trim().toLowerCase()) || String(b.number).includes(query.trim()))
+        );
+
+  const months = packagingByMonth(batches);
+
+  return (
+    <div>
+      <div style={{ position: "relative", marginBottom: 24 }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search batches by name or number…"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#16191A",
+            border: "1px solid #2C332F",
+            borderRadius: 5,
+            padding: "10px 12px",
+            color: "#EDE7D9",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+          }}
+        />
+      </div>
+
+      {query.trim().length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {matchingBatches.map((b) => {
+            const totals = aggregatePackagingCounts(b);
+            const rem = remainingVolume(b);
+            const parts = CONTAINERS.filter((c) => totals[c.key] > 0).map((c) => `${totals[c.key]}× ${c.shortLabel}`);
+            return (
+              <button
+                key={b.id}
+                onClick={() => onOpenBatch(b.id)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "12px 14px",
+                  background: "#1F2422",
+                  border: "1px solid #2C332F",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <div>
+                  <div style={{ color: "#EDE7D9", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>
+                    {b.name} <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>#{b.number}</span>
+                  </div>
+                  <div style={{ color: "#8A9591", fontSize: 12, marginTop: 3 }}>
+                    {totalPackagedVolume(b).toFixed(2)}L packaged{parts.length ? ` · ${parts.join(" · ")}` : ""}
+                    {rem > 0 ? ` · ${rem}L in tank` : ""}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+          {matchingBatches.length === 0 && (
+            <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+              No packaged batches match "{query}".
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {months.map((m) => (
+            <div key={m.key}>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, color: "#EDE7D9", fontWeight: 500, marginBottom: 8 }}>
+                {m.label}
+              </div>
+              <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "12px 14px", marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#8A9591", fontSize: 12.5 }}>Total packaged</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", fontSize: 15 }}>{m.volume.toFixed(2)} L</span>
+                </div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#5C6B63", marginTop: 6 }}>
+                  {CONTAINERS.filter((c) => m.counts[c.key] > 0)
+                    .map((c) => `${m.counts[c.key]}× ${c.shortLabel}`)
+                    .join(" · ") || "No containers logged"}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {m.batches
+                  .sort((a, b) => b.volume - a.volume)
+                  .map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => onOpenBatch(b.id)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "9px 12px",
+                        background: "#1B1F1D",
+                        border: "1px solid #262C29",
+                        borderRadius: 5,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ color: "#EDE7D9" }}>
+                        {b.name} <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>#{b.number}</span>
+                      </span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", fontSize: 12 }}>{b.volume.toFixed(2)} L</span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ))}
+          {months.length === 0 && (
+            <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+              Nothing packaged yet — once you log a packaging run on a batch, it'll show up here by month.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HomeView({
   companyName,
   fermentingBatches,
@@ -4094,6 +4261,7 @@ export default function TankLog() {
             {[
               ["home", "Home"],
               ["batches", "Fermentation"],
+              ["packaged", "Packaged"],
               ["inventory", "Inventory"],
               ["orders", "Purchase Orders"],
               ["recipes", "Recipes"],
@@ -4163,7 +4331,7 @@ export default function TankLog() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && (
                 <button
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
@@ -4218,6 +4386,16 @@ export default function TankLog() {
                   setView("orders");
                 }}
                 onGoTo={setView}
+              />
+            )}
+
+            {!loadingData && view === "packaged" && (
+              <PackagedView
+                batches={batches}
+                onOpenBatch={(id) => {
+                  setSelectedId(id);
+                  setView("batches");
+                }}
               />
             )}
 
