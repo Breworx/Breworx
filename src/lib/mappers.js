@@ -102,4 +102,35 @@ export function poToRow(po, userId, companyId) {
 
 export function rowToRecipe(row) {
   return {
-    id: row
+    id: row.id,
+    name: row.name,
+    style: row.style,
+    volume: row.volume,
+    og: row.og,
+    fg: row.fg,
+    ingredients: row.ingredients || [],
+  };
+}
+
+export function recipeToRow(recipe, userId, companyId) {
+  return {
+    id: recipe.id,
+    user_id: userId,
+    company_id: companyId,
+    name: recipe.name,
+    style: recipe.style,
+    volume: recipe.volume,
+    og: recipe.og,
+    fg: recipe.fg,
+    ingredients: recipe.ingredients || [],
+  };
+}
+
+export function rowToProfile(row) {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    name: row.name,
+    role: row.role,
+  };
+}
