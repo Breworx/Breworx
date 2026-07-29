@@ -1819,17 +1819,19 @@ function RecipeCard({ recipe, onOpen }) {
   );
 }
 
-function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
-  const [name, setName] = useState("");
-  const [style, setStyle] = useState("");
+function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editingRecipe }) {
+  const [name, setName] = useState(editingRecipe ? editingRecipe.name : "");
+  const [style, setStyle] = useState(editingRecipe ? editingRecipe.style : "");
   const [styleFocused, setStyleFocused] = useState(false);
-  const [volume, setVolume] = useState(20);
-  const [og, setOg] = useState(1.05);
-  const [fg, setFg] = useState(1.01);
-  const [ingredients, setIngredients] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
+  const [volume, setVolume] = useState(editingRecipe ? editingRecipe.volume : 20);
+  const [og, setOg] = useState(editingRecipe ? editingRecipe.og : 1.05);
+  const [fg, setFg] = useState(editingRecipe ? editingRecipe.fg : 1.01);
+  const [ingredients, setIngredients] = useState(
+    editingRecipe ? editingRecipe.ingredients.map((i) => ({ ...i })) : [{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]
+  );
   const [focusedIngredientId, setFocusedIngredientId] = useState(null);
   const [importError, setImportError] = useState("");
-  const [schedule, setSchedule] = useState([]);
+  const [schedule, setSchedule] = useState(editingRecipe ? (editingRecipe.schedule || []).map((s) => ({ ...s })) : []);
 
   const addScheduleStep = () =>
     setSchedule((prev) => [...prev, { id: uid(), use: "Boil", time: 60, name: "", amount: 0, unit: "kg" }]);
@@ -1895,12 +1897,13 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
       fg: Number(fg),
       ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
       schedule: cleanSchedule,
+      familyId: editingRecipe ? editingRecipe.familyId : null,
     });
     onClose();
   };
 
   return (
-    <Modal title="New recipe" onClose={onClose}>
+    <Modal title={editingRecipe ? `Save new version — ${editingRecipe.name}` : "New recipe"} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <label
           style={{
@@ -2261,14 +2264,14 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
             cursor: "pointer",
           }}
         >
-          Save recipe
+          {editingRecipe ? "Save as new version" : "Save recipe"}
         </button>
       </div>
     </Modal>
   );
 }
 
-function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete }) {
+function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, onSwitchVersion, onEdit }) {
   const shortages = recipe.ingredients.filter((ing) => {
     const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
     return !stock || stock.qty < ing.qty;
@@ -2298,9 +2301,39 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete }) {
       <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
         {recipe.name}
       </h1>
-      <div style={{ color: "#8A9591", fontSize: 14, marginBottom: 20 }}>
+      <div style={{ color: "#8A9591", fontSize: 14, marginBottom: 12 }}>
         {recipe.style} · {recipe.volume}L · OG {recipe.og.toFixed(3)} → FG {recipe.fg.toFixed(3)}
       </div>
+
+      {versions.length > 1 && (
+        <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 16 }}>
+          <span style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>
+            Version
+          </span>
+          <select
+            value={recipe.id}
+            onChange={(e) => onSwitchVersion(e.target.value)}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#16191A",
+              border: "1px solid #2C332F",
+              borderRadius: 4,
+              padding: "9px 10px",
+              color: "#EDE7D9",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 13,
+            }}
+          >
+            {versions.map((v) => (
+              <option key={v.id} value={v.id}>
+                v{v.version}{v.id === versions[0].id ? " (latest)" : ""}
+                {v.createdAt ? ` — ${v.createdAt.slice(0, 10)}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
         Ingredients
@@ -2401,6 +2434,24 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete }) {
         }}
       >
         <Beaker size={16} /> Brew this recipe
+      </button>
+
+      <button
+        onClick={() => onEdit(recipe)}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "1px solid #2C332F",
+          borderRadius: 5,
+          padding: "11px",
+          color: "#8A9591",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginTop: 10,
+        }}
+      >
+        Edit — save as new version
       </button>
 
       <button
@@ -4468,6 +4519,7 @@ export default function TankLog() {
   const [editTankTarget, setEditTankTarget] = useState(null);
   const [deleteTankTarget, setDeleteTankTarget] = useState(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState(null);
+  const [editRecipeTarget, setEditRecipeTarget] = useState(null);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState(null);
   const [assignTankTarget, setAssignTankTarget] = useState(null);
 
@@ -4675,9 +4727,15 @@ export default function TankLog() {
   };
 
   const addRecipe = async (r) => {
-    const { data, error } = await supabase.from("recipes").insert(recipeToRow(r, user.id, profile.companyId)).select().single();
+    const familyId = r.familyId || uid();
+    const versionsInFamily = recipes.filter((rec) => rec.familyId === familyId);
+    const version = versionsInFamily.length > 0 ? Math.max(...versionsInFamily.map((v) => v.version || 1)) + 1 : 1;
+    const payload = { ...r, familyId, version };
+    const { data, error } = await supabase.from("recipes").insert(recipeToRow(payload, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
-    setRecipes((prev) => [rowToRecipe(data), ...prev]);
+    const newRecipe = rowToRecipe(data);
+    setRecipes((prev) => [newRecipe, ...prev]);
+    setSelectedRecipeId(newRecipe.id);
   };
 
   const deleteRecipe = async (id) => {
@@ -5309,18 +5367,27 @@ export default function TankLog() {
               );
             })()}
 
-            {!loadingData && view === "recipes" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {recipes.map((r) => (
-                  <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
-                ))}
-                {recipes.length === 0 && (
-                  <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-                    No recipes yet. Add one so you can assign its ingredients when you start a brew.
-                  </div>
-                )}
-              </div>
-            )}
+            {!loadingData && view === "recipes" && (() => {
+              const latestByFamily = Object.values(
+                recipes.reduce((acc, r) => {
+                  const fam = r.familyId || r.id;
+                  if (!acc[fam] || (r.version || 1) > (acc[fam].version || 1)) acc[fam] = r;
+                  return acc;
+                }, {})
+              );
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {latestByFamily.map((r) => (
+                    <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
+                  ))}
+                  {latestByFamily.length === 0 && (
+                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                      No recipes yet. Add one so you can assign its ingredients when you start a brew.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {!loadingData && view === "brewery" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -5513,6 +5580,11 @@ export default function TankLog() {
               setShowAdd(true);
             }}
             onDelete={setDeleteRecipeTarget}
+            versions={recipes
+              .filter((r) => r.familyId === selectedRecipe.familyId)
+              .sort((a, b) => (b.version || 1) - (a.version || 1))}
+            onSwitchVersion={setSelectedRecipeId}
+            onEdit={setEditRecipeTarget}
           />
         )}
 
@@ -5548,6 +5620,15 @@ export default function TankLog() {
       {showAddRecipe && (
         <AddRecipeModal
           onClose={() => setShowAddRecipe(false)}
+          onAdd={addRecipe}
+          inventory={inventory}
+          onAddInventoryItem={addInventoryItem}
+        />
+      )}
+      {editRecipeTarget && (
+        <AddRecipeModal
+          editingRecipe={editRecipeTarget}
+          onClose={() => setEditRecipeTarget(null)}
           onAdd={addRecipe}
           inventory={inventory}
           onAddInventoryItem={addInventoryItem}
