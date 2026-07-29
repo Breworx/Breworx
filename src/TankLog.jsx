@@ -2174,7 +2174,7 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches }) {
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory }) {
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
@@ -2187,6 +2187,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [topUpWater, setTopUpWater] = useState("");
   const [tankId, setTankId] = useState("");
   const [nameFocused, setNameFocused] = useState(false);
+  const [batchIngredients, setBatchIngredients] = useState(
+    presetRecipe ? presetRecipe.ingredients.map((i) => ({ ...i })) : []
+  );
 
   const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
 
@@ -2199,7 +2202,16 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       setVolume(r.volume);
       setOg(r.og);
       setFg(r.fg);
+      setBatchIngredients(r.ingredients.map((i) => ({ ...i })));
     }
+  };
+
+  const updateBatchIngredient = (id, qty) =>
+    setBatchIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, qty } : ing)));
+
+  const stockFor = (ingName) => {
+    const item = inventory.find((it) => it.name.toLowerCase() === ingName.toLowerCase());
+    return item ? item.qty : null;
   };
 
   const nameMatches =
@@ -2228,7 +2240,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       recipeName: activeRecipe ? activeRecipe.name : null,
       tankId: tank ? tank.id : null,
       tankName: tank ? tank.name : null,
-      ingredients: activeRecipe ? activeRecipe.ingredients : [],
+      ingredients: activeRecipe ? batchIngredients : [],
       readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
     });
     onClose();
@@ -2281,6 +2293,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               onChange={(e) => {
                 setName(e.target.value);
                 setRecipeId("");
+                setBatchIngredients([]);
               }}
               onFocus={() => setNameFocused(true)}
               onBlur={() => setTimeout(() => setNameFocused(false), 150)}
@@ -2370,16 +2383,45 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         </div>
         {activeRecipe && (
           <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
-            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 6 }}>
-              Ingredients to assign
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+              Ingredients to assign — adjust here if you're short on brew day
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {activeRecipe.ingredients.map((ing) => (
-                <div key={ing.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
-                  <span style={{ color: "#EDE7D9" }}>{ing.name}</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591" }}>{ing.qty} {ing.unit}</span>
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {batchIngredients.map((ing) => {
+                const stock = stockFor(ing.name);
+                const short = stock != null && Number(ing.qty) > stock;
+                return (
+                  <div key={ing.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: "#EDE7D9", fontSize: 12.5, flex: 1 }}>{ing.name}</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={ing.qty}
+                        onChange={(e) => updateBatchIngredient(ing.id, e.target.value)}
+                        style={{
+                          width: 72,
+                          boxSizing: "border-box",
+                          background: "#1F2422",
+                          border: `1px solid ${short ? "#6B4A2F" : "#2C332F"}`,
+                          borderRadius: 4,
+                          padding: "6px 8px",
+                          color: short ? "#C17A3D" : "#EDE7D9",
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: 12.5,
+                          textAlign: "right",
+                        }}
+                      />
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", fontSize: 12, width: 28 }}>{ing.unit}</span>
+                    </div>
+                    {short && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, color: "#C17A3D", fontSize: 11.5, marginTop: 3 }}>
+                        <AlertTriangle size={11} /> Only {stock} {ing.unit} in stock — adjust the amount or top up inventory first.
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -4416,6 +4458,7 @@ export default function TankLog() {
           presetRecipe={brewRecipe}
           tanks={tanks}
           batches={batches}
+          inventory={inventory}
         />
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
