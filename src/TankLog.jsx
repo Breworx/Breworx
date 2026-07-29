@@ -3833,6 +3833,7 @@ export default function TankLog() {
   const [inventory, setInventory] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
+  const [inventoryQuery, setInventoryQuery] = useState("");
   const [adjustTarget, setAdjustTarget] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedPOId, setSelectedPOId] = useState(null);
@@ -4461,39 +4462,87 @@ export default function TankLog() {
               </>
             )}
 
-            {!loadingData && view === "inventory" && (
-              <>
-                {inventory.some((it) => it.qty <= it.threshold) && (
-                  <div
+            {!loadingData && view === "inventory" && (() => {
+              const filtered = inventory.filter((it) =>
+                it.name.toLowerCase().includes(inventoryQuery.trim().toLowerCase())
+              );
+              const grouped = CATEGORIES.map((cat) => ({
+                category: cat,
+                items: filtered.filter((it) => it.category === cat),
+              })).filter((g) => g.items.length > 0);
+
+              return (
+                <>
+                  <input
+                    type="text"
+                    value={inventoryQuery}
+                    onChange={(e) => setInventoryQuery(e.target.value)}
+                    placeholder="Search ingredients…"
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      color: "#C17A3D",
-                      fontSize: 12.5,
-                      marginBottom: 14,
-                      background: "#241D14",
-                      border: "1px solid #4A3420",
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#16191A",
+                      border: "1px solid #2C332F",
                       borderRadius: 5,
-                      padding: "8px 12px",
+                      padding: "10px 12px",
+                      color: "#EDE7D9",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                      marginBottom: 16,
                     }}
-                  >
-                    <AlertTriangle size={14} />
-                    {inventory.filter((it) => it.qty <= it.threshold).length} item(s) running low
-                  </div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {inventory.map((it) => (
-                    <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} />
-                  ))}
-                  {inventory.length === 0 && (
-                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-                      No ingredients tracked yet. Add grain, hops, or yeast to get started.
+                  />
+
+                  {inventory.some((it) => it.qty <= it.threshold) && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        color: "#C17A3D",
+                        fontSize: 12.5,
+                        marginBottom: 14,
+                        background: "#241D14",
+                        border: "1px solid #4A3420",
+                        borderRadius: 5,
+                        padding: "8px 12px",
+                      }}
+                    >
+                      <AlertTriangle size={14} />
+                      {inventory.filter((it) => it.qty <= it.threshold).length} item(s) running low
                     </div>
                   )}
-                </div>
-              </>
-            )}
+
+                  {grouped.map((g, i) => (
+                    <div key={g.category} style={{ marginBottom: i < grouped.length - 1 ? 22 : 0 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: CATEGORY_COLOR[g.category],
+                          marginBottom: 10,
+                        }}
+                      >
+                        {g.category} ({g.items.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {g.items.map((it) => (
+                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {filtered.length === 0 && (
+                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                      {inventory.length === 0
+                        ? "No ingredients tracked yet. Add grain, hops, or yeast to get started."
+                        : `No ingredients match "${inventoryQuery}".`}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {!loadingData && view === "orders" && (() => {
               const draftPOs = purchaseOrders.filter((po) => po.status === "Draft");
