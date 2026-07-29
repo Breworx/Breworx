@@ -1600,7 +1600,10 @@ function DeleteAccountModal({ onClose, onConfirm }) {
     if (!canDelete) return;
     setBusy(true);
     setError("");
-    const result = await onConfirm();
+    const timeout = new Promise((resolve) =>
+      setTimeout(() => resolve({ error: "Timed out — no response after 15 seconds. Check your connection and try again." }), 15000)
+    );
+    const result = await Promise.race([onConfirm(), timeout]);
     if (result && result.error) {
       setError(result.error);
       setBusy(false);
@@ -2317,14 +2320,19 @@ export default function TankLog() {
   };
 
   const deleteAccount = async () => {
-    const { error } = await supabase.rpc("delete_my_account");
-    if (error) {
-      console.error(error);
-      return { error: error.message };
+    try {
+      const { error } = await supabase.rpc("delete_my_account");
+      if (error) {
+        console.error(error);
+        return { error: error.message };
+      }
+      setShowDeleteAccount(false);
+      await supabase.auth.signOut();
+      return { error: null };
+    } catch (err) {
+      console.error(err);
+      return { error: (err && err.message) || "Something went wrong. Check your connection and try again." };
     }
-    setShowDeleteAccount(false);
-    await supabase.auth.signOut();
-    return { error: null };
   };
 
   const activeBatches = batches.filter((b) => b.stage !== "Packaged");
