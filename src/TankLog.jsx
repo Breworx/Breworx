@@ -336,7 +336,43 @@ function parseBeerXML(xmlText) {
   collect("YEASTS", "YEAST", "Yeast", "ea", () => 1);
   collect("MISCS", "MISC", "Other", "kg", (el) => num(el, "AMOUNT") ?? 0);
 
-  return { name, style, volume, og, fg, ingredients };
+  // Build a brew-day addition schedule from anything with USE/TIME info
+  // (mainly hops, sometimes misc items like Irish Moss). BeerXML gives TIME
+  // in minutes for Boil/Mash/First Wort/Aroma, and in days for Dry Hop.
+  const schedule = [];
+  const collectSchedule = (containerTag, itemTag, unit, qtyFn) => {
+    const container = recipeEl.getElementsByTagName(containerTag)[0];
+    if (!container) return;
+    Array.from(container.getElementsByTagName(itemTag)).forEach((el) => {
+      const use = text(el, "USE");
+      const time = num(el, "TIME");
+      if (!use && time == null) return;
+      const itemName = text(el, "NAME") || itemTag;
+      const amount = qtyFn(el);
+      let label;
+      if (use === "Dry Hop") label = `Dry hop — day ${time ?? "?"}: add ${itemName}`;
+      else if (use === "Boil") label = `Boil, ${time ?? "?"} min remaining: add ${itemName}`;
+      else if (use === "Mash") label = `Mash, ${time ?? "?"} min: add ${itemName}`;
+      else if (use === "First Wort") label = `First wort: add ${itemName}`;
+      else label = `${use || "Add"}${time != null ? `, ${time} min` : ""}: add ${itemName}`;
+      schedule.push({
+        id: uid(),
+        label,
+        name: itemName,
+        amount,
+        unit,
+        use: use || "",
+        time,
+        sortKey: use === "Dry Hop" ? 10000 + (time ?? 0) : 1000 - (time ?? 0),
+      });
+    });
+  };
+  collectSchedule("HOPS", "HOP", "kg", (el) => num(el, "AMOUNT") ?? 0);
+  collectSchedule("MISCS", "MISC", "kg", (el) => num(el, "AMOUNT") ?? 0);
+  schedule.sort((a, b) => a.sortKey - b.sortKey);
+  schedule.forEach((s) => delete s.sortKey);
+
+  return { name, style, volume, og, fg, ingredients, schedule };
 }
 
 const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
@@ -1725,6 +1761,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
   const [ingredients, setIngredients] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
   const [focusedIngredientId, setFocusedIngredientId] = useState(null);
   const [importError, setImportError] = useState("");
+  const [schedule, setSchedule] = useState([]);
 
   const handleImportFile = (file) => {
     if (!file) return;
@@ -1742,6 +1779,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
       setOg(parsed.og);
       setFg(parsed.fg);
       setIngredients(parsed.ingredients.length > 0 ? parsed.ingredients : ingredients);
+      setSchedule(parsed.schedule || []);
     };
     reader.onerror = () => setImportError("Couldn't read that file — try exporting it again.");
     reader.readAsText(file);
@@ -1776,6 +1814,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
       og: Number(og),
       fg: Number(fg),
       ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
+      schedule,
     });
     onClose();
   };
@@ -2063,6 +2102,21 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
           <Plus size={14} /> Add ingredient
         </button>
 
+        {schedule.length > 0 && (
+          <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+              Brew day schedule (from import)
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {schedule.map((s) => (
+                <div key={s.id} style={{ color: "#8A9591", fontSize: 12.5 }}>
+                  {s.label} <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63" }}>({s.amount} {s.unit})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={submit}
           style={{
@@ -2171,6 +2225,31 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete }) {
         >
           <AlertTriangle size={14} />
           Short on {shortages.length} ingredient{shortages.length !== 1 ? "s" : ""} — you can still brew, but stock will go negative-adjusted to zero.
+        </div>
+      )}
+
+      {recipe.schedule && recipe.schedule.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+            Brew day schedule
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {recipe.schedule.map((s) => (
+              <div
+                key={s.id}
+                style={{
+                  padding: "9px 12px",
+                  background: "#1B1F1D",
+                  border: "1px solid #262C29",
+                  borderRadius: 5,
+                  fontSize: 13,
+                  color: "#EDE7D9",
+                }}
+              >
+                {s.label} <span style={{ color: "#8A9591", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.amount} {s.unit})</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -2330,6 +2409,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [batchIngredients, setBatchIngredients] = useState(
     presetRecipe ? presetRecipe.ingredients.map((i) => ({ ...i })) : []
   );
+  const [batchSchedule, setBatchSchedule] = useState(
+    presetRecipe ? (presetRecipe.schedule || []).map((s) => ({ ...s, done: false, doneAt: null })) : []
+  );
 
   const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
 
@@ -2343,6 +2425,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       setOg(r.og);
       setFg(r.fg);
       setBatchIngredients(r.ingredients.map((i) => ({ ...i })));
+      setBatchSchedule((r.schedule || []).map((s) => ({ ...s, done: false, doneAt: null })));
     }
   };
 
@@ -2394,6 +2477,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       tankId: tank ? tank.id : null,
       tankName: tank ? tank.name : null,
       ingredients: batchIngredients.filter((ing) => ing.name.trim().length > 0 && Number(ing.qty) > 0),
+      schedule: batchSchedule,
       readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
     });
     onClose();
@@ -2447,6 +2531,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                 setName(e.target.value);
                 setRecipeId("");
                 setBatchIngredients([]);
+                setBatchSchedule([]);
               }}
               onFocus={() => setNameFocused(true)}
               onBlur={() => setTimeout(() => setNameFocused(false), 150)}
@@ -3024,7 +3109,7 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging, onDiscardRemaining, onAssignTank }) {
+function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging, onDiscardRemaining, onAssignTank, onToggleScheduleStep }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -3091,6 +3176,84 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
           </div>
         ))}
       </div>
+
+      {batch.schedule && batch.schedule.length > 0 && (() => {
+        const next = batch.schedule.find((s) => !s.done);
+        return (
+          <>
+            {next && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  background: "#241D14",
+                  border: "1px solid #4A3420",
+                  borderRadius: 6,
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                }}
+              >
+                <Droplet size={15} color="#C17A3D" />
+                <div>
+                  <div style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#C17A3D" }}>Up next</div>
+                  <div style={{ color: "#EDE7D9", fontSize: 13.5, marginTop: 1 }}>
+                    {next.label} <span style={{ color: "#8A9591", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({next.amount} {next.unit})</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+              Brew day schedule
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+              {batch.schedule.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onToggleScheduleStep(batch.id, s.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: "#1B1F1D",
+                    border: "1px solid #262C29",
+                    borderRadius: 5,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    opacity: s.done ? 0.6 : 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      border: `1.5px solid ${s.done ? "#7FA35C" : "#3A413D"}`,
+                      background: s.done ? "#7FA35C" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {s.done && <CheckCircle2 size={13} color="#16191A" />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#EDE7D9", textDecoration: s.done ? "line-through" : "none" }}>
+                      {s.label} <span style={{ color: "#8A9591", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.amount} {s.unit})</span>
+                    </div>
+                    {s.done && s.doneAt && (
+                      <div style={{ color: "#5C6B63", fontSize: 11, marginTop: 2 }}>Done {formatHistoryStamp(s.doneAt)}</div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>Brew day</div>
@@ -4271,6 +4434,17 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   };
 
+  const toggleScheduleStep = async (batchId, stepId) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    const newSchedule = (batch.schedule || []).map((s) =>
+      s.id === stepId ? { ...s, done: !s.done, doneAt: !s.done ? new Date().toISOString() : null } : s
+    );
+    const { error } = await supabase.from("batches").update({ schedule: newSchedule }).eq("id", batchId);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, schedule: newSchedule } : b)));
+  };
+
   const logPackagingSession = async (id, sessionCounts) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
@@ -4882,6 +5056,7 @@ export default function TankLog() {
             onOpenPackaging={setPackagingTarget}
             onDiscardRemaining={setDiscardTarget}
             onAssignTank={setAssignTankTarget}
+            onToggleScheduleStep={toggleScheduleStep}
           />
         )}
 
