@@ -4177,6 +4177,7 @@ function PackagedView({ batches, onOpenBatch }) {
 
 function HomeView({
   companyName,
+  companyLogo,
   fermentingBatches,
   conditioningBatches,
   inProgressBatches,
@@ -4201,9 +4202,13 @@ function HomeView({
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <div style={{ color: "#8A9591", fontSize: 13, marginBottom: 2 }}>Welcome back to</div>
-        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, color: "#EDE7D9", margin: 0, fontWeight: 500 }}>
-          {companyName || "your brewery"}
-        </h1>
+        {companyLogo ? (
+          <img src={companyLogo} alt={companyName || "Company logo"} style={{ maxWidth: 200, maxHeight: 72, objectFit: "contain" }} />
+        ) : (
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, color: "#EDE7D9", margin: 0, fontWeight: 500 }}>
+            {companyName || "your brewery"}
+          </h1>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
@@ -4627,6 +4632,7 @@ export default function TankLog() {
   const [brewRecipe, setBrewRecipe] = useState(null);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
+  const [companyLogo, setCompanyLogo] = useState("");
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
   const [showAddTank, setShowAddTank] = useState(false);
@@ -4669,6 +4675,7 @@ export default function TankLog() {
       setRecipes([]);
       setProfile(null);
       setCompanyName("");
+      setCompanyLogo("");
       setTeammates([]);
       setTanks([]);
       return;
@@ -4699,7 +4706,7 @@ export default function TankLog() {
       setProfile(myProfile);
 
       const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes] = await Promise.all([
-        supabase.from("companies").select("name").eq("id", myProfile.companyId).single(),
+        supabase.from("companies").select("name, logo_url").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
@@ -4709,7 +4716,10 @@ export default function TankLog() {
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
-      else setCompanyName(companyRes.data.name);
+      else {
+        setCompanyName(companyRes.data.name);
+        setCompanyLogo(companyRes.data.logo_url || "");
+      }
       if (teammatesRes.error) console.error(teammatesRes.error);
       else setTeammates(teammatesRes.data.map(rowToProfile));
       if (batchesRes.error) console.error(batchesRes.error);
@@ -4876,6 +4886,35 @@ export default function TankLog() {
     if (error) return console.error(error);
     setRecipes((prev) => prev.filter((r) => r.id !== id));
     setSelectedRecipeId(null);
+  };
+
+  const uploadCompanyLogo = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = async () => {
+        const maxSize = 240;
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/png");
+        const { error } = await supabase.from("companies").update({ logo_url: dataUrl }).eq("id", profile.companyId);
+        if (error) return console.error(error);
+        setCompanyLogo(dataUrl);
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeCompanyLogo = async () => {
+    const { error } = await supabase.from("companies").update({ logo_url: null }).eq("id", profile.companyId);
+    if (error) return console.error(error);
+    setCompanyLogo("");
   };
 
   const addTank = async (t) => {
@@ -5278,6 +5317,7 @@ export default function TankLog() {
             {!loadingData && view === "home" && (
               <HomeView
                 companyName={companyName}
+                companyLogo={companyLogo}
                 fermentingBatches={fermentingBatches}
                 conditioningBatches={conditioningBatches}
                 inProgressBatches={inProgressBatches}
@@ -5598,6 +5638,50 @@ export default function TankLog() {
                   <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px" }}>
                     <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Name</div>
                     <div style={{ color: "#EDE7D9", fontSize: 17, fontFamily: "'Oswald', sans-serif", marginTop: 2 }}>{companyName || "—"}</div>
+                  </div>
+                  <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px", marginTop: 8 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                      Logo (optional)
+                    </div>
+                    <div style={{ color: "#8A9591", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                      Upload a logo to show instead of your company name on the Home page. Leave this blank and
+                      your company name stays as plain text.
+                    </div>
+                    {companyLogo && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                        <img src={companyLogo} alt="Company logo" style={{ width: 56, height: 56, objectFit: "contain", background: "#16191A", borderRadius: 6, border: "1px solid #2C332F" }} />
+                        <button
+                          onClick={removeCompanyLogo}
+                          style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+                        >
+                          Remove logo
+                        </button>
+                      </div>
+                    )}
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 7,
+                        background: "none",
+                        border: "1px dashed #3A413D",
+                        borderRadius: 5,
+                        padding: "9px",
+                        color: "#8A9591",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => uploadCompanyLogo(e.target.files && e.target.files[0])}
+                        style={{ display: "none" }}
+                      />
+                      {companyLogo ? "Replace logo" : "Upload logo"}
+                    </label>
                   </div>
                 </div>
 
