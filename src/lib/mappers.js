@@ -61,6 +61,7 @@ export function rowToInventoryItem(row) {
     unit: row.unit,
     threshold: row.threshold,
     lots: row.lots || [],
+    history: row.history || [],
   };
 }
 
@@ -75,6 +76,7 @@ export function inventoryItemToRow(item, userId, companyId) {
     unit: item.unit,
     threshold: item.threshold,
     lots: item.lots || [],
+    history: item.history || [],
   };
 }
 
