@@ -678,6 +678,138 @@ function AddTankModal({ onClose, onAdd }) {
   );
 }
 
+function EditTankModal({ tank, onClose, onSave }) {
+  const [name, setName] = useState(tank.name);
+  const [capacity, setCapacity] = useState(tank.capacity);
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onSave(tank.id, { name: name.trim(), capacity: Number(capacity) || 0 });
+    onClose();
+  };
+
+  return (
+    <Modal title="Edit tank" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Tank ID" value={name} onChange={setName} />
+        <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
+        <div style={{ color: "#5C6B63", fontSize: 12 }}>
+          Renaming won't retroactively update batches already assigned to this tank — reassign them from the batch's page if needed.
+        </div>
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 4,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save changes
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
+  return (
+    <Modal title={`Delete ${tank.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13 }}>
+          This removes the tank from your brewery list. It's not currently assigned to any batches, so nothing else is affected.
+        </div>
+        <button
+          onClick={() => {
+            onConfirm(tank.id);
+            onClose();
+          }}
+          style={{
+            background: "#B5502F",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#EDE7D9",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Delete tank
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function AssignTankModal({ batch, tanks, onClose, onSave }) {
+  const [tankId, setTankId] = useState(batch.tankId || "");
+
+  const submit = () => {
+    const tank = tanks.find((t) => t.id === tankId) || null;
+    onSave(batch.id, tank);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Assign tank — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>Tank</span>
+          <select
+            value={tankId}
+            onChange={(e) => setTankId(e.target.value)}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#16191A",
+              border: "1px solid #2C332F",
+              borderRadius: 4,
+              padding: "9px 10px",
+              color: "#EDE7D9",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 14,
+            }}
+          >
+            <option value="">Unassigned</option>
+            {tanks.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.capacity}L)
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          onClick={submit}
+          style={{
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function AddInventoryModal({ onClose, onAdd }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Grain");
@@ -1872,7 +2004,7 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging, onDiscardRemaining }) {
+function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging, onDiscardRemaining, onAssignTank }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -1912,8 +2044,16 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
           <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 28, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
             {batch.name}
           </h1>
-          <div style={{ color: "#8A9591", fontSize: 14 }}>
-            {batch.style} · {batch.volume}L{batch.tankName ? ` · ${batch.tankName}` : ""}
+          <div style={{ color: "#8A9591", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>
+              {batch.style} · {batch.volume}L{batch.tankName ? ` · ${batch.tankName}` : " · No tank assigned"}
+            </span>
+            <button
+              onClick={() => onAssignTank(batch)}
+              style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              Change
+            </button>
           </div>
         </div>
       </div>
@@ -2653,6 +2793,9 @@ export default function TankLog() {
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
   const [showAddTank, setShowAddTank] = useState(false);
+  const [editTankTarget, setEditTankTarget] = useState(null);
+  const [deleteTankTarget, setDeleteTankTarget] = useState(null);
+  const [assignTankTarget, setAssignTankTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
   // sign-in, sign-out, or token refresh — session becomes null on sign-out.
@@ -2782,6 +2925,29 @@ export default function TankLog() {
     const { data, error } = await supabase.from("tanks").insert(tankToRow(t, profile.companyId)).select().single();
     if (error) return console.error(error);
     setTanks((prev) => [rowToTank(data), ...prev]);
+  };
+
+  const updateTank = async (id, patch) => {
+    const { error } = await supabase.from("tanks").update({ name: patch.name, capacity: patch.capacity }).eq("id", id);
+    if (error) return console.error(error);
+    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  };
+
+  const deleteTank = async (id) => {
+    const { error } = await supabase.from("tanks").delete().eq("id", id);
+    if (error) return console.error(error);
+    setTanks((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const assignBatchTank = async (batchId, tank) => {
+    const { error } = await supabase
+      .from("batches")
+      .update({ tank_id: tank ? tank.id : null, tank_name: tank ? tank.name : null })
+      .eq("id", batchId);
+    if (error) return console.error(error);
+    setBatches((prev) =>
+      prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null } : b))
+    );
   };
 
   const addInventoryItem = async (item) => {
@@ -2974,6 +3140,7 @@ export default function TankLog() {
               ["inventory", "Inventory"],
               ["orders", "Orders"],
               ["recipes", "Recipes"],
+              ["brewery", "Brewery"],
               ["settings", "Settings"],
             ].map(([key, label]) => {
               const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe;
@@ -3044,7 +3211,8 @@ export default function TankLog() {
                     if (view === "batches") setShowAdd(true);
                     else if (view === "inventory") setShowAddInventory(true);
                     else if (view === "orders") setShowAddPO(true);
-                    else setShowAddRecipe(true);
+                    else if (view === "recipes") setShowAddRecipe(true);
+                    else setShowAddTank(true);
                   }}
                   style={{
                     display: "flex",
@@ -3063,7 +3231,7 @@ export default function TankLog() {
                   }}
                 >
                   <Plus size={16} />{" "}
-                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "orders" ? "New order" : "New recipe"}
+                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : "New tank"}
                 </button>
               )}
             </div>
@@ -3212,6 +3380,59 @@ export default function TankLog() {
               </div>
             )}
 
+            {!loadingData && view === "brewery" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {tanks.map((t) => {
+                  const inUseCount = batches.filter((b) => b.tankId === t.id).length;
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                        background: "#1F2422",
+                        border: "1px solid #2C332F",
+                        borderRadius: 6,
+                        padding: "14px 16px",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#EDE7D9", margin: 0 }}>
+                          {t.name}
+                        </h3>
+                        <div style={{ color: "#8A9591", fontSize: 12.5, marginTop: 3 }}>
+                          {t.capacity}L{inUseCount > 0 ? ` · in use by ${inUseCount} batch${inUseCount !== 1 ? "es" : ""}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                        <button
+                          onClick={() => setEditTankTarget(t)}
+                          style={{ background: "none", border: "1px solid #2C332F", borderRadius: 4, color: "#8A9591", cursor: "pointer", padding: 6 }}
+                        >
+                          <Settings size={14} />
+                        </button>
+                        {inUseCount === 0 && (
+                          <button
+                            onClick={() => setDeleteTankTarget(t)}
+                            style={{ background: "none", border: "1px solid #4A3420", borderRadius: 4, color: "#C17A3D", cursor: "pointer", padding: 6 }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {tanks.length === 0 && (
+                  <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                    No tanks set up yet. Add your fermenters and conditioning vessels so batches can be assigned to them.
+                  </div>
+                )}
+              </div>
+            )}
+
             {!loadingData && view === "settings" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
                 <div>
@@ -3241,45 +3462,6 @@ export default function TankLog() {
                   <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px" }}>
                     <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Name</div>
                     <div style={{ color: "#EDE7D9", fontSize: 17, fontFamily: "'Oswald', sans-serif", marginTop: 2 }}>{companyName || "—"}</div>
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>
-                      Tanks ({tanks.length})
-                    </div>
-                    <button
-                      onClick={() => setShowAddTank(true)}
-                      style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
-                    >
-                      + Add tank
-                    </button>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {tanks.map((t) => (
-                      <div
-                        key={t.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "10px 14px",
-                          background: "#1B1F1D",
-                          border: "1px solid #262C29",
-                          borderRadius: 5,
-                          fontSize: 13.5,
-                        }}
-                      >
-                        <span style={{ color: "#EDE7D9" }}>{t.name}</span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 12 }}>{t.capacity}L</span>
-                      </div>
-                    ))}
-                    {tanks.length === 0 && (
-                      <div style={{ color: "#5C6B63", fontSize: 13, padding: "8px 2px" }}>
-                        No tanks set up yet — add your fermenters and conditioning vessels so batches can be assigned to them.
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -3365,6 +3547,7 @@ export default function TankLog() {
             onEditBrewDay={setBrewDayTarget}
             onOpenPackaging={setPackagingTarget}
             onDiscardRemaining={setDiscardTarget}
+            onAssignTank={setAssignTankTarget}
           />
         )}
 
@@ -3404,6 +3587,15 @@ export default function TankLog() {
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
       {showAddRecipe && <AddRecipeModal onClose={() => setShowAddRecipe(false)} onAdd={addRecipe} />}
       {showAddTank && <AddTankModal onClose={() => setShowAddTank(false)} onAdd={addTank} />}
+      {editTankTarget && (
+        <EditTankModal tank={editTankTarget} onClose={() => setEditTankTarget(null)} onSave={updateTank} />
+      )}
+      {deleteTankTarget && (
+        <ConfirmDeleteTankModal tank={deleteTankTarget} onClose={() => setDeleteTankTarget(null)} onConfirm={deleteTank} />
+      )}
+      {assignTankTarget && (
+        <AssignTankModal batch={assignTankTarget} tanks={tanks} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
+      )}
       {logTarget && (
         <LogReadingModal batch={logTarget} onClose={() => setLogTarget(null)} onLog={logReading} />
       )}
