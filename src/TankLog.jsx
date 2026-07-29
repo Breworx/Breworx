@@ -117,6 +117,17 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 
+function formatHistoryStamp(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const datePart = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const hasTime = typeof dateStr === "string" && dateStr.includes("T");
+  if (!hasTime) return datePart;
+  const timePart = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${datePart}, ${timePart}`;
+}
+
 // The seed* functions below are no longer used now that data loads from
 // Supabase — kept only as a reference for the shape each table's rows take.
 function seedBatches() {
@@ -655,7 +666,49 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust }) {
+function AdjustInventoryModal({ item, onClose, onSave }) {
+  const [delta, setDelta] = useState("");
+  const [batchRef, setBatchRef] = useState("");
+
+  const submit = () => {
+    const d = Number(delta);
+    if (!d) return;
+    onSave(item.id, d, batchRef.trim());
+    onClose();
+  };
+
+  return (
+    <Modal title={`Log adjustment — ${item.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <NumberField label={`Change (${item.unit} — use a minus sign to subtract)`} value={delta} onChange={setDelta} step="0.01" />
+        <TextField label="Batch ID (optional)" value={batchRef} onChange={setBatchRef} />
+        <div style={{ color: "#5C6B63", fontSize: 12 }}>
+          Add a batch number here if this adjustment relates to a specific batch — it'll show in the history entry.
+        </div>
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 4,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Log adjustment
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
   const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
@@ -727,6 +780,24 @@ function InventoryItemDetail({ item, onBack, onAdjust }) {
         </button>
       </div>
 
+      <button
+        onClick={() => onLogAdjustment(item)}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "1px solid #2C332F",
+          borderRadius: 5,
+          padding: "10px",
+          color: "#8A9591",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginBottom: 22,
+        }}
+      >
+        Log adjustment with a batch ID
+      </button>
+
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
         History
       </div>
@@ -759,7 +830,8 @@ function InventoryItemDetail({ item, onBack, onAdjust }) {
                 {h.delta >= 0 ? "+" : ""}
                 {h.delta} {item.unit}
               </div>
-              <div style={{ color: "#5C6B63", fontSize: 10.5, marginTop: 2 }}>{h.date}</div>
+              <div style={{ color: "#5C6B63", fontSize: 10.5, marginTop: 2 }}>{formatHistoryStamp(h.date)}</div>
+              {h.user && <div style={{ color: "#5C6B63", fontSize: 10.5, marginTop: 1 }}>{h.user}</div>}
             </div>
           </div>
         ))}
@@ -3296,6 +3368,8 @@ export default function TankLog() {
   const [inventory, setInventory] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
+  const [adjustTarget, setAdjustTarget] = useState(null);
+  const [adjustTarget, setAdjustTarget] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showAddPO, setShowAddPO] = useState(false);
@@ -3432,7 +3506,8 @@ export default function TankLog() {
         const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
         const historyEntry = {
           id: uid(),
-          date: today(),
+          date: new Date().toISOString(),
+          user: user.name,
           type: "batch",
           delta: actualDelta,
           note: `${b.name} (#${b.number})`,
@@ -3498,7 +3573,26 @@ export default function TankLog() {
     if (!item) return;
     const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
     const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
-    const historyEntry = { id: uid(), date: today(), type: "manual", delta: actualDelta, note: "Manual adjustment" };
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "manual", delta: actualDelta, note: "Manual adjustment" };
+    const newHistory = [...(item.history || []), historyEntry];
+    const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
+    if (error) return console.error(error);
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
+  };
+
+  const adjustInventoryWithNote = async (id, delta, batchRef) => {
+    const item = inventory.find((it) => it.id === id);
+    if (!item) return;
+    const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
+    const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+    const historyEntry = {
+      id: uid(),
+      date: new Date().toISOString(),
+      user: user.name,
+      type: "manual",
+      delta: actualDelta,
+      note: batchRef ? `Manual adjustment — Batch ${batchRef}` : "Manual adjustment",
+    };
     const newHistory = [...(item.history || []), historyEntry];
     const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
     if (error) return console.error(error);
@@ -3519,7 +3613,7 @@ export default function TankLog() {
     for (const line of po.lines) {
       const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
       const lotEntry = { id: uid(), lotNumber: line.lotNumber || "no lot #", qty: line.qty, date: today(), poNumber: po.poNumber };
-      const historyEntry = { id: uid(), date: today(), type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
 
       if (idx >= 0) {
         const item = nextInventory[idx];
@@ -4117,6 +4211,7 @@ export default function TankLog() {
             item={selectedInventoryItem}
             onBack={() => setSelectedInventoryId(null)}
             onAdjust={adjustInventory}
+            onLogAdjustment={setAdjustTarget}
           />
         )}
         </div>
@@ -4155,6 +4250,12 @@ export default function TankLog() {
       )}
       {deleteRecipeTarget && (
         <ConfirmDeleteRecipeModal recipe={deleteRecipeTarget} onClose={() => setDeleteRecipeTarget(null)} onConfirm={deleteRecipe} />
+      )}
+      {adjustTarget && (
+        <AdjustInventoryModal item={adjustTarget} onClose={() => setAdjustTarget(null)} onSave={adjustInventoryWithNote} />
+      )}
+      {adjustTarget && (
+        <AdjustInventoryModal item={adjustTarget} onClose={() => setAdjustTarget(null)} onSave={adjustInventoryWithNote} />
       )}
       {assignTankTarget && (
         <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
