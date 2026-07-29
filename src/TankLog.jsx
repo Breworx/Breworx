@@ -836,8 +836,8 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
   const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
   const history = [...(item.history || [])].reverse();
 
-  const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received" };
-  const typeColor = { batch: "#C17A3D", manual: "#8A9591", received: "#7FA35C" };
+  const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)" };
+  const typeColor = { batch: "#C17A3D", manual: "#8A9591", received: "#7FA35C", restored: "#7FA35C" };
 
   return (
     <div>
@@ -1138,9 +1138,9 @@ function ConfirmDeleteBatchModal({ batch, onClose, onConfirm }) {
             lineHeight: 1.5,
           }}
         >
-          This permanently removes batch #{batch.number} and all its readings, packaging history, and schedule. Any
-          ingredients already deducted for this batch stay deducted — inventory isn't restored automatically. If you
-          need it back, use "Log adjustment with a batch ID" on the ingredient afterward. This can't be undone.
+          This permanently removes batch #{batch.number} and all its readings, packaging history, and schedule.
+          Any ingredients this batch used will be added back to inventory automatically, restoring the specific
+          lots they were drawn from. This can't be undone.
         </div>
         <TextField label='Type "DELETE" to confirm' value={confirmText} onChange={setConfirmText} />
         <button
@@ -4439,6 +4439,50 @@ export default function TankLog() {
   };
 
   const deleteBatch = async (id) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const batchTag = `${batch.name} (#${batch.number})`;
+
+    let nextInventory = [...inventory];
+    for (let i = 0; i < nextInventory.length; i++) {
+      const item = nextInventory[i];
+      const usageEntries = (item.history || []).filter((h) => h.type === "batch" && h.note === batchTag);
+      if (usageEntries.length === 0) continue;
+
+      let qty = item.qty;
+      let lots = [...(item.lots || [])];
+      const restoreHistory = [];
+
+      usageEntries.forEach((entry) => {
+        const restoreQty = Math.round(-entry.delta * 100) / 100;
+        qty = Math.round((qty + restoreQty) * 100) / 100;
+        (entry.lots || []).forEach((used) => {
+          lots = lots.map((lot) =>
+            lot.lotNumber === used.lotNumber
+              ? { ...lot, remainingQty: Math.min(lot.qty, Math.round(((lot.remainingQty ?? lot.qty) + used.qty) * 100) / 100) }
+              : lot
+          );
+        });
+        restoreHistory.push({
+          id: uid(),
+          date: new Date().toISOString(),
+          user: user.name,
+          type: "restored",
+          delta: restoreQty,
+          note: `Batch deleted — ${batchTag}`,
+        });
+      });
+
+      const newHistory = [...(item.history || []), ...restoreHistory];
+      const { error: invError } = await supabase.from("inventory_items").update({ qty, lots, history: newHistory }).eq("id", item.id);
+      if (invError) {
+        console.error(invError);
+        continue;
+      }
+      nextInventory[i] = { ...item, qty, lots, history: newHistory };
+    }
+    setInventory(nextInventory);
+
     const { error } = await supabase.from("batches").delete().eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.filter((b) => b.id !== id));
