@@ -2804,21 +2804,53 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                   </select>
                 </label>
                 {noSingleTankFits && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#C17A3D", fontSize: 12, marginTop: 6 }}>
-                    <AlertTriangle size={12} />
-                    No single free tank holds {volume}L —{" "}
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#C17A3D", fontSize: 12, marginBottom: 8 }}>
+                      <AlertTriangle size={12} />
+                      No single free tank holds {volume}L.
+                    </div>
                     <button
                       onClick={() => setSplitMode(true)}
-                      style={{ background: "none", border: "none", color: "#C17A3D", textDecoration: "underline", cursor: "pointer", padding: 0, fontSize: 12 }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 7,
+                        width: "100%",
+                        background: "#241D14",
+                        border: "1px solid #4A3420",
+                        borderRadius: 5,
+                        padding: "10px",
+                        color: "#C17A3D",
+                        fontFamily: "'Oswald', sans-serif",
+                        fontWeight: 500,
+                        fontSize: 13.5,
+                        cursor: "pointer",
+                      }}
                     >
-                      split across multiple tanks
+                      Split across multiple tanks
                     </button>
                   </div>
                 )}
                 {!noSingleTankFits && (
                   <button
                     onClick={() => setSplitMode(true)}
-                    style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", padding: 0, fontSize: 11.5, marginTop: 6, display: "block" }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 7,
+                      width: "100%",
+                      background: "#242B27",
+                      border: "1px solid #3A413D",
+                      borderRadius: 5,
+                      padding: "9px",
+                      color: "#EDE7D9",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      marginTop: 8,
+                    }}
                   >
                     Split this batch across multiple tanks instead
                   </button>
