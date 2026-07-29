@@ -801,6 +801,39 @@ function EditTankModal({ tank, onClose, onSave }) {
   );
 }
 
+function ConfirmDeleteRecipeModal({ recipe, onClose, onConfirm }) {
+  return (
+    <Modal title={`Delete ${recipe.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13 }}>
+          This removes the recipe from your list. Batches already brewed from it keep their own copy of the
+          ingredients and details, so nothing on past batches is affected. This can't be undone.
+        </div>
+        <button
+          onClick={() => {
+            onConfirm(recipe.id);
+            onClose();
+          }}
+          style={{
+            background: "#B5502F",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#EDE7D9",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Delete recipe
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
   return (
     <Modal title={`Delete ${tank.name}`} onClose={onClose}>
@@ -1497,7 +1530,7 @@ function AddRecipeModal({ onClose, onAdd }) {
   );
 }
 
-function RecipeDetail({ recipe, inventory, onBack, onBrew }) {
+function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete }) {
   const shortages = recipe.ingredients.filter((ing) => {
     const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
     return !stock || stock.qty < ing.qty;
@@ -1605,6 +1638,24 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew }) {
         }}
       >
         <Beaker size={16} /> Brew this recipe
+      </button>
+
+      <button
+        onClick={() => onDelete(recipe)}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "1px solid #4A3420",
+          borderRadius: 5,
+          padding: "11px",
+          color: "#C17A3D",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginTop: 10,
+        }}
+      >
+        Delete recipe
       </button>
     </div>
   );
@@ -1718,6 +1769,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [preBoilGravity, setPreBoilGravity] = useState("");
   const [topUpWater, setTopUpWater] = useState("");
   const [tankId, setTankId] = useState("");
+  const [nameFocused, setNameFocused] = useState(false);
 
   const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
 
@@ -1732,6 +1784,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       setFg(r.fg);
     }
   };
+
+  const nameMatches =
+    name.trim().length === 0
+      ? recipes
+      : recipes.filter((r) => r.name.toLowerCase().includes(name.trim().toLowerCase()));
 
   const submit = () => {
     if (!name.trim()) return;
@@ -1763,35 +1820,6 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   return (
     <Modal title="New Batch" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {recipes.length > 0 && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
-              Base on recipe (optional)
-            </span>
-            <select
-              value={recipeId}
-              onChange={(e) => applyRecipe(e.target.value)}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "#16191A",
-                border: "1px solid #2C332F",
-                borderRadius: 4,
-                padding: "9px 10px",
-                color: "#EDE7D9",
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 14,
-              }}
-            >
-              <option value="">None — start from scratch</option>
-              {recipes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         {tanks.length > 0 && (
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
@@ -1825,7 +1853,89 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
             </select>
           </label>
         )}
-        <TextField label="Batch name" value={name} onChange={setName} />
+        <div style={{ position: "relative" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
+              Batch name — pick a recipe or type your own
+            </span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setRecipeId("");
+              }}
+              onFocus={() => setNameFocused(true)}
+              onBlur={() => setTimeout(() => setNameFocused(false), 150)}
+              placeholder="e.g. Foghorn Amber"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#16191A",
+                border: "1px solid #2C332F",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#EDE7D9",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            />
+          </label>
+          {nameFocused && recipes.length > 0 && nameMatches.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                marginTop: 4,
+                maxHeight: 220,
+                overflowY: "auto",
+                background: "#1B1F1D",
+                border: "1px solid #2C332F",
+                borderRadius: 6,
+                zIndex: 20,
+              }}
+            >
+              {nameMatches.map((r) => (
+                <button
+                  key={r.id}
+                  onMouseDown={() => {
+                    applyRecipe(r.id);
+                    setNameFocused(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "none",
+                    border: "none",
+                    borderBottom: "1px solid #262C29",
+                    padding: "9px 10px",
+                    color: "#EDE7D9",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>{r.name}</span>
+                  <span
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 11,
+                      color: "#5C6B63",
+                      marginLeft: 8,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {r.style}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <TextField label="Style" value={style} onChange={setStyle} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
@@ -2972,6 +3082,7 @@ export default function TankLog() {
   const [showAddTank, setShowAddTank] = useState(false);
   const [editTankTarget, setEditTankTarget] = useState(null);
   const [deleteTankTarget, setDeleteTankTarget] = useState(null);
+  const [deleteRecipeTarget, setDeleteRecipeTarget] = useState(null);
   const [assignTankTarget, setAssignTankTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -3096,6 +3207,13 @@ export default function TankLog() {
     const { data, error } = await supabase.from("recipes").insert(recipeToRow(r, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
     setRecipes((prev) => [rowToRecipe(data), ...prev]);
+  };
+
+  const deleteRecipe = async (id) => {
+    const { error } = await supabase.from("recipes").delete().eq("id", id);
+    if (error) return console.error(error);
+    setRecipes((prev) => prev.filter((r) => r.id !== id));
+    setSelectedRecipeId(null);
   };
 
   const addTank = async (t) => {
@@ -3742,6 +3860,7 @@ export default function TankLog() {
               setSelectedRecipeId(null);
               setShowAdd(true);
             }}
+            onDelete={setDeleteRecipeTarget}
           />
         )}
         </div>
@@ -3770,6 +3889,9 @@ export default function TankLog() {
       )}
       {deleteTankTarget && (
         <ConfirmDeleteTankModal tank={deleteTankTarget} onClose={() => setDeleteTankTarget(null)} onConfirm={deleteTank} />
+      )}
+      {deleteRecipeTarget && (
+        <ConfirmDeleteRecipeModal recipe={deleteRecipeTarget} onClose={() => setDeleteRecipeTarget(null)} onConfirm={deleteRecipe} />
       )}
       {assignTankTarget && (
         <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
