@@ -600,20 +600,61 @@ function SelectField({ label, value, onChange, options }) {
 }
 
 function AddTankModal({ onClose, onAdd }) {
-  const [name, setName] = useState("");
-  const [capacity, setCapacity] = useState(20);
+  const [rows, setRows] = useState([{ id: uid(), name: "Tank 1", capacity: 20 }]);
+
+  const applyCount = (raw) => {
+    const num = Math.max(1, Math.min(50, parseInt(raw, 10) || 1));
+    setRows((prev) => {
+      if (num === prev.length) return prev;
+      if (num < prev.length) return prev.slice(0, num);
+      const next = [...prev];
+      const lastCapacity = prev[prev.length - 1]?.capacity ?? 20;
+      while (next.length < num) {
+        next.push({ id: uid(), name: `Tank ${next.length + 1}`, capacity: lastCapacity });
+      }
+      return next;
+    });
+  };
+
+  const updateRow = (id, patch) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   const submit = () => {
-    if (!name.trim()) return;
-    onAdd({ id: uid(), name: name.trim(), capacity: Number(capacity) || 0 });
+    const clean = rows.filter((r) => r.name.trim());
+    if (clean.length === 0) return;
+    clean.forEach((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0 }));
     onClose();
   };
 
   return (
-    <Modal title="New tank" onClose={onClose}>
+    <Modal title="Set up your tanks" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <TextField label="Tank name" value={name} onChange={setName} />
-        <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
+        <NumberField
+          label="How many tanks do you have?"
+          value={rows.length}
+          onChange={applyCount}
+          step="1"
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows.map((row, i) => (
+            <div
+              key={row.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 100px",
+                gap: 8,
+                background: "#16191A",
+                border: "1px solid #2C332F",
+                borderRadius: 6,
+                padding: "10px 10px",
+              }}
+            >
+              <TextField label={`Tank ${i + 1} ID`} value={row.name} onChange={(v) => updateRow(row.id, { name: v })} />
+              <NumberField label="Litres" value={row.capacity} onChange={(v) => updateRow(row.id, { capacity: v })} step="1" />
+            </div>
+          ))}
+        </div>
+
         <button
           onClick={submit}
           style={{
@@ -630,7 +671,7 @@ function AddTankModal({ onClose, onAdd }) {
             cursor: "pointer",
           }}
         >
-          Add tank
+          Add {rows.length} tank{rows.length !== 1 ? "s" : ""}
         </button>
       </div>
     </Modal>
@@ -2311,6 +2352,101 @@ function HomeView({
 
 const item_qty = (it) => (Number.isInteger(it.qty) ? it.qty : it.qty.toFixed(2));
 
+function EmailConfirmedScreen({ onContinue }) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#16191A",
+        fontFamily: "'Inter', sans-serif",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 18px",
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        button:focus-visible { outline: 2px solid #C17A3D; outline-offset: 2px; }
+      `}</style>
+      <div style={{ width: "100%", maxWidth: 360, textAlign: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 22 }}>
+          <div
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: "50%",
+              background: "#1F2422",
+              border: "1px solid #2C332F",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 14,
+            }}
+          >
+            <BreworxMark size={50} />
+          </div>
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12,
+              letterSpacing: "0.09em",
+              textTransform: "uppercase",
+              color: "#C17A3D",
+              marginBottom: 6,
+            }}
+          >
+            Brewpoint
+          </span>
+        </div>
+
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: "#1A2318",
+            border: "1px solid #33452C",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 16px",
+          }}
+        >
+          <CheckCircle2 size={22} color="#7FA35C" />
+        </div>
+
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#EDE7D9", margin: "0 0 8px", fontWeight: 500 }}>
+          Email confirmed
+        </h1>
+        <p style={{ color: "#8A9591", fontSize: 14, lineHeight: 1.5, margin: "0 0 26px" }}>
+          Thanks for confirming your email. Your account's ready to go — log in below to get into your brewery.
+        </p>
+
+        <button
+          onClick={onContinue}
+          style={{
+            width: "100%",
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Continue to sign in
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AuthScreen() {
   const [mode, setMode] = useState("signin");
   const [companyName, setCompanyName] = useState("");
@@ -2489,6 +2625,10 @@ function AuthScreen() {
 
 export default function TankLog() {
   const [session, setSession] = useState(undefined); // undefined = not checked yet, null = signed out
+  const [justConfirmedEmail, setJustConfirmedEmail] = useState(() => {
+    const hash = window.location.hash || "";
+    return hash.includes("type=signup") || hash.includes("type=invite") || hash.includes("type=email_change");
+  });
   const [loadingData, setLoadingData] = useState(false);
   const [view, setView] = useState("home");
   const [batches, setBatches] = useState([]);
@@ -2523,6 +2663,15 @@ export default function TankLog() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Confirmation links auto-sign the user in via the token in the URL —
+  // strip it out and sign back out so they land on a proper sign-in
+  // screen instead of skipping straight past it.
+  useEffect(() => {
+    if (!justConfirmedEmail) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    supabase.auth.signOut();
+  }, [justConfirmedEmail]);
 
   const user = session
     ? { id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name || session.user.email.split("@")[0] }
@@ -2766,6 +2915,10 @@ export default function TankLog() {
   const conditioningBatches = batches.filter((b) => b.stage === "Conditioning");
   const inProgressBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) > 0);
   const packagedBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) === 0);
+
+  if (justConfirmedEmail) {
+    return <EmailConfirmedScreen onContinue={() => setJustConfirmedEmail(false)} />;
+  }
 
   if (session === undefined) {
     return (
