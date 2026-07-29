@@ -239,6 +239,12 @@ const BA_STYLES = [
   { category: "Hybrid/Mixed Lagers or Ales", styles: ["Session Beer", "American-Style Cream Ale", "California Common Beer", "Kentucky Common Beer", "American-Style Wheat Beer", "Kellerbier or Zwickelbier", "American-Style Fruit Beer", "Fruit Wheat Beer", "Belgian-Style Fruit Beer", "Field Beer", "Pumpkin Spice Beer", "Pumpkin/Squash Beer", "Chocolate or Cocoa Beer", "Dessert Stout or Pastry Beer", "Coffee Beer", "Chili Pepper Beer", "Herb and Spice Beer", "Specialty Beer", "Specialty Honey Beer", "Rye Beer", "Brett Beer", "Mixed-Culture Brett Beer", "Ginjo Beer or Sake-Yeast Beer", "Fresh Hop Beer", "Wood- and Barrel-Aged Beer", "Wood- and Barrel-Aged Sour Beer", "Aged Beer", "Experimental Beer", "Experimental India Pale Ale", "Historical Beer", "Wild Beer", "Smoke Beer", "Other Strong Ale or Lager", "Gluten-Free Beer", "Non-Alcohol Malt Beverage"] },
 ];
 
+// Flattened, searchable version of both guides for the style search field.
+const ALL_STYLES = [
+  ...BJCP_STYLES.flatMap((g) => g.styles.map((s) => ({ name: s, source: "BJCP" }))),
+  ...BA_STYLES.flatMap((g) => g.styles.map((s) => ({ name: s, source: "BA" }))),
+];
+
 const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
 
 const CATEGORY_COLOR = {
@@ -1282,7 +1288,7 @@ function RecipeCard({ recipe, onOpen }) {
 function AddRecipeModal({ onClose, onAdd }) {
   const [name, setName] = useState("");
   const [style, setStyle] = useState("");
-  const [useCustomStyle, setUseCustomStyle] = useState(false);
+  const [styleFocused, setStyleFocused] = useState(false);
   const [volume, setVolume] = useState(20);
   const [og, setOg] = useState(1.05);
   const [fg, setFg] = useState(1.01);
@@ -1295,6 +1301,11 @@ function AddRecipeModal({ onClose, onAdd }) {
     setIngredients((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
 
   const removeLine = (id) => setIngredients((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const styleMatches =
+    style.trim().length === 0
+      ? []
+      : ALL_STYLES.filter((s) => s.name.toLowerCase().includes(style.trim().toLowerCase())).slice(0, 30);
 
   const submit = () => {
     const clean = ingredients.filter((l) => l.name.trim());
@@ -1315,19 +1326,18 @@ function AddRecipeModal({ onClose, onAdd }) {
     <Modal title="New recipe" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Recipe name" value={name} onChange={setName} />
-        {!useCustomStyle ? (
+        <div style={{ position: "relative" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>Style</span>
-            <select
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
+              Style — search BJCP & BA guides, or type your own
+            </span>
+            <input
+              type="text"
               value={style}
-              onChange={(e) => {
-                if (e.target.value === "__custom__") {
-                  setUseCustomStyle(true);
-                  setStyle("");
-                } else {
-                  setStyle(e.target.value);
-                }
-              }}
+              onChange={(e) => setStyle(e.target.value)}
+              onFocus={() => setStyleFocused(true)}
+              onBlur={() => setTimeout(() => setStyleFocused(false), 150)}
+              placeholder="e.g. American IPA"
               style={{
                 width: "100%",
                 boxSizing: "border-box",
@@ -1339,40 +1349,63 @@ function AddRecipeModal({ onClose, onAdd }) {
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 14,
               }}
-            >
-              <option value="">Select a style…</option>
-              {BJCP_STYLES.map((g) => (
-                <optgroup key={`bjcp-${g.category}`} label={`BJCP: ${g.category}`}>
-                  {g.styles.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {BA_STYLES.map((g) => (
-                <optgroup key={`ba-${g.category}`} label={`BA: ${g.category}`}>
-                  {g.styles.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              <option value="__custom__">Other / not listed (type your own)</option>
-            </select>
+            />
           </label>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <TextField label="Style (custom)" value={style} onChange={setStyle} />
-            <button
-              onClick={() => setUseCustomStyle(false)}
-              style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, textAlign: "left" }}
+          {styleFocused && styleMatches.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                marginTop: 4,
+                maxHeight: 220,
+                overflowY: "auto",
+                background: "#1B1F1D",
+                border: "1px solid #2C332F",
+                borderRadius: 6,
+                zIndex: 20,
+              }}
             >
-              Choose from style list instead
-            </button>
-          </div>
-        )}
+              {styleMatches.map((s) => (
+                <button
+                  key={`${s.source}-${s.name}`}
+                  onMouseDown={() => {
+                    setStyle(s.name);
+                    setStyleFocused(false);
+                  }}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "none",
+                    border: "none",
+                    borderBottom: "1px solid #262C29",
+                    padding: "9px 10px",
+                    color: "#EDE7D9",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>{s.name}</span>
+                  <span
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 10,
+                      color: "#5C6B63",
+                      marginLeft: 8,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {s.source}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Batch volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
           <NumberField label="Target OG" value={og} onChange={setOg} step="0.001" />
