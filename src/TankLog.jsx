@@ -184,6 +184,61 @@ function seedBatches() {
     },
   ];
 }
+// BJCP 2021 Beer Style Guidelines (current edition) — full style list,
+// grouped by category as published at bjcp.org.
+const BJCP_STYLES = [
+  { category: "1. Standard American Beer", styles: ["1A. American Light Lager", "1B. American Lager", "1C. Cream Ale", "1D. American Wheat Beer"] },
+  { category: "2. International Lager", styles: ["2A. International Pale Lager", "2B. International Amber Lager", "2C. International Dark Lager"] },
+  { category: "3. Czech Lager", styles: ["3A. Czech Pale Lager", "3B. Czech Premium Pale Lager", "3C. Czech Amber Lager", "3D. Czech Dark Lager"] },
+  { category: "4. Pale Malty European Lager", styles: ["4A. Munich Helles", "4B. Festbier", "4C. Helles Bock"] },
+  { category: "5. Pale Bitter European Beer", styles: ["5A. German Leichtbier", "5B. Kölsch", "5C. German Helles Exportbier", "5D. German Pils"] },
+  { category: "6. Amber Malty European Lager", styles: ["6A. Märzen", "6B. Rauchbier", "6C. Dunkles Bock"] },
+  { category: "7. Amber Bitter European Beer", styles: ["7A. Vienna Lager", "7B. Altbier"] },
+  { category: "8. Dark European Lager", styles: ["8A. Munich Dunkel", "8B. Schwarzbier"] },
+  { category: "9. Strong European Beer", styles: ["9A. Doppelbock", "9B. Eisbock", "9C. Baltic Porter"] },
+  { category: "10. German Wheat Beer", styles: ["10A. Weissbier", "10B. Dunkles Weissbier", "10C. Weizenbock"] },
+  { category: "11. British Bitter", styles: ["11A. Ordinary Bitter", "11B. Best Bitter", "11C. Strong Bitter"] },
+  { category: "12. Pale Commonwealth Beer", styles: ["12A. British Golden Ale", "12B. Australian Sparkling Ale", "12C. English IPA"] },
+  { category: "13. Brown British Beer", styles: ["13A. Dark Mild", "13B. British Brown Ale", "13C. English Porter"] },
+  { category: "14. Scottish Ale", styles: ["14A. Scottish Light", "14B. Scottish Heavy", "14C. Scottish Export"] },
+  { category: "15. Irish Beer", styles: ["15A. Irish Red Ale", "15B. Irish Stout", "15C. Irish Extra Stout"] },
+  { category: "16. Dark British Beer", styles: ["16A. Sweet Stout", "16B. Oatmeal Stout", "16C. Tropical Stout", "16D. Foreign Extra Stout"] },
+  { category: "17. Strong British Ale", styles: ["17A. British Strong Ale", "17B. Old Ale", "17C. Wee Heavy", "17D. English Barleywine"] },
+  { category: "18. Pale American Ale", styles: ["18A. Blonde Ale", "18B. American Pale Ale"] },
+  { category: "19. Amber and Brown American Beer", styles: ["19A. American Amber Ale", "19B. California Common", "19C. American Brown Ale"] },
+  { category: "20. American Porter and Stout", styles: ["20A. American Porter", "20B. American Stout", "20C. Imperial Stout"] },
+  { category: "21. IPA", styles: ["21A. American IPA", "21B. Specialty IPA", "21C. Hazy IPA"] },
+  { category: "22. Strong American Ale", styles: ["22A. Double IPA", "22B. American Strong Ale", "22C. American Barleywine", "22D. Wheatwine"] },
+  { category: "23. European Sour Ale", styles: ["23A. Berliner Weisse", "23B. Flanders Red Ale", "23C. Oud Bruin", "23D. Lambic", "23E. Gueuze", "23F. Fruit Lambic", "23G. Gose"] },
+  { category: "24. Belgian Ale", styles: ["24A. Witbier", "24B. Belgian Pale Ale", "24C. Bière de Garde"] },
+  { category: "25. Strong Belgian Ale", styles: ["25A. Belgian Blond Ale", "25B. Saison", "25C. Belgian Golden Strong Ale"] },
+  { category: "26. Monastic Ale", styles: ["26A. Belgian Single", "26B. Belgian Dubbel", "26C. Belgian Tripel", "26D. Belgian Dark Strong Ale"] },
+  { category: "27. Historical Beer", styles: ["Kellerbier", "Kentucky Common", "Lichtenhainer", "London Brown Ale", "Piwo Grodziskie", "Pre-Prohibition Lager", "Pre-Prohibition Porter", "Roggenbier", "Sahti"] },
+  { category: "28. American Wild Ale", styles: ["28A. Brett Beer", "28B. Mixed-Fermentation Sour Beer", "28C. Wild Specialty Beer", "28D. Straight Sour Beer"] },
+  { category: "29. Fruit Beer", styles: ["29A. Fruit Beer", "29B. Fruit and Spice Beer", "29C. Specialty Fruit Beer", "29D. Grape Ale"] },
+  { category: "30. Spiced Beer", styles: ["30A. Spice, Herb, or Vegetable Beer", "30B. Autumn Seasonal Beer", "30C. Winter Seasonal Beer", "30D. Specialty Spice Beer"] },
+  { category: "31. Alternative Fermentables Beer", styles: ["31A. Alternative Grain Beer", "31B. Alternative Sugar Beer"] },
+  { category: "32. Smoked Beer", styles: ["32A. Classic Style Smoked Beer", "32B. Specialty Smoked Beer"] },
+  { category: "33. Wood Beer", styles: ["33A. Wood-Aged Beer", "33B. Specialty Wood-Aged Beer"] },
+  { category: "34. Specialty Beer", styles: ["34A. Commercial Specialty Beer", "34B. Mixed-Style Beer", "34C. Experimental Beer"] },
+  { category: "Local Styles", styles: ["X1. Dorada Pampeana", "X2. IPA Argenta", "X3. Italian Grape Ale", "X4. Catharina Sour", "X5. New Zealand Pilsner"] },
+];
+
+// Brewers Association 2026 Beer Style Guidelines (current edition,
+// updated 12/31/2025) — full style list, grouped as published.
+const BA_STYLES = [
+  { category: "British Origin Ale Styles", styles: ["Ordinary Bitter", "Special Bitter or Best Bitter", "Extra Special Bitter", "Scottish-Style Light Ale", "Scottish-Style Heavy Ale", "Scottish-Style Export Ale", "English-Style Summer Ale", "Classic English-Style Pale Ale", "British-Style India Pale Ale", "Strong Ale", "Old Ale", "English-Style Pale Mild Ale", "English-Style Dark Mild Ale", "English-Style Brown Ale", "Brown Porter", "Robust Porter", "Sweet Stout or Cream Stout", "Oatmeal Stout", "Scotch Ale or Wee Heavy", "British-Style Imperial Stout", "British-Style Barley Wine Ale"] },
+  { category: "Irish Origin Ale Styles", styles: ["Irish-Style Red Ale", "Classic Irish-Style Dry Stout", "Export-Style Stout"] },
+  { category: "North American Origin Ale Styles", styles: ["Golden or Blonde Ale", "Session India Pale Ale", "American-Style Amber/Red Ale", "American-Style Pale Ale", "Juicy or Hazy Pale Ale", "American-Style Strong Pale Ale", "Juicy or Hazy Strong Pale Ale", "American-Style India Pale Ale", "West Coast-Style India Pale Ale", "Juicy or Hazy India Pale Ale", "American-Belgo-Style Ale", "American-Style Brown Ale", "American-Style Black Ale", "American-Style Stout", "American-Style Imperial Porter", "American-Style Imperial Stout", "Double Hoppy Red Ale", "Imperial Red Ale", "American-Style Imperial or Double India Pale Ale", "Juicy or Hazy Imperial or Double India Pale Ale", "American-Style Barley Wine Ale", "American-Style Wheat Wine Ale", "Smoke Porter", "American-Style Sour Ale", "American-Style Fruited Sour Ale"] },
+  { category: "German Origin Ale Styles", styles: ["German-Style Koelsch", "German-Style Altbier", "Berliner-Style Weisse", "Leipzig-Style Gose", "Contemporary-Style Gose", "South German-Style Hefeweizen", "South German-Style Kristal Weizen", "German-Style Leichtes Weizen", "South German-Style Bernsteinfarbenes Weizen", "South German-Style Dunkel Weizen", "South German-Style Weizenbock", "German-Style Rye Ale", "Bamberg-Style Weiss Rauchbier"] },
+  { category: "Belgian and French Origin Ale Styles", styles: ["Belgian-Style Table Beer", "Belgian-Style Session Ale", "Belgian-Style Speciale Belge", "Belgian-Style Blonde Ale", "Belgian-Style Strong Blonde Ale", "Belgian-Style Strong Dark Ale", "Belgian-Style Dubbel", "Belgian-Style Tripel", "Belgian-Style Quadrupel", "Belgian-Style Witbier", "Classic French & Belgian-Style Saison", "Specialty Saison", "French-Style Bière de Garde", "Belgian-Style Flanders Oud Bruin or Oud Red Ale", "Belgian-Style Lambic", "Traditional Belgian-Style Gueuze", "Contemporary Belgian-Style Spontaneous Fermented Ale", "Belgian-Style Fruit Lambic", "Other Belgian-Style Ale"] },
+  { category: "Other Origin Ale Styles", styles: ["Grodziskie", "Adambier", "Dutch-Style Kuit, Kuyt or Koyt", "International-Style Pale Ale", "Classic Australian-Style Pale Ale", "Australian-Style Pale Ale", "New Zealand-Style Pale Ale", "New Zealand-Style India Pale Ale", "Finnish-Style Sahti", "Swedish-Style Gotlandsdricke", "Breslau-Style Schoeps"] },
+  { category: "European Origin Lager Styles", styles: ["Baltic-Style Porter", "Czech-Style Pale Lager", "Czech-Style Amber Lager", "Czech-Style Dark Lager", "Italian-Style Pilsener", "Vienna-Style Lager", "German-Style Leichtbier", "German-Style Pilsener", "Munich-Style Helles", "Dortmunder/European-Style Export", "Franconian-Style Rotbier", "German-Style Maerzen", "German-Style Oktoberfest/Festbier", "Munich-Style Dunkel", "European-Style Dark Lager", "German-Style Schwarzbier", "Bamberg-Style Helles Rauchbier", "Bamberg-Style Maerzen Rauchbier", "Bamberg-Style Bock Rauchbier", "German-Style Heller Bock/Maibock", "Traditional German-Style Bock", "German-Style Doppelbock", "German-Style Eisbock"] },
+  { category: "North American Origin Lager Styles", styles: ["American-Style Lager", "Contemporary American-Style Lager", "American-Style Light Lager", "Contemporary American-Style Light Lager", "American-Style Pilsener", "Contemporary American-Style Pilsener", "American-Style India Pale Lager", "American-Style Malt Liquor", "American-Style Amber Lager", "American-Style Maerzen/Oktoberfest", "American-Style Dark Lager", "Mexican-Style Light Lager", "Mexican-Style Pale Lager", "Mexican-Style Amber Lager", "Mexican-Style Dark Lager"] },
+  { category: "Other Origin Lager Styles", styles: ["International Light Lager", "International-Style Pilsener", "Rice Lager"] },
+  { category: "Hybrid/Mixed Lagers or Ales", styles: ["Session Beer", "American-Style Cream Ale", "California Common Beer", "Kentucky Common Beer", "American-Style Wheat Beer", "Kellerbier or Zwickelbier", "American-Style Fruit Beer", "Fruit Wheat Beer", "Belgian-Style Fruit Beer", "Field Beer", "Pumpkin Spice Beer", "Pumpkin/Squash Beer", "Chocolate or Cocoa Beer", "Dessert Stout or Pastry Beer", "Coffee Beer", "Chili Pepper Beer", "Herb and Spice Beer", "Specialty Beer", "Specialty Honey Beer", "Rye Beer", "Brett Beer", "Mixed-Culture Brett Beer", "Ginjo Beer or Sake-Yeast Beer", "Fresh Hop Beer", "Wood- and Barrel-Aged Beer", "Wood- and Barrel-Aged Sour Beer", "Aged Beer", "Experimental Beer", "Experimental India Pale Ale", "Historical Beer", "Wild Beer", "Smoke Beer", "Other Strong Ale or Lager", "Gluten-Free Beer", "Non-Alcohol Malt Beverage"] },
+];
+
 const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
 
 const CATEGORY_COLOR = {
@@ -1227,6 +1282,7 @@ function RecipeCard({ recipe, onOpen }) {
 function AddRecipeModal({ onClose, onAdd }) {
   const [name, setName] = useState("");
   const [style, setStyle] = useState("");
+  const [useCustomStyle, setUseCustomStyle] = useState(false);
   const [volume, setVolume] = useState(20);
   const [og, setOg] = useState(1.05);
   const [fg, setFg] = useState(1.01);
@@ -1259,7 +1315,64 @@ function AddRecipeModal({ onClose, onAdd }) {
     <Modal title="New recipe" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Recipe name" value={name} onChange={setName} />
-        <TextField label="Style" value={style} onChange={setStyle} />
+        {!useCustomStyle ? (
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>Style</span>
+            <select
+              value={style}
+              onChange={(e) => {
+                if (e.target.value === "__custom__") {
+                  setUseCustomStyle(true);
+                  setStyle("");
+                } else {
+                  setStyle(e.target.value);
+                }
+              }}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#16191A",
+                border: "1px solid #2C332F",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#EDE7D9",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            >
+              <option value="">Select a style…</option>
+              {BJCP_STYLES.map((g) => (
+                <optgroup key={`bjcp-${g.category}`} label={`BJCP: ${g.category}`}>
+                  {g.styles.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              {BA_STYLES.map((g) => (
+                <optgroup key={`ba-${g.category}`} label={`BA: ${g.category}`}>
+                  {g.styles.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value="__custom__">Other / not listed (type your own)</option>
+            </select>
+          </label>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <TextField label="Style (custom)" value={style} onChange={setStyle} />
+            <button
+              onClick={() => setUseCustomStyle(false)}
+              style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, textAlign: "left" }}
+            >
+              Choose from style list instead
+            </button>
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Batch volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
           <NumberField label="Target OG" value={og} onChange={setOg} step="0.001" />
