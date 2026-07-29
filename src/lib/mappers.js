@@ -120,6 +120,9 @@ export function rowToRecipe(row) {
     fg: row.fg,
     ingredients: row.ingredients || [],
     schedule: row.schedule || [],
+    familyId: row.family_id || row.id,
+    version: row.version || 1,
+    createdAt: row.created_at || null,
   };
 }
 
@@ -135,6 +138,8 @@ export function recipeToRow(recipe, userId, companyId) {
     fg: recipe.fg,
     ingredients: recipe.ingredients || [],
     schedule: recipe.schedule || [],
+    family_id: recipe.familyId,
+    version: recipe.version || 1,
   };
 }
 
