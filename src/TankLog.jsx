@@ -1590,6 +1590,59 @@ function PackagingModal({ batch, onClose, onSave }) {
   );
 }
 
+function DeleteAccountModal({ onClose, onConfirm }) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const canDelete = confirmText.trim().toUpperCase() === "DELETE";
+
+  const submit = async () => {
+    if (!canDelete) return;
+    setBusy(true);
+    await onConfirm();
+  };
+
+  return (
+    <Modal title="Delete account" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div
+          style={{
+            color: "#C17A3D",
+            fontSize: 13,
+            background: "#241D14",
+            border: "1px solid #4A3420",
+            borderRadius: 5,
+            padding: "10px 12px",
+            lineHeight: 1.5,
+          }}
+        >
+          This permanently deletes your login and removes you from the team. It doesn't delete your
+          company's batches, inventory, orders, or recipes — those stay in place for any teammates left
+          on the account. This can't be undone.
+        </div>
+        <TextField label='Type "DELETE" to confirm' value={confirmText} onChange={setConfirmText} />
+        <button
+          onClick={submit}
+          disabled={!canDelete || busy}
+          style={{
+            background: canDelete ? "#B5502F" : "#3A2A22",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: canDelete ? "#EDE7D9" : "#8A6A5A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: canDelete && !busy ? "pointer" : "default",
+          }}
+        >
+          {busy ? "Deleting…" : "Permanently delete my account"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -2040,6 +2093,7 @@ export default function TankLog() {
   const [recipes, setRecipes] = useState([]);
   const [selectedRecipeId, setSelectedRecipeId] = useState(null);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [brewRecipe, setBrewRecipe] = useState(null);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
@@ -2249,6 +2303,16 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ packaging, stage: "Packaged" }).eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging, stage: "Packaged" } : b)));
+  };
+
+  const deleteAccount = async () => {
+    const { error } = await supabase.rpc("delete_my_account");
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setShowDeleteAccount(false);
+    await supabase.auth.signOut();
   };
 
   const activeBatches = batches.filter((b) => b.stage !== "Packaged");
@@ -2562,6 +2626,21 @@ export default function TankLog() {
                 >
                   <LogOut size={15} /> Sign out
                 </button>
+
+                <button
+                  onClick={() => setShowDeleteAccount(true)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#6B4A2F",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    padding: "4px 0",
+                  }}
+                >
+                  Delete account
+                </button>
               </div>
             )}
           </>
@@ -2619,6 +2698,9 @@ export default function TankLog() {
       )}
       {packagingTarget && (
         <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={setPackaging} />
+      )}
+      {showDeleteAccount && (
+        <DeleteAccountModal onClose={() => setShowDeleteAccount(false)} onConfirm={deleteAccount} />
       )}
     </div>
   );
