@@ -3369,7 +3369,6 @@ export default function TankLog() {
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [adjustTarget, setAdjustTarget] = useState(null);
-  const [adjustTarget, setAdjustTarget] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showAddPO, setShowAddPO] = useState(false);
