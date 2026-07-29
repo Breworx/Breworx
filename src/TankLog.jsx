@@ -1177,7 +1177,7 @@ function AddInventoryModal({ onClose, onAdd }) {
 }
 
 function POStatusPill({ status }) {
-  const color = status === "Received" ? "#7FA35C" : "#C17A3D";
+  const color = status === "Received" ? "#7FA35C" : status === "Sent" ? "#C17A3D" : "#8A9591";
   return (
     <span
       style={{
@@ -1268,7 +1268,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
       supplier: supplier.trim(),
       orderDate: today(),
       receivedDate: null,
-      status: "Ordered",
+      status: "Draft",
       lines: cleanLines.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
     });
     onClose();
@@ -1370,7 +1370,14 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
   );
 }
 
-function PODetail({ po, onBack, onReceive }) {
+function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
+  const batchesForLine = (lineName) => {
+    const item = inventory.find((it) => it.name.toLowerCase() === lineName.toLowerCase());
+    if (!item || !item.history) return [];
+    const notes = item.history.filter((h) => h.type === "batch").map((h) => h.note);
+    return [...new Set(notes)];
+  };
+
   return (
     <div>
       <button
@@ -1389,7 +1396,7 @@ function PODetail({ po, onBack, onReceive }) {
           marginBottom: 18,
         }}
       >
-        <ChevronLeft size={16} /> All orders
+        <ChevronLeft size={16} /> All purchase orders
       </button>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
@@ -1402,7 +1409,7 @@ function PODetail({ po, onBack, onReceive }) {
         <POStatusPill status={po.status} />
       </div>
       <div style={{ color: "#8A9591", fontSize: 13, marginBottom: 22 }}>
-        Ordered {po.orderDate}
+        Created {po.orderDate}
         {po.receivedDate ? ` · Received ${po.receivedDate}` : ""}
       </div>
 
@@ -1410,35 +1417,66 @@ function PODetail({ po, onBack, onReceive }) {
         Line items
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
-        {po.lines.map((l) => (
-          <div
-            key={l.id}
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              padding: "10px 12px",
-              background: "#1B1F1D",
-              border: "1px solid #262C29",
-              borderRadius: 5,
-              fontSize: 13,
-            }}
-          >
-            <span style={{ flex: 1, color: "#EDE7D9", fontFamily: "'Inter', sans-serif" }}>{l.name}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[l.category], fontSize: 11 }}>
-              {l.category}
-            </span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
-              {l.qty} {l.unit}
-            </span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 90, flexShrink: 0, textAlign: "right" }}>
-              {l.lotNumber || "no lot #"}
-            </span>
-          </div>
-        ))}
+        {po.lines.map((l) => {
+          const usedIn = po.status === "Received" ? batchesForLine(l.name) : [];
+          return (
+            <div
+              key={l.id}
+              style={{
+                padding: "10px 12px",
+                background: "#1B1F1D",
+                border: "1px solid #262C29",
+                borderRadius: 5,
+                fontSize: 13,
+              }}
+            >
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <span style={{ flex: 1, color: "#EDE7D9", fontFamily: "'Inter', sans-serif" }}>{l.name}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[l.category], fontSize: 11 }}>
+                  {l.category}
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
+                  {l.qty} {l.unit}
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 90, flexShrink: 0, textAlign: "right" }}>
+                  {l.lotNumber || "no lot #"}
+                </span>
+              </div>
+              {po.status === "Received" && (
+                <div style={{ color: "#5C6B63", fontSize: 11.5, marginTop: 6 }}>
+                  {usedIn.length > 0 ? `Used in: ${usedIn.join(", ")}` : "Not used in any batch yet"}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {po.status === "Ordered" && (
+      {po.status === "Draft" && (
+        <button
+          onClick={() => onMarkSent(po.id)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 14,
+            cursor: "pointer",
+          }}
+        >
+          Mark as sent
+        </button>
+      )}
+
+      {po.status === "Sent" && (
         <button
           onClick={() => onReceive(po.id)}
           style={{
@@ -2941,7 +2979,7 @@ function HomeView({
   onGoTo,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
-  const openOrders = purchaseOrders.filter((po) => po.status === "Ordered");
+  const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
 
   const stats = [
     ["Fermenting", fermentingBatches.length, STAGE_COLOR.Primary, "batches"],
@@ -3604,6 +3642,12 @@ export default function TankLog() {
     setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
   };
 
+  const markPOSent = async (id) => {
+    const { error } = await supabase.from("purchase_orders").update({ status: "Sent" }).eq("id", id);
+    if (error) return console.error(error);
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
+  };
+
   const receivePO = async (id) => {
     const po = purchaseOrders.find((p) => p.id === id);
     if (!po) return;
@@ -3773,7 +3817,7 @@ export default function TankLog() {
               ["home", "Home"],
               ["batches", "Fermentation"],
               ["inventory", "Inventory"],
-              ["orders", "Orders"],
+              ["orders", "Purchase Orders"],
               ["recipes", "Recipes"],
               ["brewery", "Brewery"],
               ["settings", "Settings"],
@@ -3990,18 +4034,60 @@ export default function TankLog() {
               </>
             )}
 
-            {!loadingData && view === "orders" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {purchaseOrders.map((po) => (
-                  <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
-                ))}
-                {purchaseOrders.length === 0 && (
-                  <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-                    No purchase orders yet. Create one to bring in ingredients with lot tracking.
+            {!loadingData && view === "orders" && (() => {
+              const draftPOs = purchaseOrders.filter((po) => po.status === "Draft");
+              const sentPOs = purchaseOrders.filter((po) => po.status === "Sent");
+              const receivedPOs = purchaseOrders.filter((po) => po.status === "Received");
+              return (
+                <>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    Draft ({draftPOs.length})
                   </div>
-                )}
-              </div>
-            )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (sentPOs.length || receivedPOs.length) ? 26 : 0 }}>
+                    {draftPOs.map((po) => (
+                      <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
+                    ))}
+                    {draftPOs.length === 0 && (
+                      <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                        No drafts. Start a new order to build one out before sending it to a supplier.
+                      </div>
+                    )}
+                  </div>
+
+                  {sentPOs.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                        Sent ({sentPOs.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: receivedPOs.length ? 26 : 0 }}>
+                        {sentPOs.map((po) => (
+                          <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {receivedPOs.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                        Received ({receivedPOs.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {receivedPOs.map((po) => (
+                          <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {purchaseOrders.length === 0 && (
+                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                      No purchase orders yet. Create one to bring in ingredients with lot tracking.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {!loadingData && view === "recipes" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -4188,7 +4274,7 @@ export default function TankLog() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onReceive={receivePO} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
@@ -4249,9 +4335,6 @@ export default function TankLog() {
       )}
       {deleteRecipeTarget && (
         <ConfirmDeleteRecipeModal recipe={deleteRecipeTarget} onClose={() => setDeleteRecipeTarget(null)} onConfirm={deleteRecipe} />
-      )}
-      {adjustTarget && (
-        <AdjustInventoryModal item={adjustTarget} onClose={() => setAdjustTarget(null)} onSave={adjustInventoryWithNote} />
       )}
       {adjustTarget && (
         <AdjustInventoryModal item={adjustTarget} onClose={() => setAdjustTarget(null)} onSave={adjustInventoryWithNote} />
