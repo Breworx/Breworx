@@ -1,0 +1,2719 @@
+import React, { useState, useMemo, useEffect } from "react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { supabase } from "./supabaseClient";
+import {
+  rowToBatch,
+  batchToRow,
+  rowToInventoryItem,
+  inventoryItemToRow,
+  rowToPO,
+  poToRow,
+  rowToRecipe,
+  recipeToRow,
+  rowToProfile,
+} from "./lib/mappers";
+
+const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
+
+const STAGE_COLOR = {
+  Brewing: "#8A6A3D",
+  Primary: "#C17A3D",
+  Secondary: "#B8925A",
+  Conditioning: "#D4A24C",
+  Packaged: "#5C6B63",
+};
+
+const CONTAINERS = [
+  { key: "cans330", label: "330ml Can", shortLabel: "Can", volumeL: 0.33 },
+  { key: "kegs20", label: "20L Keg", shortLabel: "20L Keg", volumeL: 20 },
+  { key: "kegs30", label: "30L Keg", shortLabel: "30L Keg", volumeL: 30 },
+  { key: "kegs50", label: "50L Keg", shortLabel: "50L Keg", volumeL: 50 },
+];
+
+const packagedVolume = (packaging) =>
+  !packaging ? 0 : CONTAINERS.reduce((sum, c) => sum + (packaging[c.key] || 0) * c.volumeL, 0);
+
+function BreworxMark({ size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      {/* Hop cone */}
+      <g>
+        <ellipse cx="13" cy="9" rx="5.5" ry="3.6" fill="#C17A3D" />
+        <ellipse cx="13" cy="14" rx="6.5" ry="3.9" fill="#C17A3D" opacity="0.92" />
+        <ellipse cx="13" cy="19.2" rx="7.2" ry="4.2" fill="#C17A3D" opacity="0.85" />
+        <ellipse cx="13" cy="24.4" rx="6.6" ry="3.9" fill="#C17A3D" opacity="0.78" />
+        <ellipse cx="13" cy="29.2" rx="5" ry="3.2" fill="#C17A3D" opacity="0.72" />
+        <line x1="13" y1="5.5" x2="13" y2="4" stroke="#C17A3D" strokeWidth="1.4" strokeLinecap="round" />
+      </g>
+      {/* Barley ear */}
+      <g stroke="#D4A24C" strokeWidth="1.5" strokeLinecap="round" fill="none">
+        <line x1="24" y1="35" x2="29" y2="6" />
+        <line x1="26.3" y1="27" x2="22" y2="22" />
+        <line x1="26.3" y1="27" x2="30.5" y2="22.6" />
+        <line x1="27.1" y1="21" x2="23" y2="16.3" />
+        <line x1="27.1" y1="21" x2="31.3" y2="16.9" />
+        <line x1="27.9" y1="15" x2="24" y2="10.6" />
+        <line x1="27.9" y1="15" x2="32.1" y2="11.2" />
+        <line x1="28.6" y1="9.2" x2="25.2" y2="5.6" />
+        <line x1="28.6" y1="9.2" x2="32" y2="6" />
+      </g>
+    </svg>
+  );
+}
+
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+
+// The seed* functions below are no longer used now that data loads from
+// Supabase — kept only as a reference for the shape each table's rows take.
+function seedBatches() {
+  const d0 = new Date();
+  const mk = (offset) => {
+    const d = new Date(d0);
+    d.setDate(d.getDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  return [
+    {
+      id: uid(),
+      number: "24",
+      name: "Foghorn Amber",
+      style: "American Amber Ale",
+      volume: 20,
+      og: 1.058,
+      fg: 1.012,
+      mashPh: 5.3,
+      preBoilGravity: 1.041,
+      topUpWater: 1.5,
+      stage: "Primary",
+      startDate: mk(6),
+      readings: [
+        { id: uid(), date: mk(6), gravity: 1.058, temp: 19, note: "Pitched, brew day" },
+        { id: uid(), date: mk(5), gravity: 1.054, temp: 20, note: "" },
+        { id: uid(), date: mk(3), gravity: 1.031, temp: 21, note: "Krausen dropping" },
+        { id: uid(), date: mk(1), gravity: 1.019, temp: 20, note: "" },
+      ],
+    },
+    {
+      id: uid(),
+      number: "23",
+      name: "Low Tide Saison",
+      style: "Farmhouse Saison",
+      volume: 18,
+      og: 1.052,
+      fg: 1.004,
+      mashPh: 5.4,
+      preBoilGravity: 1.038,
+      topUpWater: 2,
+      stage: "Conditioning",
+      startDate: mk(24),
+      readings: [
+        { id: uid(), date: mk(24), gravity: 1.052, temp: 22 },
+        { id: uid(), date: mk(20), gravity: 1.02, temp: 24 },
+        { id: uid(), date: mk(15), gravity: 1.006, temp: 23 },
+        { id: uid(), date: mk(10), gravity: 1.004, temp: 20 },
+      ],
+    },
+    {
+      id: uid(),
+      number: "22",
+      name: "Rivet Stout",
+      style: "Dry Irish Stout",
+      volume: 20,
+      og: 1.045,
+      fg: 1.011,
+      mashPh: 5.5,
+      preBoilGravity: null,
+      topUpWater: null,
+      stage: "Brewing",
+      startDate: mk(0),
+      readings: [{ id: uid(), date: mk(0), gravity: 1.045, temp: 18, note: "Brew day, pitched yeast" }],
+    },
+  ];
+}
+const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
+
+const CATEGORY_COLOR = {
+  Grain: "#C17A3D",
+  Hops: "#7FA35C",
+  Yeast: "#B8925A",
+  Other: "#5C6B63",
+};
+
+const STEP_FOR_UNIT = { kg: 0.5, g: 50, L: 1, ea: 1 };
+
+function seedInventory() {
+  const d0 = new Date();
+  const mk = (offset) => {
+    const d = new Date(d0);
+    d.setDate(d.getDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  return [
+    {
+      id: uid(),
+      name: "Maris Otter",
+      category: "Grain",
+      qty: 42,
+      unit: "kg",
+      threshold: 20,
+      lots: [{ id: uid(), lotNumber: "MO-2291", qty: 42, date: mk(14), poNumber: "PO-101" }],
+    },
+    {
+      id: uid(),
+      name: "Cascade",
+      category: "Hops",
+      qty: 0.8,
+      unit: "kg",
+      threshold: 1,
+      lots: [{ id: uid(), lotNumber: "CAS-0087", qty: 0.8, date: mk(30), poNumber: "PO-098" }],
+    },
+    {
+      id: uid(),
+      name: "Citra",
+      category: "Hops",
+      qty: 1.6,
+      unit: "kg",
+      threshold: 1,
+      lots: [{ id: uid(), lotNumber: "CIT-1142", qty: 1.6, date: mk(14), poNumber: "PO-101" }],
+    },
+    {
+      id: uid(),
+      name: "US-05 Ale Yeast",
+      category: "Yeast",
+      qty: 6,
+      unit: "ea",
+      threshold: 4,
+      lots: [{ id: uid(), lotNumber: "US05-6631", qty: 6, date: mk(14), poNumber: "PO-101" }],
+    },
+    {
+      id: uid(),
+      name: "Crystal 60L",
+      category: "Grain",
+      qty: 9,
+      unit: "kg",
+      threshold: 10,
+      lots: [{ id: uid(), lotNumber: "C60-0459", qty: 9, date: mk(30), poNumber: "PO-098" }],
+    },
+    {
+      id: uid(),
+      name: "Irish Moss",
+      category: "Other",
+      qty: 250,
+      unit: "g",
+      threshold: 100,
+      lots: [{ id: uid(), lotNumber: "IM-0021", qty: 250, date: mk(30), poNumber: "PO-098" }],
+    },
+  ];
+}
+
+function seedPurchaseOrders() {
+  const d0 = new Date();
+  const mk = (offset) => {
+    const d = new Date(d0);
+    d.setDate(d.getDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  return [
+    {
+      id: uid(),
+      poNumber: "PO-101",
+      supplier: "Riverbend Malt & Hop Co.",
+      orderDate: mk(16),
+      receivedDate: mk(14),
+      status: "Received",
+      lines: [
+        { id: uid(), name: "Maris Otter", category: "Grain", qty: 42, unit: "kg", lotNumber: "MO-2291" },
+        { id: uid(), name: "Citra", category: "Hops", qty: 1.6, unit: "kg", lotNumber: "CIT-1142" },
+        { id: uid(), name: "US-05 Ale Yeast", category: "Yeast", qty: 6, unit: "ea", lotNumber: "US05-6631" },
+      ],
+    },
+    {
+      id: uid(),
+      poNumber: "PO-102",
+      supplier: "Cold Coast Hop Supply",
+      orderDate: mk(2),
+      receivedDate: null,
+      status: "Ordered",
+      lines: [
+        { id: uid(), name: "Cascade", category: "Hops", qty: 2, unit: "kg", lotNumber: "" },
+        { id: uid(), name: "Simcoe", category: "Hops", qty: 1, unit: "kg", lotNumber: "" },
+      ],
+    },
+  ];
+}
+
+function seedRecipes() {
+  return [
+    {
+      id: uid(),
+      name: "Foghorn Amber",
+      style: "American Amber Ale",
+      volume: 20,
+      og: 1.058,
+      fg: 1.012,
+      ingredients: [
+        { id: uid(), name: "Maris Otter", category: "Grain", qty: 4.5, unit: "kg" },
+        { id: uid(), name: "Crystal 60L", category: "Grain", qty: 0.5, unit: "kg" },
+        { id: uid(), name: "Cascade", category: "Hops", qty: 0.05, unit: "kg" },
+        { id: uid(), name: "US-05 Ale Yeast", category: "Yeast", qty: 1, unit: "ea" },
+        { id: uid(), name: "Irish Moss", category: "Other", qty: 5, unit: "g" },
+      ],
+    },
+    {
+      id: uid(),
+      name: "Low Tide Saison",
+      style: "Farmhouse Saison",
+      volume: 18,
+      og: 1.052,
+      fg: 1.004,
+      ingredients: [
+        { id: uid(), name: "Maris Otter", category: "Grain", qty: 4, unit: "kg" },
+        { id: uid(), name: "Citra", category: "Hops", qty: 0.03, unit: "kg" },
+        { id: uid(), name: "US-05 Ale Yeast", category: "Yeast", qty: 1, unit: "ea" },
+      ],
+    },
+  ];
+}
+
+function attenuation(og, fg, current) {
+  if (og === fg) return 0;
+  const pct = ((og - current) / (og - fg)) * 100;
+  return Math.min(100, Math.max(0, pct));
+}
+
+function latestReading(batch) {
+  return batch.readings[batch.readings.length - 1];
+}
+
+function Tank({ batch }) {
+  const latest = latestReading(batch);
+  const pct = attenuation(batch.og, batch.fg, latest.gravity);
+  const color = STAGE_COLOR[batch.stage];
+  return (
+    <div style={{ width: 46, height: 88, position: "relative", flexShrink: 0 }}>
+      <svg width="46" height="88" viewBox="0 0 46 88">
+        <defs>
+          <clipPath id={`clip-${batch.id}`}>
+            <path d="M6 6 H40 V52 L23 84 L6 52 Z" />
+          </clipPath>
+        </defs>
+        <path
+          d="M6 6 H40 V52 L23 84 L6 52 Z"
+          fill="none"
+          stroke="#3A413D"
+          strokeWidth="2"
+        />
+        <g clipPath={`url(#clip-${batch.id})`}>
+          <rect
+            x="0"
+            y={84 - (78 * pct) / 100}
+            width="46"
+            height="88"
+            fill={color}
+            opacity="0.85"
+          />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function StagePill({ stage }) {
+  return (
+    <span
+      style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: STAGE_COLOR[stage],
+        border: `1px solid ${STAGE_COLOR[stage]}`,
+        borderRadius: 3,
+        padding: "3px 7px",
+        display: "inline-block",
+      }}
+    >
+      {stage}
+    </span>
+  );
+}
+
+function BatchCard({ batch, onOpen }) {
+  const latest = latestReading(batch);
+  const pct = attenuation(batch.og, batch.fg, latest.gravity);
+  const days = daysBetween(batch.startDate, today());
+  return (
+    <button
+      onClick={() => onOpen(batch.id)}
+      style={{
+        display: "flex",
+        gap: 16,
+        alignItems: "center",
+        background: "#1F2422",
+        border: "1px solid #2C332F",
+        borderRadius: 6,
+        padding: "16px 18px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+        transition: "border-color 0.15s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2C332F")}
+    >
+      <Tank batch={batch} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+            <span
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                color: "#5C6B63",
+                fontSize: 13,
+              }}
+            >
+              #{batch.number}
+            </span>
+            <h3
+              style={{
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 18,
+                color: "#EDE7D9",
+                margin: 0,
+                textOverflow: "ellipsis",
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {batch.name}
+            </h3>
+          </div>
+          <StagePill stage={batch.stage} />
+        </div>
+        <div style={{ color: "#8A9591", fontSize: 13, marginTop: 2 }}>{batch.style}</div>
+        <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#B8C0BC" }}>
+          <span>SG {latest.gravity.toFixed(3)}</span>
+          <span>{latest.temp}°C</span>
+          <span>{days}d</span>
+          <span style={{ color: STAGE_COLOR[batch.stage] }}>{pct.toFixed(0)}% attn</span>
+        </div>
+        {batch.packaging && (
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#5C6B63", marginTop: 6 }}>
+            {CONTAINERS.filter((c) => (batch.packaging[c.key] || 0) > 0)
+              .map((c) => `${batch.packaging[c.key]}× ${c.shortLabel}`)
+              .join(" · ") || "No containers logged"}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function InventoryItemCard({ item, onAdjust }) {
+  const low = item.qty <= item.threshold;
+  const step = STEP_FOR_UNIT[item.unit] ?? 1;
+  const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        background: "#1F2422",
+        border: `1px solid ${low ? "#6B4A2F" : "#2C332F"}`,
+        borderRadius: 6,
+        padding: "13px 16px",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h3
+            style={{
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 16,
+              color: "#EDE7D9",
+              margin: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.name}
+          </h3>
+          {low && <AlertTriangle size={13} color="#C17A3D" />}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10.5,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: CATEGORY_COLOR[item.category],
+            }}
+          >
+            {item.category}
+          </span>
+          {item.lots && item.lots.length > 0 && (
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#5C6B63" }}>
+              · lot {item.lots[item.lots.length - 1].lotNumber}
+              {item.lots.length > 1 ? ` (+${item.lots.length - 1})` : ""}
+            </span>
+          )}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <button
+          onClick={() => onAdjust(item.id, -step)}
+          aria-label={`Remove ${step} ${item.unit} of ${item.name}`}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 4,
+            background: "#242B27",
+            border: "1px solid #3A413D",
+            color: "#EDE7D9",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Minus size={14} />
+        </button>
+        <span
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 14,
+            color: low ? "#C17A3D" : "#EDE7D9",
+            width: 68,
+            textAlign: "center",
+          }}
+        >
+          {displayQty} {item.unit}
+        </span>
+        <button
+          onClick={() => onAdjust(item.id, step)}
+          aria-label={`Add ${step} ${item.unit} of ${item.name}`}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 4,
+            background: "#242B27",
+            border: "1px solid #3A413D",
+            color: "#EDE7D9",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          background: "#16191A",
+          border: "1px solid #2C332F",
+          borderRadius: 4,
+          padding: "9px 10px",
+          color: "#EDE7D9",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 14,
+        }}
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function AddInventoryModal({ onClose, onAdd }) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("Grain");
+  const [qty, setQty] = useState(10);
+  const [unit, setUnit] = useState("kg");
+  const [threshold, setThreshold] = useState(5);
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onAdd({
+      id: uid(),
+      name: name.trim(),
+      category,
+      qty: Number(qty) || 0,
+      unit,
+      threshold: Number(threshold) || 0,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="New inventory item" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Name" value={name} onChange={setName} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
+          <SelectField label="Unit" value={unit} onChange={setUnit} options={["kg", "g", "L", "ea"]} />
+          <NumberField label="Quantity on hand" value={qty} onChange={setQty} step="0.1" suffix={unit} />
+          <NumberField label="Low-stock alert at" value={threshold} onChange={setThreshold} step="0.1" suffix={unit} />
+        </div>
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 8,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Add to inventory
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function POStatusPill({ status }) {
+  const color = status === "Received" ? "#7FA35C" : "#C17A3D";
+  return (
+    <span
+      style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color,
+        border: `1px solid ${color}`,
+        borderRadius: 3,
+        padding: "3px 7px",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      {status === "Received" && <CheckCircle2 size={11} />}
+      {status}
+    </span>
+  );
+}
+
+function POCard({ po, onOpen }) {
+  return (
+    <button
+      onClick={() => onOpen(po.id)}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        background: "#1F2422",
+        border: "1px solid #2C332F",
+        borderRadius: 6,
+        padding: "14px 16px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2C332F")}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 13 }}>{po.poNumber}</span>
+          <h3
+            style={{
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 16,
+              color: "#EDE7D9",
+              margin: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {po.supplier}
+          </h3>
+        </div>
+        <div style={{ color: "#8A9591", fontSize: 12.5, marginTop: 3 }}>
+          {po.lines.length} item{po.lines.length !== 1 ? "s" : ""} · ordered {po.orderDate.slice(5)}
+        </div>
+      </div>
+      <POStatusPill status={po.status} />
+    </button>
+  );
+}
+
+function AddPOModal({ onClose, onAdd, nextPONumber }) {
+  const [supplier, setSupplier] = useState("");
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", lotNumber: "" }]);
+
+  const updateLine = (id, patch) =>
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+
+  const addLine = () =>
+    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", lotNumber: "" }]);
+
+  const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const submit = () => {
+    const cleanLines = lines.filter((l) => l.name.trim());
+    if (!supplier.trim() || cleanLines.length === 0) return;
+    onAdd({
+      id: uid(),
+      poNumber: nextPONumber,
+      supplier: supplier.trim(),
+      orderDate: today(),
+      receivedDate: null,
+      status: "Ordered",
+      lines: cleanLines.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="New purchase order" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Supplier" value={supplier} onChange={setSupplier} />
+
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591", marginTop: 4 }}>
+          Line items
+        </div>
+        {lines.map((line, i) => (
+          <div
+            key={line.id}
+            style={{
+              background: "#16191A",
+              border: "1px solid #2C332F",
+              borderRadius: 6,
+              padding: "12px 12px 4px",
+              position: "relative",
+            }}
+          >
+            {lines.length > 1 && (
+              <button
+                onClick={() => removeLine(line.id)}
+                aria-label="Remove line item"
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "none",
+                  border: "none",
+                  color: "#8A9591",
+                  cursor: "pointer",
+                  padding: 4,
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+            <div style={{ marginBottom: 10 }}>
+              <TextField label={`Item ${i + 1}`} value={line.name} onChange={(v) => updateLine(line.id, { name: v })} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <SelectField
+                label="Category"
+                value={line.category}
+                onChange={(v) => updateLine(line.id, { category: v })}
+                options={CATEGORIES}
+              />
+              <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
+              <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.1" suffix={line.unit} />
+              <TextField label="Lot / batch #" value={line.lotNumber} onChange={(v) => updateLine(line.id, { lotNumber: v })} />
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={addLine}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            background: "none",
+            border: "1px dashed #3A413D",
+            borderRadius: 5,
+            padding: "9px",
+            color: "#8A9591",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={14} /> Add line item
+        </button>
+
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 4,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Create {nextPONumber}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function PODetail({ po, onBack, onReceive }) {
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          color: "#8A9591",
+          cursor: "pointer",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          padding: 0,
+          marginBottom: 18,
+        }}
+      >
+        <ChevronLeft size={16} /> All orders
+      </button>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+        <div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 13 }}>{po.poNumber}</div>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
+            {po.supplier}
+          </h1>
+        </div>
+        <POStatusPill status={po.status} />
+      </div>
+      <div style={{ color: "#8A9591", fontSize: 13, marginBottom: 22 }}>
+        Ordered {po.orderDate}
+        {po.receivedDate ? ` · Received ${po.receivedDate}` : ""}
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        Line items
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
+        {po.lines.map((l) => (
+          <div
+            key={l.id}
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              padding: "10px 12px",
+              background: "#1B1F1D",
+              border: "1px solid #262C29",
+              borderRadius: 5,
+              fontSize: 13,
+            }}
+          >
+            <span style={{ flex: 1, color: "#EDE7D9", fontFamily: "'Inter', sans-serif" }}>{l.name}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[l.category], fontSize: 11 }}>
+              {l.category}
+            </span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
+              {l.qty} {l.unit}
+            </span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 90, flexShrink: 0, textAlign: "right" }}>
+              {l.lotNumber || "no lot #"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {po.status === "Ordered" && (
+        <button
+          onClick={() => onReceive(po.id)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 14,
+            cursor: "pointer",
+          }}
+        >
+          <Truck size={16} /> Mark received & add to inventory
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RecipeCard({ recipe, onOpen }) {
+  return (
+    <button
+      onClick={() => onOpen(recipe.id)}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        background: "#1F2422",
+        border: "1px solid #2C332F",
+        borderRadius: 6,
+        padding: "14px 16px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2C332F")}
+    >
+      <div style={{ minWidth: 0 }}>
+        <h3
+          style={{
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 17,
+            color: "#EDE7D9",
+            margin: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {recipe.name}
+        </h3>
+        <div style={{ color: "#8A9591", fontSize: 12.5, marginTop: 3 }}>
+          {recipe.style} · {recipe.volume}L · {recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}
+        </div>
+      </div>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 12.5, flexShrink: 0 }}>
+        OG {recipe.og.toFixed(3)}
+      </span>
+    </button>
+  );
+}
+
+function AddRecipeModal({ onClose, onAdd }) {
+  const [name, setName] = useState("");
+  const [style, setStyle] = useState("");
+  const [volume, setVolume] = useState(20);
+  const [og, setOg] = useState(1.05);
+  const [fg, setFg] = useState(1.01);
+  const [ingredients, setIngredients] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
+
+  const updateLine = (id, patch) =>
+    setIngredients((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+
+  const addLine = () =>
+    setIngredients((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
+
+  const removeLine = (id) => setIngredients((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const submit = () => {
+    const clean = ingredients.filter((l) => l.name.trim());
+    if (!name.trim() || clean.length === 0) return;
+    onAdd({
+      id: uid(),
+      name: name.trim(),
+      style: style.trim() || "Unspecified",
+      volume: Number(volume) || 0,
+      og: Number(og),
+      fg: Number(fg),
+      ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="New recipe" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Recipe name" value={name} onChange={setName} />
+        <TextField label="Style" value={style} onChange={setStyle} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <NumberField label="Batch volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
+          <NumberField label="Target OG" value={og} onChange={setOg} step="0.001" />
+          <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
+        </div>
+
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591", marginTop: 4 }}>
+          Ingredients
+        </div>
+        {ingredients.map((line, i) => (
+          <div
+            key={line.id}
+            style={{
+              background: "#16191A",
+              border: "1px solid #2C332F",
+              borderRadius: 6,
+              padding: "12px 12px 4px",
+              position: "relative",
+            }}
+          >
+            {ingredients.length > 1 && (
+              <button
+                onClick={() => removeLine(line.id)}
+                aria-label="Remove ingredient"
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "none",
+                  border: "none",
+                  color: "#8A9591",
+                  cursor: "pointer",
+                  padding: 4,
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+            <div style={{ marginBottom: 10 }}>
+              <TextField label={`Ingredient ${i + 1}`} value={line.name} onChange={(v) => updateLine(line.id, { name: v })} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={CATEGORIES} />
+              <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
+              <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.01" suffix={line.unit} />
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={addLine}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            background: "none",
+            border: "1px dashed #3A413D",
+            borderRadius: 5,
+            padding: "9px",
+            color: "#8A9591",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={14} /> Add ingredient
+        </button>
+
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 4,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save recipe
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function RecipeDetail({ recipe, inventory, onBack, onBrew }) {
+  const shortages = recipe.ingredients.filter((ing) => {
+    const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+    return !stock || stock.qty < ing.qty;
+  });
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          color: "#8A9591",
+          cursor: "pointer",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          padding: 0,
+          marginBottom: 18,
+        }}
+      >
+        <ChevronLeft size={16} /> All recipes
+      </button>
+
+      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
+        {recipe.name}
+      </h1>
+      <div style={{ color: "#8A9591", fontSize: 14, marginBottom: 20 }}>
+        {recipe.style} · {recipe.volume}L · OG {recipe.og.toFixed(3)} → FG {recipe.fg.toFixed(3)}
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        Ingredients
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+        {recipe.ingredients.map((ing) => {
+          const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+          const short = !stock || stock.qty < ing.qty;
+          return (
+            <div
+              key={ing.id}
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                padding: "10px 12px",
+                background: "#1B1F1D",
+                border: `1px solid ${short ? "#6B4A2F" : "#262C29"}`,
+                borderRadius: 5,
+                fontSize: 13,
+              }}
+            >
+              <span style={{ flex: 1, color: "#EDE7D9", fontFamily: "'Inter', sans-serif" }}>{ing.name}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[ing.category], fontSize: 11 }}>
+                {ing.category}
+              </span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
+                {ing.qty} {ing.unit}
+              </span>
+              {short && <AlertTriangle size={13} color="#C17A3D" />}
+            </div>
+          );
+        })}
+      </div>
+
+      {shortages.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "#C17A3D",
+            fontSize: 12.5,
+            marginBottom: 14,
+            background: "#241D14",
+            border: "1px solid #4A3420",
+            borderRadius: 5,
+            padding: "8px 12px",
+          }}
+        >
+          <AlertTriangle size={14} />
+          Short on {shortages.length} ingredient{shortages.length !== 1 ? "s" : ""} — you can still brew, but stock will go negative-adjusted to zero.
+        </div>
+      )}
+
+      <button
+        onClick={() => onBrew(recipe)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          background: "#C17A3D",
+          border: "none",
+          borderRadius: 5,
+          padding: "12px",
+          color: "#16191A",
+          fontFamily: "'Oswald', sans-serif",
+          fontWeight: 500,
+          fontSize: 14,
+          cursor: "pointer",
+        }}
+      >
+        <Beaker size={16} /> Brew this recipe
+      </button>
+    </div>
+  );
+}
+
+function NumberField({ label, value, onChange, step = "any", suffix }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>{label}</span>
+      <div style={{ position: "relative" }}>
+        <input
+          type="number"
+          step={step}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#16191A",
+            border: "1px solid #2C332F",
+            borderRadius: 4,
+            padding: "9px 10px",
+            color: "#EDE7D9",
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 14,
+          }}
+        />
+        {suffix && (
+          <span style={{ position: "absolute", right: 10, top: 9, color: "#5C6B63", fontSize: 12 }}>{suffix}</span>
+        )}
+      </div>
+    </label>
+  );
+}
+
+function TextField({ label, value, onChange, type = "text" }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          background: "#16191A",
+          border: "1px solid #2C332F",
+          borderRadius: 4,
+          padding: "9px 10px",
+          color: "#EDE7D9",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 14,
+        }}
+      />
+    </label>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(10,12,11,0.7)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        zIndex: 50,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#1B1F1D",
+          border: "1px solid #2C332F",
+          borderBottom: "none",
+          borderRadius: "10px 10px 0 0",
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          padding: "20px 22px 26px",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#EDE7D9", margin: 0, fontWeight: 500 }}>
+            {title}
+          </h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", padding: 4 }}>
+            <X size={20} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe }) {
+  const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
+  const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
+  const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
+  const [volume, setVolume] = useState(presetRecipe ? presetRecipe.volume : 20);
+  const [og, setOg] = useState(presetRecipe ? presetRecipe.og : 1.05);
+  const [fg, setFg] = useState(presetRecipe ? presetRecipe.fg : 1.01);
+  const [temp, setTemp] = useState(20);
+  const [mashPh, setMashPh] = useState(5.4);
+  const [preBoilGravity, setPreBoilGravity] = useState("");
+  const [topUpWater, setTopUpWater] = useState("");
+
+  const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
+
+  const applyRecipe = (id) => {
+    setRecipeId(id);
+    const r = recipes.find((rec) => rec.id === id);
+    if (r) {
+      setName(r.name);
+      setStyle(r.style);
+      setVolume(r.volume);
+      setOg(r.og);
+      setFg(r.fg);
+    }
+  };
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onAdd({
+      id: uid(),
+      number: nextNumber,
+      name: name.trim(),
+      style: style.trim() || "Unspecified",
+      volume: Number(volume) || 0,
+      og: Number(og),
+      fg: Number(fg),
+      mashPh: mashPh === "" ? null : Number(mashPh),
+      preBoilGravity: preBoilGravity === "" ? null : Number(preBoilGravity),
+      topUpWater: topUpWater === "" ? null : Number(topUpWater),
+      stage: "Brewing",
+      startDate: today(),
+      recipeId: activeRecipe ? activeRecipe.id : null,
+      recipeName: activeRecipe ? activeRecipe.name : null,
+      ingredients: activeRecipe ? activeRecipe.ingredients : [],
+      readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="New Batch" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {recipes.length > 0 && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
+              Base on recipe (optional)
+            </span>
+            <select
+              value={recipeId}
+              onChange={(e) => applyRecipe(e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#16191A",
+                border: "1px solid #2C332F",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#EDE7D9",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            >
+              <option value="">None — start from scratch</option>
+              {recipes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <TextField label="Batch name" value={name} onChange={setName} />
+        <TextField label="Style" value={style} onChange={setStyle} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <NumberField label="Volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
+          <NumberField label="Pitch temp" value={temp} onChange={setTemp} step="0.5" suffix="°C" />
+          <NumberField label="Original gravity" value={og} onChange={setOg} step="0.001" />
+          <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
+        </div>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591", marginTop: 4 }}>
+          Brew day
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <NumberField label="Mash pH" value={mashPh} onChange={setMashPh} step="0.01" />
+          <NumberField label="Pre-boil gravity" value={preBoilGravity} onChange={setPreBoilGravity} step="0.001" />
+          <NumberField label="Top-up water" value={topUpWater} onChange={setTopUpWater} step="0.1" suffix="L" />
+        </div>
+        {activeRecipe && (
+          <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 6 }}>
+              Ingredients to assign
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {activeRecipe.ingredients.map((ing) => (
+                <div key={ing.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                  <span style={{ color: "#EDE7D9" }}>{ing.name}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591" }}>{ing.qty} {ing.unit}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 8,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Start batch #{nextNumber}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function LogReadingModal({ batch, onClose, onLog }) {
+  const [gravity, setGravity] = useState(latestReading(batch).gravity);
+  const [temp, setTemp] = useState(latestReading(batch).temp);
+  const [note, setNote] = useState("");
+
+  const submit = () => {
+    onLog(batch.id, { id: uid(), date: today(), gravity: Number(gravity), temp: Number(temp), note: note.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title={`Log reading — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <NumberField label="Gravity" value={gravity} onChange={setGravity} step="0.001" />
+          <NumberField label="Temp" value={temp} onChange={setTemp} step="0.5" suffix="°C" />
+        </div>
+        <TextField label="Note (optional)" value={note} onChange={setNote} />
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 8,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save reading
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function BrewDayModal({ batch, onClose, onSave }) {
+  const [mashPh, setMashPh] = useState(batch.mashPh ?? "");
+  const [preBoilGravity, setPreBoilGravity] = useState(batch.preBoilGravity ?? "");
+  const [topUpWater, setTopUpWater] = useState(batch.topUpWater ?? "");
+
+  const submit = () => {
+    onSave(batch.id, {
+      mashPh: mashPh === "" ? null : Number(mashPh),
+      preBoilGravity: preBoilGravity === "" ? null : Number(preBoilGravity),
+      topUpWater: topUpWater === "" ? null : Number(topUpWater),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title={`Brew day — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <NumberField label="Mash pH" value={mashPh} onChange={setMashPh} step="0.01" />
+        <NumberField label="Pre-boil gravity" value={preBoilGravity} onChange={setPreBoilGravity} step="0.001" />
+        <NumberField label="Top-up water" value={topUpWater} onChange={setTopUpWater} step="0.1" suffix="L" />
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 8,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save brew day details
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function PackagingModal({ batch, onClose, onSave }) {
+  const [counts, setCounts] = useState(() => {
+    const init = {};
+    CONTAINERS.forEach((c) => (init[c.key] = (batch.packaging && batch.packaging[c.key]) || 0));
+    return init;
+  });
+
+  const totalVolume = CONTAINERS.reduce((sum, c) => sum + (Number(counts[c.key]) || 0) * c.volumeL, 0);
+  const diff = Math.round((totalVolume - batch.volume) * 100) / 100;
+
+  const submit = () => {
+    const packaging = {};
+    CONTAINERS.forEach((c) => (packaging[c.key] = Number(counts[c.key]) || 0));
+    onSave(batch.id, packaging);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Package — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13 }}>
+          Batch volume: <span style={{ color: "#EDE7D9", fontFamily: "'JetBrains Mono', monospace" }}>{batch.volume} L</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {CONTAINERS.map((c) => (
+            <NumberField
+              key={c.key}
+              label={c.label}
+              value={counts[c.key]}
+              onChange={(v) => setCounts((prev) => ({ ...prev, [c.key]: v }))}
+              step="1"
+            />
+          ))}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            background: "#16191A",
+            border: "1px solid #2C332F",
+            borderRadius: 6,
+            padding: "10px 12px",
+            fontSize: 13,
+          }}
+        >
+          <span style={{ color: "#8A9591" }}>Total packaged</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9" }}>{totalVolume.toFixed(2)} L</span>
+        </div>
+        {Math.abs(diff) > 0.01 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              color: "#C17A3D",
+              fontSize: 12.5,
+              background: "#241D14",
+              border: "1px solid #4A3420",
+              borderRadius: 5,
+              padding: "8px 12px",
+            }}
+          >
+            <AlertTriangle size={14} />
+            {diff > 0
+              ? `${diff.toFixed(2)} L more than the batch volume — double check counts.`
+              : `${Math.abs(diff).toFixed(2)} L short of the batch volume — some volume unaccounted for.`}
+          </div>
+        )}
+        <button
+          onClick={submit}
+          style={{
+            marginTop: 4,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          <Package size={16} /> Confirm packaging
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function DeleteAccountModal({ onClose, onConfirm }) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const canDelete = confirmText.trim().toUpperCase() === "DELETE";
+
+  const submit = async () => {
+    if (!canDelete) return;
+    setBusy(true);
+    setError("");
+    const result = await onConfirm();
+    if (result && result.error) {
+      setError(result.error);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Delete account" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div
+          style={{
+            color: "#C17A3D",
+            fontSize: 13,
+            background: "#241D14",
+            border: "1px solid #4A3420",
+            borderRadius: 5,
+            padding: "10px 12px",
+            lineHeight: 1.5,
+          }}
+        >
+          This permanently deletes your login and removes you from the team. It doesn't delete your
+          company's batches, inventory, orders, or recipes — those stay in place for any teammates left
+          on the account. This can't be undone.
+        </div>
+        <TextField label='Type "DELETE" to confirm' value={confirmText} onChange={setConfirmText} />
+        {error && (
+          <div style={{ color: "#C17A3D", fontSize: 12.5, background: "#241D14", border: "1px solid #4A3420", borderRadius: 5, padding: "8px 12px" }}>
+            {error}
+          </div>
+        )}
+        <button
+          onClick={submit}
+          disabled={!canDelete || busy}
+          style={{
+            background: canDelete ? "#B5502F" : "#3A2A22",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: canDelete ? "#EDE7D9" : "#8A6A5A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: canDelete && !busy ? "pointer" : "default",
+          }}
+        >
+          {busy ? "Deleting…" : "Permanently delete my account"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging }) {
+  const latest = latestReading(batch);
+  const pct = attenuation(batch.og, batch.fg, latest.gravity);
+  const days = daysBetween(batch.startDate, today());
+  const stageIdx = STAGES.indexOf(batch.stage);
+  const chartData = batch.readings.map((r) => ({
+    date: r.date.slice(5),
+    gravity: r.gravity,
+  }));
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          color: "#8A9591",
+          cursor: "pointer",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          padding: 0,
+          marginBottom: 18,
+        }}
+      >
+        <ChevronLeft size={16} /> All batches
+      </button>
+
+      <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 22 }}>
+        <Tank batch={batch} />
+        <div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 13 }}>
+            Batch #{batch.number}
+          </div>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 28, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
+            {batch.name}
+          </h1>
+          <div style={{ color: "#8A9591", fontSize: 14 }}>{batch.style} · {batch.volume}L</div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[
+          ["OG", batch.og.toFixed(3)],
+          ["Current SG", latest.gravity.toFixed(3)],
+          ["Target FG", batch.fg.toFixed(3)],
+          ["Attenuation", `${pct.toFixed(0)}%`],
+        ].map(([label, val]) => (
+          <div key={label} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>{label}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#EDE7D9", marginTop: 3 }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>Brew day</div>
+        <button
+          onClick={() => onEditBrewDay(batch)}
+          style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+        >
+          Edit
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 22 }}>
+        {[
+          ["Mash pH", batch.mashPh != null ? batch.mashPh.toFixed(2) : "—"],
+          ["Pre-boil SG", batch.preBoilGravity != null ? batch.preBoilGravity.toFixed(3) : "—"],
+          ["Top-up water", batch.topUpWater != null ? `${batch.topUpWater} L` : "—"],
+        ].map(([label, val]) => (
+          <div key={label} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>{label}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#EDE7D9", marginTop: 3 }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      {batch.ingredients && batch.ingredients.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+            Ingredients{batch.recipeName ? ` — ${batch.recipeName}` : ""}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+            {batch.ingredients.map((ing) => (
+              <div
+                key={ing.id}
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "9px 12px",
+                  background: "#1B1F1D",
+                  border: "1px solid #262C29",
+                  borderRadius: 5,
+                  fontSize: 13,
+                }}
+              >
+                <span style={{ flex: 1, color: "#EDE7D9", fontFamily: "'Inter', sans-serif" }}>{ing.name}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[ing.category], fontSize: 11 }}>
+                  {ing.category}
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", width: 64, textAlign: "right", flexShrink: 0 }}>
+                  {ing.qty} {ing.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "center" }}>
+        {STAGES.map((s, i) => (
+          <React.Fragment key={s}>
+            <span
+              style={{
+                fontSize: 11.5,
+                fontFamily: "'JetBrains Mono', monospace",
+                color: i <= stageIdx ? STAGE_COLOR[batch.stage] : "#3A413D",
+                letterSpacing: "0.05em",
+              }}
+            >
+              {s.toUpperCase()}
+            </span>
+            {i < STAGES.length - 1 && <span style={{ flex: 1, height: 1, background: i < stageIdx ? STAGE_COLOR[batch.stage] : "#2C332F" }} />}
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{ color: "#5C6B63", fontSize: 12.5, marginBottom: 18 }}>{days} days since brew day</div>
+
+      {batch.packaging && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>Packaging</div>
+            <button
+              onClick={() => onOpenPackaging(batch)}
+              style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              Edit
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
+            {CONTAINERS.map((c) => (
+              <div key={c.key} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 10px" }}>
+                <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>{c.shortLabel}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#EDE7D9", marginTop: 3 }}>
+                  {batch.packaging[c.key] || 0}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ color: "#5C6B63", fontSize: 12.5, marginBottom: 18 }}>
+            {packagedVolume(batch.packaging).toFixed(2)} L packaged of {batch.volume} L batch
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 26 }}>
+        <button
+          onClick={() => onLogReading(batch)}
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#242B27",
+            border: "1px solid #3A413D",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#EDE7D9",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13.5,
+            cursor: "pointer",
+          }}
+        >
+          <Droplet size={15} /> Log reading
+        </button>
+        {stageIdx < STAGES.length - 1 && (
+          <button
+            onClick={() => (STAGES[stageIdx + 1] === "Packaged" ? onOpenPackaging(batch) : onAdvance(batch.id))}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              background: "#C17A3D",
+              border: "none",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 13.5,
+              letterSpacing: "0.02em",
+              cursor: "pointer",
+            }}
+          >
+            {STAGES[stageIdx + 1] === "Packaged" && <Package size={15} />}
+            {STAGES[stageIdx + 1] === "Packaged" ? "Package batch" : `Advance to ${STAGES[stageIdx + 1]}`}
+          </button>
+        )}
+      </div>
+
+      {chartData.length > 1 && (
+        <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <TrendingDown size={13} /> Gravity trend
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+              <CartesianGrid stroke="#2C332F" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="#5C6B63" fontSize={11} />
+              <YAxis stroke="#5C6B63" fontSize={11} domain={["dataMin - 0.003", "dataMax + 0.003"]} tickFormatter={(v) => v.toFixed(3)} />
+              <Tooltip
+                contentStyle={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 4, fontSize: 12 }}
+                labelStyle={{ color: "#8A9591" }}
+              />
+              <Line type="monotone" dataKey="gravity" stroke="#C17A3D" strokeWidth={2} dot={{ r: 3, fill: "#C17A3D" }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        Reading log
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {[...batch.readings].reverse().map((r) => (
+          <div
+            key={r.id}
+            style={{
+              display: "flex",
+              gap: 14,
+              alignItems: "baseline",
+              padding: "9px 12px",
+              background: "#1B1F1D",
+              border: "1px solid #262C29",
+              borderRadius: 5,
+              fontSize: 13,
+            }}
+          >
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
+            {r.note && <span style={{ color: "#8A9591", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState("signin");
+  const [companyName, setCompanyName] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (mode === "signup" && !companyName.trim()) {
+      setError("Enter your company name.");
+      return;
+    }
+    if (mode === "signup" && !name.trim()) {
+      setError("Enter your name.");
+      return;
+    }
+    if (!email.trim() || !email.includes("@")) {
+      setError("Enter a valid email.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    setError("");
+    setInfo("");
+    setBusy(true);
+    if (mode === "signup") {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { name: name.trim(), company: companyName.trim() } },
+      });
+      setBusy(false);
+      if (signUpError) {
+        setError(signUpError.message);
+      } else {
+        setInfo("Check your email to confirm your account, then sign in.");
+        setMode("signin");
+      }
+    } else {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      setBusy(false);
+      if (signInError) setError(signInError.message);
+      // on success, the onAuthStateChange listener in TankLog picks up the session
+    }
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === "Enter") submit();
+  };
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#16191A",
+        fontFamily: "'Inter', sans-serif",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 18px",
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        input:focus { outline: 1px solid #C17A3D; }
+        button:focus-visible { outline: 2px solid #C17A3D; outline-offset: 2px; }
+      `}</style>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 30 }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: "50%",
+              background: "#1F2422",
+              border: "1px solid #2C332F",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 14,
+            }}
+          >
+            <BreworxMark size={26} />
+          </div>
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 11.5,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#C17A3D",
+              marginBottom: 6,
+            }}
+          >
+            Breworx
+          </span>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: 0, fontWeight: 500 }}>
+            {mode === "signin" ? "Welcome back" : "Start your brewery log"}
+          </h1>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {mode === "signup" && <TextField label="Company name" value={companyName} onChange={setCompanyName} />}
+          {mode === "signup" && <TextField label="Your name" value={name} onChange={setName} />}
+          <div onKeyDown={onKeyDown}>
+            <TextField label="Email" value={email} onChange={setEmail} type="email" />
+          </div>
+          <div onKeyDown={onKeyDown}>
+            <TextField label="Password" value={password} onChange={setPassword} type="password" />
+          </div>
+
+          {error && (
+            <div style={{ color: "#C17A3D", fontSize: 12.5, background: "#241D14", border: "1px solid #4A3420", borderRadius: 5, padding: "8px 12px" }}>
+              {error}
+            </div>
+          )}
+          {info && !error && (
+            <div style={{ color: "#7FA35C", fontSize: 12.5, background: "#1A2318", border: "1px solid #33452C", borderRadius: 5, padding: "8px 12px" }}>
+              {info}
+            </div>
+          )}
+
+          <button
+            onClick={submit}
+            disabled={busy}
+            style={{
+              marginTop: 4,
+              background: "#C17A3D",
+              border: "none",
+              borderRadius: 5,
+              padding: "12px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 15,
+              letterSpacing: "0.03em",
+              cursor: busy ? "default" : "pointer",
+              opacity: busy ? 0.7 : 1,
+            }}
+          >
+            {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+          </button>
+
+          <button
+            onClick={() => {
+              setError("");
+              setInfo("");
+              setMode(mode === "signin" ? "signup" : "signin");
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#8A9591",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13,
+              cursor: "pointer",
+              padding: "4px 0",
+            }}
+          >
+            {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function TankLog() {
+  const [session, setSession] = useState(undefined); // undefined = not checked yet, null = signed out
+  const [loadingData, setLoadingData] = useState(false);
+  const [view, setView] = useState("batches");
+  const [batches, setBatches] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [logTarget, setLogTarget] = useState(null);
+  const [brewDayTarget, setBrewDayTarget] = useState(null);
+  const [packagingTarget, setPackagingTarget] = useState(null);
+  const [inventory, setInventory] = useState([]);
+  const [showAddInventory, setShowAddInventory] = useState(false);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [selectedPOId, setSelectedPOId] = useState(null);
+  const [showAddPO, setShowAddPO] = useState(false);
+  const [recipes, setRecipes] = useState([]);
+  const [selectedRecipeId, setSelectedRecipeId] = useState(null);
+  const [showAddRecipe, setShowAddRecipe] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [brewRecipe, setBrewRecipe] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [companyName, setCompanyName] = useState("");
+  const [teammates, setTeammates] = useState([]);
+
+  // Watch the Supabase auth session. This runs once and fires again on
+  // sign-in, sign-out, or token refresh — session becomes null on sign-out.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const user = session
+    ? { id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name || session.user.email.split("@")[0] }
+    : null;
+
+  // Load every table for the signed-in user once we have a session.
+  useEffect(() => {
+    if (!user) {
+      setBatches([]);
+      setInventory([]);
+      setPurchaseOrders([]);
+      setRecipes([]);
+      setProfile(null);
+      setCompanyName("");
+      setTeammates([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingData(true);
+    (async () => {
+      // Every account belongs to a company. If this is the very first time
+      // this user has ever loaded the app, they won't have a profile row
+      // yet — create/join their company now using what they entered at
+      // sign-up (stashed in their auth metadata).
+      let profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      if (!profileRow.data) {
+        const meta = session.user.user_metadata || {};
+        const { error: joinError } = await supabase.rpc("join_or_create_company", {
+          company_name: meta.company || "My Brewery",
+          member_name: meta.name || user.email.split("@")[0],
+        });
+        if (joinError) console.error(joinError);
+        profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      }
+      if (cancelled) return;
+      if (!profileRow.data) {
+        setLoadingData(false);
+        return;
+      }
+      const myProfile = rowToProfile(profileRow.data);
+      setProfile(myProfile);
+
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes] = await Promise.all([
+        supabase.from("companies").select("name").eq("id", myProfile.companyId).single(),
+        supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
+        supabase.from("batches").select("*").order("created_at", { ascending: false }),
+        supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
+        supabase.from("purchase_orders").select("*").order("created_at", { ascending: false }),
+        supabase.from("recipes").select("*").order("created_at", { ascending: false }),
+      ]);
+      if (cancelled) return;
+      if (companyRes.error) console.error(companyRes.error);
+      else setCompanyName(companyRes.data.name);
+      if (teammatesRes.error) console.error(teammatesRes.error);
+      else setTeammates(teammatesRes.data.map(rowToProfile));
+      if (batchesRes.error) console.error(batchesRes.error);
+      else setBatches(batchesRes.data.map(rowToBatch));
+      if (inventoryRes.error) console.error(inventoryRes.error);
+      else setInventory(inventoryRes.data.map(rowToInventoryItem));
+      if (poRes.error) console.error(poRes.error);
+      else setPurchaseOrders(poRes.data.map(rowToPO));
+      if (recipesRes.error) console.error(recipesRes.error);
+      else setRecipes(recipesRes.data.map(rowToRecipe));
+      setLoadingData(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const selected = useMemo(() => batches.find((b) => b.id === selectedId) || null, [batches, selectedId]);
+  const nextNumber = useMemo(() => String(Math.max(0, ...batches.map((b) => parseInt(b.number, 10) || 0)) + 1), [batches]);
+  const selectedPO = useMemo(() => purchaseOrders.find((p) => p.id === selectedPOId) || null, [purchaseOrders, selectedPOId]);
+  const nextPONumber = useMemo(() => {
+    const nums = purchaseOrders.map((p) => parseInt((p.poNumber.match(/\d+/) || [0])[0], 10) || 0);
+    return `PO-${Math.max(100, ...nums) + 1}`;
+  }, [purchaseOrders]);
+  const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) || null, [recipes, selectedRecipeId]);
+
+  const addBatch = async (b) => {
+    const { data, error } = await supabase.from("batches").insert(batchToRow(b, user.id, profile.companyId)).select().single();
+    if (error) return console.error(error);
+    setBatches((prev) => [rowToBatch(data), ...prev]);
+
+    if (b.ingredients && b.ingredients.length > 0) {
+      for (const ing of b.ingredients) {
+        const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+        if (!item) continue;
+        const newQty = Math.max(0, Math.round((item.qty - ing.qty) * 100) / 100);
+        const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty }).eq("id", item.id);
+        if (invError) console.error(invError);
+        else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty } : it)));
+      }
+    }
+  };
+
+  const addRecipe = async (r) => {
+    const { data, error } = await supabase.from("recipes").insert(recipeToRow(r, user.id, profile.companyId)).select().single();
+    if (error) return console.error(error);
+    setRecipes((prev) => [rowToRecipe(data), ...prev]);
+  };
+
+  const addInventoryItem = async (item) => {
+    const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(item, user.id, profile.companyId)).select().single();
+    if (error) return console.error(error);
+    setInventory((prev) => [rowToInventoryItem(data), ...prev]);
+  };
+
+  const adjustInventory = async (id, delta) => {
+    const item = inventory.find((it) => it.id === id);
+    if (!item) return;
+    const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
+    const { error } = await supabase.from("inventory_items").update({ qty: newQty }).eq("id", id);
+    if (error) return console.error(error);
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty } : it)));
+  };
+
+  const addPO = async (po) => {
+    const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
+    if (error) return console.error(error);
+    setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
+  };
+
+  const receivePO = async (id) => {
+    const po = purchaseOrders.find((p) => p.id === id);
+    if (!po) return;
+
+    let nextInventory = [...inventory];
+    for (const line of po.lines) {
+      const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      const lotEntry = { id: uid(), lotNumber: line.lotNumber || "no lot #", qty: line.qty, date: today(), poNumber: po.poNumber };
+
+      if (idx >= 0) {
+        const item = nextInventory[idx];
+        const newQty = Math.round((item.qty + line.qty) * 100) / 100;
+        const newLots = [...(item.lots || []), lotEntry];
+        const { error } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots }).eq("id", item.id);
+        if (error) {
+          console.error(error);
+          continue;
+        }
+        nextInventory[idx] = { ...item, qty: newQty, lots: newLots };
+      } else {
+        const newItem = { id: uid(), name: line.name, category: line.category, qty: line.qty, unit: line.unit, threshold: 0, lots: [lotEntry] };
+        const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItem, user.id, profile.companyId)).select().single();
+        if (error) {
+          console.error(error);
+          continue;
+        }
+        nextInventory = [rowToInventoryItem(data), ...nextInventory];
+      }
+    }
+    setInventory(nextInventory);
+
+    const { error: poError } = await supabase
+      .from("purchase_orders")
+      .update({ status: "Received", received_date: today() })
+      .eq("id", id);
+    if (poError) return console.error(poError);
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today() } : p)));
+  };
+
+  const advance = async (id) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const idx = STAGES.indexOf(batch.stage);
+    if (idx >= STAGES.length - 1) return;
+    const nextStage = STAGES[idx + 1];
+    const { error } = await supabase.from("batches").update({ stage: nextStage }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage } : b)));
+  };
+
+  const logReading = async (id, reading) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const readings = [...batch.readings, reading];
+    const { error } = await supabase.from("batches").update({ readings }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, readings } : b)));
+  };
+
+  const updateBrewDay = async (id, patch) => {
+    const { error } = await supabase
+      .from("batches")
+      .update({ mash_ph: patch.mashPh, pre_boil_gravity: patch.preBoilGravity, top_up_water: patch.topUpWater })
+      .eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  };
+
+  const setPackaging = async (id, packaging) => {
+    const { error } = await supabase.from("batches").update({ packaging, stage: "Packaged" }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging, stage: "Packaged" } : b)));
+  };
+
+  const deleteAccount = async () => {
+    const { error } = await supabase.rpc("delete_my_account");
+    if (error) {
+      console.error(error);
+      return { error: error.message };
+    }
+    setShowDeleteAccount(false);
+    await supabase.auth.signOut();
+    return { error: null };
+  };
+
+  const activeBatches = batches.filter((b) => b.stage !== "Packaged");
+  const packagedBatches = batches.filter((b) => b.stage === "Packaged");
+
+  if (session === undefined) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#16191A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#16191A",
+        fontFamily: "'Inter', sans-serif",
+        padding: "0 0 60px",
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        input:focus { outline: 1px solid #C17A3D; }
+        button:focus-visible { outline: 2px solid #C17A3D; outline-offset: 2px; }
+      `}</style>
+
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "28px 18px 0" }}>
+        {!selected && !selectedPO && !selectedRecipe && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#C17A3D" }}>
+                <BreworxMark size={16} />
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                  Breworx
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ color: "#8A9591", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>{user.name}</span>
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  aria-label="Log out"
+                  style={{
+                    background: "none",
+                    border: "1px solid #2C332F",
+                    borderRadius: 4,
+                    color: "#8A9591",
+                    cursor: "pointer",
+                    padding: 6,
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <LogOut size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20, gap: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 18, overflowX: "auto" }}>
+                {[
+                  ["batches", "Fermentation"],
+                  ["inventory", "Inventory"],
+                  ["orders", "Orders"],
+                  ["recipes", "Recipes"],
+                  ["settings", "Settings"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setView(key)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      borderBottom: `2px solid ${view === key ? "#C17A3D" : "transparent"}`,
+                      padding: "0 0 8px",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <h1
+                      style={{
+                        fontFamily: "'Oswald', sans-serif",
+                        fontSize: 20,
+                        color: view === key ? "#EDE7D9" : "#5C6B63",
+                        margin: 0,
+                        fontWeight: 500,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {label}
+                    </h1>
+                  </button>
+                ))}
+              </div>
+              {view !== "settings" && (
+                <button
+                  onClick={() => {
+                    if (view === "batches") setShowAdd(true);
+                    else if (view === "inventory") setShowAddInventory(true);
+                    else if (view === "orders") setShowAddPO(true);
+                    else setShowAddRecipe(true);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#C17A3D",
+                    border: "none",
+                    borderRadius: 5,
+                    padding: "9px 14px",
+                    color: "#16191A",
+                    fontFamily: "'Oswald', sans-serif",
+                    fontWeight: 500,
+                    fontSize: 13.5,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    marginBottom: 8,
+                  }}
+                >
+                  <Plus size={16} />{" "}
+                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "orders" ? "New order" : "New recipe"}
+                </button>
+              )}
+            </div>
+
+            {loadingData && (
+              <div style={{ color: "#5C6B63", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", padding: "20px 4px" }}>
+                Loading your brewery…
+              </div>
+            )}
+
+            {!loadingData && view === "batches" && (
+              <>
+                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                  Active ({activeBatches.length})
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: packagedBatches.length ? 26 : 0 }}>
+                  {activeBatches.map((b) => (
+                    <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                  ))}
+                  {activeBatches.length === 0 && (
+                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                      No active batches. Start one to get fermentation going.
+                    </div>
+                  )}
+                </div>
+
+                {packagedBatches.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                      Packaged ({packagedBatches.length})
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {packagedBatches.map((b) => (
+                        <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {!loadingData && view === "inventory" && (
+              <>
+                {inventory.some((it) => it.qty <= it.threshold) && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "#C17A3D",
+                      fontSize: 12.5,
+                      marginBottom: 14,
+                      background: "#241D14",
+                      border: "1px solid #4A3420",
+                      borderRadius: 5,
+                      padding: "8px 12px",
+                    }}
+                  >
+                    <AlertTriangle size={14} />
+                    {inventory.filter((it) => it.qty <= it.threshold).length} item(s) running low
+                  </div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {inventory.map((it) => (
+                    <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} />
+                  ))}
+                  {inventory.length === 0 && (
+                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                      No ingredients tracked yet. Add grain, hops, or yeast to get started.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {!loadingData && view === "orders" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {purchaseOrders.map((po) => (
+                  <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
+                ))}
+                {purchaseOrders.length === 0 && (
+                  <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                    No purchase orders yet. Create one to bring in ingredients with lot tracking.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!loadingData && view === "recipes" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {recipes.map((r) => (
+                  <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
+                ))}
+                {recipes.length === 0 && (
+                  <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                    No recipes yet. Add one so you can assign its ingredients when you start a brew.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!loadingData && view === "settings" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    Account
+                  </div>
+                  <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Name</div>
+                      <div style={{ color: "#EDE7D9", fontSize: 15, marginTop: 2 }}>{user.name}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Email</div>
+                      <div style={{ color: "#EDE7D9", fontSize: 15, marginTop: 2 }}>{user.email}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Role</div>
+                      <div style={{ color: "#EDE7D9", fontSize: 15, marginTop: 2, textTransform: "capitalize" }}>{profile?.role || "—"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    Company
+                  </div>
+                  <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Name</div>
+                    <div style={{ color: "#EDE7D9", fontSize: 17, fontFamily: "'Oswald', sans-serif", marginTop: 2 }}>{companyName || "—"}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    <Users size={13} /> Team ({teammates.length})
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {teammates.map((t) => (
+                      <div
+                        key={t.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "10px 14px",
+                          background: "#1B1F1D",
+                          border: "1px solid #262C29",
+                          borderRadius: 5,
+                          fontSize: 13.5,
+                        }}
+                      >
+                        <span style={{ color: "#EDE7D9" }}>
+                          {t.name}
+                          {t.id === user.id ? " (you)" : ""}
+                        </span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 11, textTransform: "uppercase" }}>
+                          {t.role}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ color: "#5C6B63", fontSize: 12, marginTop: 10 }}>
+                    Anyone who signs up using "{companyName}" as their company name joins this team automatically.
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 7,
+                    background: "none",
+                    border: "1px solid #4A3420",
+                    borderRadius: 5,
+                    padding: "12px",
+                    color: "#C17A3D",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  <LogOut size={15} /> Sign out
+                </button>
+
+                <button
+                  onClick={() => setShowDeleteAccount(true)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#6B4A2F",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    padding: "4px 0",
+                  }}
+                >
+                  Delete account
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {selected && (
+          <BatchDetail
+            batch={selected}
+            onBack={() => setSelectedId(null)}
+            onAdvance={advance}
+            onLogReading={setLogTarget}
+            onEditBrewDay={setBrewDayTarget}
+            onOpenPackaging={setPackagingTarget}
+          />
+        )}
+
+        {!selected && selectedPO && (
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onReceive={receivePO} />
+        )}
+
+        {!selected && !selectedPO && selectedRecipe && (
+          <RecipeDetail
+            recipe={selectedRecipe}
+            inventory={inventory}
+            onBack={() => setSelectedRecipeId(null)}
+            onBrew={(recipe) => {
+              setBrewRecipe(recipe);
+              setSelectedRecipeId(null);
+              setShowAdd(true);
+            }}
+          />
+        )}
+      </div>
+
+      {showAdd && (
+        <AddBatchModal
+          onClose={() => {
+            setShowAdd(false);
+            setBrewRecipe(null);
+          }}
+          onAdd={addBatch}
+          nextNumber={nextNumber}
+          recipes={recipes}
+          presetRecipe={brewRecipe}
+        />
+      )}
+      {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
+      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
+      {showAddRecipe && <AddRecipeModal onClose={() => setShowAddRecipe(false)} onAdd={addRecipe} />}
+      {logTarget && (
+        <LogReadingModal batch={logTarget} onClose={() => setLogTarget(null)} onLog={logReading} />
+      )}
+      {brewDayTarget && (
+        <BrewDayModal batch={brewDayTarget} onClose={() => setBrewDayTarget(null)} onSave={updateBrewDay} />
+      )}
+      {packagingTarget && (
+        <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={setPackaging} />
+      )}
+      {showDeleteAccount && (
+        <DeleteAccountModal onClose={() => setShowDeleteAccount(false)} onConfirm={deleteAccount} />
+      )}
+    </div>
+  );
+}
