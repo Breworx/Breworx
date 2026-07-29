@@ -112,6 +112,32 @@ function batchTankSummary(batch) {
   return batch.tankName || "";
 }
 
+// Shows sub-1kg amounts in grams instead — 0.05kg is much easier to read as 50g.
+function formatQty(qty, unit) {
+  const n = Number(qty);
+  if (unit === "kg" && n > 0 && n < 1) {
+    return `${Math.round(n * 1000)}g`;
+  }
+  const display = Number.isInteger(n) ? n : Math.round(n * 100) / 100;
+  return `${display} ${unit}`;
+}
+
+// Groups recipes by family and picks the one to actually use for each —
+// whichever version is explicitly pinned as active, or the latest if none is.
+function activeRecipesByFamily(recipes) {
+  const groups = {};
+  recipes.forEach((r) => {
+    const fam = r.familyId || r.id;
+    if (!groups[fam]) groups[fam] = [];
+    groups[fam].push(r);
+  });
+  return Object.values(groups).map((versions) => {
+    const pinned = versions.find((v) => v.isActive);
+    if (pinned) return pinned;
+    return versions.reduce((a, b) => ((b.version || 1) > (a.version || 1) ? b : a));
+  });
+}
+
 function tankIsOccupied(batches, tankId, excludeBatchId) {
   return batches.some((b) => {
     if (!batchTankIds(b).includes(tankId)) return false;
@@ -311,7 +337,7 @@ const ALL_STYLES = [
 function buildScheduleLabel(use, time, name) {
   if (use === "Dry Hop") return `Dry hop — day ${time ?? "?"}: add ${name}`;
   if (use === "Boil") return `Boil, ${time ?? "?"} min remaining: add ${name}`;
-  if (use === "Mash") return `Mash, ${time ?? "?"} min: add ${name}`;
+  if (use === "Mash") return time != null && time !== "" ? `Mash, ${time} min: add ${name}` : `Mash: add ${name}`;
   if (use === "First Wort") return `First wort: add ${name}`;
   return `${use || "Add"}${time != null && time !== "" ? `, ${time} min` : ""}: add ${name}`;
 }
@@ -696,8 +722,7 @@ function BatchCard({ batch, onOpen }) {
 function InventoryItemCard({ item, onAdjust, onOpen }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
-  const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
-  return (
+    return (
     <div
       style={{
         display: "flex",
@@ -778,7 +803,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             textAlign: "center",
           }}
         >
-          {displayQty} {item.unit}
+          {formatQty(item.qty, item.unit)}
         </span>
         <button
           onClick={() => onAdjust(item.id, step)}
@@ -848,8 +873,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
 function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
-  const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
-  const history = [...(item.history || [])].reverse();
+    const history = [...(item.history || [])].reverse();
 
   const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)" };
   const typeColor = { batch: "#C17A3D", manual: "#8A9591", received: "#7FA35C", restored: "#7FA35C" };
@@ -904,9 +928,9 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
         </button>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, color: low ? "#C17A3D" : "#EDE7D9" }}>
-            {displayQty} {item.unit}
+            {formatQty(item.qty, item.unit)}
           </div>
-          <div style={{ color: "#5C6B63", fontSize: 11.5, marginTop: 2 }}>low-stock alert at {item.threshold} {item.unit}</div>
+          <div style={{ color: "#5C6B63", fontSize: 11.5, marginTop: 2 }}>low-stock alert at {formatQty(item.threshold, item.unit)}</div>
         </div>
         <button
           onClick={() => onAdjust(item.id, step)}
@@ -1590,7 +1614,7 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
             }}
           >
             <div style={{ color: "#EDE7D9", fontSize: 13.5, marginBottom: 8 }}>
-              {l.name} <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({l.qty} {l.unit})</span>
+              {l.name} <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
             </div>
             <TextField
               label="Lot / batch #"
@@ -1696,7 +1720,7 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
                   {l.category}
                 </span>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
-                  {l.qty} {l.unit}
+                  {formatQty(l.qty, l.unit)}
                 </span>
                 {po.status === "Received" && (
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", width: 90, flexShrink: 0, textAlign: "right" }}>
@@ -2271,7 +2295,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
   );
 }
 
-function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, onSwitchVersion, onEdit }) {
+function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, onSwitchVersion, onEdit, onSetActive }) {
   const shortages = recipe.ingredients.filter((ing) => {
     const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
     return !stock || stock.qty < ing.qty;
@@ -2298,9 +2322,27 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
         <ChevronLeft size={16} /> All recipes
       </button>
 
-      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
-        {recipe.name}
-      </h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: "2px 0 6px", fontWeight: 500 }}>
+          {recipe.name}
+        </h1>
+        {recipe.isActive && versions.length > 1 && (
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "#7FA35C",
+              border: "1px solid #33452C",
+              borderRadius: 3,
+              padding: "3px 7px",
+            }}
+          >
+            In use
+          </span>
+        )}
+      </div>
       <div style={{ color: "#8A9591", fontSize: 14, marginBottom: 12 }}>
         {recipe.style} · {recipe.volume}L · OG {recipe.og.toFixed(3)} → FG {recipe.fg.toFixed(3)}
       </div>
@@ -2327,7 +2369,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
           >
             {versions.map((v) => (
               <option key={v.id} value={v.id}>
-                v{v.version}{v.id === versions[0].id ? " (latest)" : ""}
+                v{v.version}{v.isActive ? " (active)" : v.id === versions[0].id ? " (latest)" : ""}
                 {v.createdAt ? ` — ${v.createdAt.slice(0, 10)}` : ""}
               </option>
             ))}
@@ -2361,7 +2403,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
                 {ing.category}
               </span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9", width: 64, textAlign: "right", flexShrink: 0 }}>
-                {ing.qty} {ing.unit}
+                {formatQty(ing.qty, ing.unit)}
               </span>
               {short && <AlertTriangle size={13} color="#C17A3D" />}
             </div>
@@ -2435,6 +2477,31 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       >
         <Beaker size={16} /> Brew this recipe
       </button>
+
+      {!recipe.isActive && (
+        <button
+          onClick={() => onSetActive(recipe.id, recipe.familyId)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 14,
+            cursor: "pointer",
+            marginTop: 10,
+          }}
+        >
+          Set v{recipe.version} as the version to use
+        </button>
+      )}
 
       <button
         onClick={() => onEdit(recipe)}
@@ -2639,10 +2706,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const noSingleTankFits =
     !splitMode && tanks.length > 0 && Number(volume) > 0 && !tanks.some((t) => !tankIsOccupied(batches, t.id) && t.capacity >= Number(volume));
 
+  const searchableRecipes = activeRecipesByFamily(recipes);
   const nameMatches =
     name.trim().length === 0
-      ? recipes
-      : recipes.filter((r) => r.name.toLowerCase().includes(name.trim().toLowerCase()));
+      ? searchableRecipes
+      : searchableRecipes.filter((r) => r.name.toLowerCase().includes(name.trim().toLowerCase()));
 
   const submit = () => {
     if (!name.trim()) return;
@@ -2658,6 +2726,20 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         });
       if (finalSplitTanks.some((t) => tankIsOccupied(batches, t.tankId))) return;
     }
+    const cleanBatchIngredients = batchIngredients.filter((ing) => ing.name.trim().length > 0 && Number(ing.qty) > 0);
+    const mashSteps = cleanBatchIngredients
+      .filter((ing) => ing.category === "Grain")
+      .map((ing) => ({
+        id: uid(),
+        use: "Mash",
+        time: null,
+        name: ing.name,
+        amount: ing.qty,
+        unit: ing.unit,
+        label: buildScheduleLabel("Mash", null, ing.name),
+        done: false,
+        doneAt: null,
+      }));
     onAdd({
       id: uid(),
       number: nextNumber,
@@ -2676,8 +2758,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       tankId: splitMode ? null : tank ? tank.id : null,
       tankName: splitMode ? null : tank ? tank.name : null,
       splitTanks: splitMode ? finalSplitTanks : [],
-      ingredients: batchIngredients.filter((ing) => ing.name.trim().length > 0 && Number(ing.qty) > 0),
-      schedule: batchSchedule,
+      ingredients: cleanBatchIngredients,
+      schedule: [...mashSteps, ...batchSchedule],
       readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
     });
     onClose();
@@ -3651,7 +3733,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                   {ing.category}
                 </span>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", width: 64, textAlign: "right", flexShrink: 0 }}>
-                  {ing.qty} {ing.unit}
+                  {formatQty(ing.qty, ing.unit)}
                 </span>
               </div>
             ))}
@@ -4730,12 +4812,31 @@ export default function TankLog() {
     const familyId = r.familyId || uid();
     const versionsInFamily = recipes.filter((rec) => rec.familyId === familyId);
     const version = versionsInFamily.length > 0 ? Math.max(...versionsInFamily.map((v) => v.version || 1)) + 1 : 1;
-    const payload = { ...r, familyId, version };
+    const payload = { ...r, familyId, version, isActive: true };
     const { data, error } = await supabase.from("recipes").insert(recipeToRow(payload, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
     const newRecipe = rowToRecipe(data);
-    setRecipes((prev) => [newRecipe, ...prev]);
+
+    if (versionsInFamily.length > 0) {
+      const siblingIds = versionsInFamily.map((v) => v.id);
+      const { error: deactivateError } = await supabase.from("recipes").update({ is_active: false }).in("id", siblingIds);
+      if (deactivateError) console.error(deactivateError);
+    }
+
+    setRecipes((prev) => [newRecipe, ...prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: false } : rec))]);
     setSelectedRecipeId(newRecipe.id);
+  };
+
+  const setActiveRecipeVersion = async (recipeId, familyId) => {
+    const versionsInFamily = recipes.filter((rec) => rec.familyId === familyId);
+    const otherIds = versionsInFamily.map((v) => v.id).filter((id) => id !== recipeId);
+    const { error: activateError } = await supabase.from("recipes").update({ is_active: true }).eq("id", recipeId);
+    if (activateError) return console.error(activateError);
+    if (otherIds.length > 0) {
+      const { error: deactivateError } = await supabase.from("recipes").update({ is_active: false }).in("id", otherIds);
+      if (deactivateError) console.error(deactivateError);
+    }
+    setRecipes((prev) => prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: rec.id === recipeId } : rec)));
   };
 
   const deleteRecipe = async (id) => {
@@ -5368,19 +5469,13 @@ export default function TankLog() {
             })()}
 
             {!loadingData && view === "recipes" && (() => {
-              const latestByFamily = Object.values(
-                recipes.reduce((acc, r) => {
-                  const fam = r.familyId || r.id;
-                  if (!acc[fam] || (r.version || 1) > (acc[fam].version || 1)) acc[fam] = r;
-                  return acc;
-                }, {})
-              );
+              const activeByFamily = activeRecipesByFamily(recipes);
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {latestByFamily.map((r) => (
+                  {activeByFamily.map((r) => (
                     <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
                   ))}
-                  {latestByFamily.length === 0 && (
+                  {activeByFamily.length === 0 && (
                     <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
                       No recipes yet. Add one so you can assign its ingredients when you start a brew.
                     </div>
@@ -5585,6 +5680,7 @@ export default function TankLog() {
               .sort((a, b) => (b.version || 1) - (a.version || 1))}
             onSwitchVersion={setSelectedRecipeId}
             onEdit={setEditRecipeTarget}
+            onSetActive={setActiveRecipeVersion}
           />
         )}
 
