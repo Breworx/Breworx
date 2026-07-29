@@ -18,6 +18,8 @@ export function rowToBatch(row) {
     startDate: row.start_date,
     recipeId: row.recipe_id,
     recipeName: row.recipe_name,
+    tankId: row.tank_id,
+    tankName: row.tank_name,
     readings: row.readings || [],
     ingredients: row.ingredients || [],
     packaging: row.packaging || null,
@@ -42,6 +44,8 @@ export function batchToRow(batch, userId, companyId) {
     start_date: batch.startDate,
     recipe_id: batch.recipeId ?? null,
     recipe_name: batch.recipeName ?? null,
+    tank_id: batch.tankId ?? null,
+    tank_name: batch.tankName ?? null,
     readings: batch.readings || [],
     ingredients: batch.ingredients || [],
     packaging: batch.packaging ?? null,
@@ -132,5 +136,22 @@ export function rowToProfile(row) {
     companyId: row.company_id,
     name: row.name,
     role: row.role,
+  };
+}
+
+export function rowToTank(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    capacity: row.capacity,
+  };
+}
+
+export function tankToRow(tank, companyId) {
+  return {
+    id: tank.id,
+    company_id: companyId,
+    name: tank.name,
+    capacity: tank.capacity,
   };
 }
