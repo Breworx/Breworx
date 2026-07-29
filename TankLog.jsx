@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -11,6 +11,7 @@ import {
   poToRow,
   rowToRecipe,
   recipeToRow,
+  rowToProfile,
 } from "./lib/mappers";
 
 const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
@@ -1847,6 +1848,7 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
 
 function AuthScreen() {
   const [mode, setMode] = useState("signin");
+  const [companyName, setCompanyName] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1855,6 +1857,10 @@ function AuthScreen() {
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
+    if (mode === "signup" && !companyName.trim()) {
+      setError("Enter your company name.");
+      return;
+    }
     if (mode === "signup" && !name.trim()) {
       setError("Enter your name.");
       return;
@@ -1874,7 +1880,7 @@ function AuthScreen() {
       const { error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { name: name.trim() } },
+        options: { data: { name: name.trim(), company: companyName.trim() } },
       });
       setBusy(false);
       if (signUpError) {
@@ -1951,7 +1957,8 @@ function AuthScreen() {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {mode === "signup" && <TextField label="Name" value={name} onChange={setName} />}
+          {mode === "signup" && <TextField label="Company name" value={companyName} onChange={setCompanyName} />}
+          {mode === "signup" && <TextField label="Your name" value={name} onChange={setName} />}
           <div onKeyDown={onKeyDown}>
             <TextField label="Email" value={email} onChange={setEmail} type="email" />
           </div>
@@ -2034,6 +2041,9 @@ export default function TankLog() {
   const [selectedRecipeId, setSelectedRecipeId] = useState(null);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [brewRecipe, setBrewRecipe] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [companyName, setCompanyName] = useState("");
+  const [teammates, setTeammates] = useState([]);
 
   // Watch the Supabase auth session. This runs once and fires again on
   // sign-in, sign-out, or token refresh — session becomes null on sign-out.
@@ -2056,18 +2066,49 @@ export default function TankLog() {
       setInventory([]);
       setPurchaseOrders([]);
       setRecipes([]);
+      setProfile(null);
+      setCompanyName("");
+      setTeammates([]);
       return;
     }
     let cancelled = false;
     setLoadingData(true);
     (async () => {
-      const [batchesRes, inventoryRes, poRes, recipesRes] = await Promise.all([
+      // Every account belongs to a company. If this is the very first time
+      // this user has ever loaded the app, they won't have a profile row
+      // yet — create/join their company now using what they entered at
+      // sign-up (stashed in their auth metadata).
+      let profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      if (!profileRow.data) {
+        const meta = session.user.user_metadata || {};
+        const { error: joinError } = await supabase.rpc("join_or_create_company", {
+          company_name: meta.company || "My Brewery",
+          member_name: meta.name || user.email.split("@")[0],
+        });
+        if (joinError) console.error(joinError);
+        profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      }
+      if (cancelled) return;
+      if (!profileRow.data) {
+        setLoadingData(false);
+        return;
+      }
+      const myProfile = rowToProfile(profileRow.data);
+      setProfile(myProfile);
+
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes] = await Promise.all([
+        supabase.from("companies").select("name").eq("id", myProfile.companyId).single(),
+        supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
         supabase.from("purchase_orders").select("*").order("created_at", { ascending: false }),
         supabase.from("recipes").select("*").order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
+      if (companyRes.error) console.error(companyRes.error);
+      else setCompanyName(companyRes.data.name);
+      if (teammatesRes.error) console.error(teammatesRes.error);
+      else setTeammates(teammatesRes.data.map(rowToProfile));
       if (batchesRes.error) console.error(batchesRes.error);
       else setBatches(batchesRes.data.map(rowToBatch));
       if (inventoryRes.error) console.error(inventoryRes.error);
@@ -2093,7 +2134,7 @@ export default function TankLog() {
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) || null, [recipes, selectedRecipeId]);
 
   const addBatch = async (b) => {
-    const { data, error } = await supabase.from("batches").insert(batchToRow(b, user.id)).select().single();
+    const { data, error } = await supabase.from("batches").insert(batchToRow(b, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
     setBatches((prev) => [rowToBatch(data), ...prev]);
 
@@ -2110,13 +2151,13 @@ export default function TankLog() {
   };
 
   const addRecipe = async (r) => {
-    const { data, error } = await supabase.from("recipes").insert(recipeToRow(r, user.id)).select().single();
+    const { data, error } = await supabase.from("recipes").insert(recipeToRow(r, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
     setRecipes((prev) => [rowToRecipe(data), ...prev]);
   };
 
   const addInventoryItem = async (item) => {
-    const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(item, user.id)).select().single();
+    const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(item, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
     setInventory((prev) => [rowToInventoryItem(data), ...prev]);
   };
@@ -2131,7 +2172,7 @@ export default function TankLog() {
   };
 
   const addPO = async (po) => {
-    const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id)).select().single();
+    const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
     if (error) return console.error(error);
     setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
   };
@@ -2157,7 +2198,7 @@ export default function TankLog() {
         nextInventory[idx] = { ...item, qty: newQty, lots: newLots };
       } else {
         const newItem = { id: uid(), name: line.name, category: line.category, qty: line.qty, unit: line.unit, threshold: 0, lots: [lotEntry] };
-        const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItem, user.id)).select().single();
+        const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItem, user.id, profile.companyId)).select().single();
         if (error) {
           console.error(error);
           continue;
@@ -2279,6 +2320,7 @@ export default function TankLog() {
                   ["inventory", "Inventory"],
                   ["orders", "Orders"],
                   ["recipes", "Recipes"],
+                  ["settings", "Settings"],
                 ].map(([key, label]) => (
                   <button
                     key={key}
@@ -2307,33 +2349,35 @@ export default function TankLog() {
                   </button>
                 ))}
               </div>
-              <button
-                onClick={() => {
-                  if (view === "batches") setShowAdd(true);
-                  else if (view === "inventory") setShowAddInventory(true);
-                  else if (view === "orders") setShowAddPO(true);
-                  else setShowAddRecipe(true);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "#C17A3D",
-                  border: "none",
-                  borderRadius: 5,
-                  padding: "9px 14px",
-                  color: "#16191A",
-                  fontFamily: "'Oswald', sans-serif",
-                  fontWeight: 500,
-                  fontSize: 13.5,
-                  cursor: "pointer",
-                  flexShrink: 0,
-                  marginBottom: 8,
-                }}
-              >
-                <Plus size={16} />{" "}
-                {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "orders" ? "New order" : "New recipe"}
-              </button>
+              {view !== "settings" && (
+                <button
+                  onClick={() => {
+                    if (view === "batches") setShowAdd(true);
+                    else if (view === "inventory") setShowAddInventory(true);
+                    else if (view === "orders") setShowAddPO(true);
+                    else setShowAddRecipe(true);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#C17A3D",
+                    border: "none",
+                    borderRadius: 5,
+                    padding: "9px 14px",
+                    color: "#16191A",
+                    fontFamily: "'Oswald', sans-serif",
+                    fontWeight: 500,
+                    fontSize: 13.5,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    marginBottom: 8,
+                  }}
+                >
+                  <Plus size={16} />{" "}
+                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "orders" ? "New order" : "New recipe"}
+                </button>
+              )}
             </div>
 
             {loadingData && (
@@ -2430,6 +2474,94 @@ export default function TankLog() {
                     No recipes yet. Add one so you can assign its ingredients when you start a brew.
                   </div>
                 )}
+              </div>
+            )}
+
+            {!loadingData && view === "settings" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    Account
+                  </div>
+                  <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Name</div>
+                      <div style={{ color: "#EDE7D9", fontSize: 15, marginTop: 2 }}>{user.name}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Email</div>
+                      <div style={{ color: "#EDE7D9", fontSize: 15, marginTop: 2 }}>{user.email}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Role</div>
+                      <div style={{ color: "#EDE7D9", fontSize: 15, marginTop: 2, textTransform: "capitalize" }}>{profile?.role || "—"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    Company
+                  </div>
+                  <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>Name</div>
+                    <div style={{ color: "#EDE7D9", fontSize: 17, fontFamily: "'Oswald', sans-serif", marginTop: 2 }}>{companyName || "—"}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    <Users size={13} /> Team ({teammates.length})
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {teammates.map((t) => (
+                      <div
+                        key={t.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "10px 14px",
+                          background: "#1B1F1D",
+                          border: "1px solid #262C29",
+                          borderRadius: 5,
+                          fontSize: 13.5,
+                        }}
+                      >
+                        <span style={{ color: "#EDE7D9" }}>
+                          {t.name}
+                          {t.id === user.id ? " (you)" : ""}
+                        </span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63", fontSize: 11, textTransform: "uppercase" }}>
+                          {t.role}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ color: "#5C6B63", fontSize: 12, marginTop: 10 }}>
+                    Anyone who signs up using "{companyName}" as their company name joins this team automatically.
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 7,
+                    background: "none",
+                    border: "1px solid #4A3420",
+                    borderRadius: 5,
+                    padding: "12px",
+                    color: "#C17A3D",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  <LogOut size={15} /> Sign out
+                </button>
               </div>
             )}
           </>
