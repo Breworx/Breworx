@@ -545,7 +545,7 @@ function BatchCard({ batch, onOpen }) {
   );
 }
 
-function InventoryItemCard({ item, onAdjust }) {
+function InventoryItemCard({ item, onAdjust, onOpen }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
   const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
@@ -561,7 +561,10 @@ function InventoryItemCard({ item, onAdjust }) {
         padding: "13px 16px",
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <button
+        onClick={() => onOpen(item.id)}
+        style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h3
             style={{
@@ -598,7 +601,7 @@ function InventoryItemCard({ item, onAdjust }) {
             </span>
           )}
         </div>
-      </div>
+      </button>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         <button
           onClick={() => onAdjust(item.id, -step)}
@@ -647,6 +650,124 @@ function InventoryItemCard({ item, onAdjust }) {
         >
           <Plus size={14} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+function InventoryItemDetail({ item, onBack, onAdjust }) {
+  const low = item.qty <= item.threshold;
+  const step = STEP_FOR_UNIT[item.unit] ?? 1;
+  const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
+  const history = [...(item.history || [])].reverse();
+
+  const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received" };
+  const typeColor = { batch: "#C17A3D", manual: "#8A9591", received: "#7FA35C" };
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          color: "#8A9591",
+          cursor: "pointer",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          padding: 0,
+          marginBottom: 18,
+        }}
+      >
+        <ChevronLeft size={16} /> All inventory
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#EDE7D9", margin: 0, fontWeight: 500 }}>
+          {item.name}
+        </h1>
+        {low && <AlertTriangle size={16} color="#C17A3D" />}
+      </div>
+      <div
+        style={{
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 11,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: CATEGORY_COLOR[item.category],
+          marginBottom: 20,
+        }}
+      >
+        {item.category}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 14, background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "16px", marginBottom: 22 }}>
+        <button
+          onClick={() => onAdjust(item.id, -step)}
+          aria-label={`Remove ${step} ${item.unit}`}
+          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #3A413D", color: "#EDE7D9", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Minus size={16} />
+        </button>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, color: low ? "#C17A3D" : "#EDE7D9" }}>
+            {displayQty} {item.unit}
+          </div>
+          <div style={{ color: "#5C6B63", fontSize: 11.5, marginTop: 2 }}>low-stock alert at {item.threshold} {item.unit}</div>
+        </div>
+        <button
+          onClick={() => onAdjust(item.id, step)}
+          aria-label={`Add ${step} ${item.unit}`}
+          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #3A413D", color: "#EDE7D9", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        History
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {history.map((h) => (
+          <div
+            key={h.id}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              background: "#1B1F1D",
+              border: "1px solid #262C29",
+              borderRadius: 5,
+              fontSize: 13,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: typeColor[h.type] || "#8A9591", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                {typeLabel[h.type] || "Change"}
+              </div>
+              <div style={{ color: "#8A9591", fontSize: 12.5, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {h.note}
+              </div>
+            </div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", color: h.delta >= 0 ? "#7FA35C" : "#C17A3D", fontSize: 13.5 }}>
+                {h.delta >= 0 ? "+" : ""}
+                {h.delta} {item.unit}
+              </div>
+              <div style={{ color: "#5C6B63", fontSize: 10.5, marginTop: 2 }}>{h.date}</div>
+            </div>
+          </div>
+        ))}
+        {history.length === 0 && (
+          <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+            No changes logged yet — adjustments, batch usage, and received stock will show up here.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3174,6 +3295,7 @@ export default function TankLog() {
   const [discardTarget, setDiscardTarget] = useState(null);
   const [inventory, setInventory] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
+  const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showAddPO, setShowAddPO] = useState(false);
@@ -3292,6 +3414,10 @@ export default function TankLog() {
     return `PO-${Math.max(100, ...nums) + 1}`;
   }, [purchaseOrders]);
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) || null, [recipes, selectedRecipeId]);
+  const selectedInventoryItem = useMemo(
+    () => inventory.find((it) => it.id === selectedInventoryId) || null,
+    [inventory, selectedInventoryId]
+  );
 
   const addBatch = async (b) => {
     const { data, error } = await supabase.from("batches").insert(batchToRow(b, user.id, profile.companyId)).select().single();
@@ -3303,9 +3429,18 @@ export default function TankLog() {
         const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
         if (!item) continue;
         const newQty = Math.max(0, Math.round((item.qty - ing.qty) * 100) / 100);
-        const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty }).eq("id", item.id);
+        const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+        const historyEntry = {
+          id: uid(),
+          date: today(),
+          type: "batch",
+          delta: actualDelta,
+          note: `${b.name} (#${b.number})`,
+        };
+        const newHistory = [...(item.history || []), historyEntry];
+        const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", item.id);
         if (invError) console.error(invError);
-        else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty } : it)));
+        else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, history: newHistory } : it)));
       }
     }
   };
@@ -3362,9 +3497,12 @@ export default function TankLog() {
     const item = inventory.find((it) => it.id === id);
     if (!item) return;
     const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
-    const { error } = await supabase.from("inventory_items").update({ qty: newQty }).eq("id", id);
+    const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+    const historyEntry = { id: uid(), date: today(), type: "manual", delta: actualDelta, note: "Manual adjustment" };
+    const newHistory = [...(item.history || []), historyEntry];
+    const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
     if (error) return console.error(error);
-    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty } : it)));
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
   };
 
   const addPO = async (po) => {
@@ -3381,19 +3519,21 @@ export default function TankLog() {
     for (const line of po.lines) {
       const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
       const lotEntry = { id: uid(), lotNumber: line.lotNumber || "no lot #", qty: line.qty, date: today(), poNumber: po.poNumber };
+      const historyEntry = { id: uid(), date: today(), type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
 
       if (idx >= 0) {
         const item = nextInventory[idx];
         const newQty = Math.round((item.qty + line.qty) * 100) / 100;
         const newLots = [...(item.lots || []), lotEntry];
-        const { error } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots }).eq("id", item.id);
+        const newHistory = [...(item.history || []), historyEntry];
+        const { error } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots, history: newHistory }).eq("id", item.id);
         if (error) {
           console.error(error);
           continue;
         }
-        nextInventory[idx] = { ...item, qty: newQty, lots: newLots };
+        nextInventory[idx] = { ...item, qty: newQty, lots: newLots, history: newHistory };
       } else {
-        const newItem = { id: uid(), name: line.name, category: line.category, qty: line.qty, unit: line.unit, threshold: 0, lots: [lotEntry] };
+        const newItem = { id: uid(), name: line.name, category: line.category, qty: line.qty, unit: line.unit, threshold: 0, lots: [lotEntry], history: [historyEntry] };
         const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItem, user.id, profile.companyId)).select().single();
         if (error) {
           console.error(error);
@@ -3545,7 +3685,7 @@ export default function TankLog() {
               ["brewery", "Brewery"],
               ["settings", "Settings"],
             ].map(([key, label]) => {
-              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe;
+              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem;
               return (
                 <button
                   key={key}
@@ -3554,6 +3694,7 @@ export default function TankLog() {
                     setSelectedId(null);
                     setSelectedPOId(null);
                     setSelectedRecipeId(null);
+                    setSelectedInventoryId(null);
                   }}
                   style={{
                     textAlign: "left",
@@ -3604,7 +3745,7 @@ export default function TankLog() {
         </div>
 
         <div style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
-        {!selected && !selectedPO && !selectedRecipe && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
               {view !== "settings" && view !== "home" && (
@@ -3745,7 +3886,7 @@ export default function TankLog() {
                 )}
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {inventory.map((it) => (
-                    <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} />
+                    <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} />
                   ))}
                   {inventory.length === 0 && (
                     <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
@@ -3968,6 +4109,14 @@ export default function TankLog() {
               setShowAdd(true);
             }}
             onDelete={setDeleteRecipeTarget}
+          />
+        )}
+
+        {!selected && !selectedPO && !selectedRecipe && selectedInventoryItem && (
+          <InventoryItemDetail
+            item={selectedInventoryItem}
+            onBack={() => setSelectedInventoryId(null)}
+            onAdjust={adjustInventory}
           />
         )}
         </div>
