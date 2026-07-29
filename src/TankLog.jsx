@@ -908,16 +908,20 @@ function SelectField({ label, value, onChange, options }) {
 }
 
 function AddTankModal({ onClose, onAdd }) {
+  const [countInput, setCountInput] = useState("1");
   const [rows, setRows] = useState([{ id: uid(), name: "Tank 1", capacity: 20 }]);
 
   const applyCount = (raw) => {
-    const num = Math.max(1, Math.min(50, parseInt(raw, 10) || 1));
+    setCountInput(raw);
+    const num = parseInt(raw, 10);
+    if (!num || num < 1) return;
+    const clamped = Math.min(50, num);
     setRows((prev) => {
-      if (num === prev.length) return prev;
-      if (num < prev.length) return prev.slice(0, num);
+      if (clamped === prev.length) return prev;
+      if (clamped < prev.length) return prev.slice(0, clamped);
       const next = [...prev];
       const lastCapacity = prev[prev.length - 1]?.capacity ?? 20;
-      while (next.length < num) {
+      while (next.length < clamped) {
         next.push({ id: uid(), name: `Tank ${next.length + 1}`, capacity: lastCapacity });
       }
       return next;
@@ -938,7 +942,7 @@ function AddTankModal({ onClose, onAdd }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <NumberField
           label="How many tanks do you have?"
-          value={rows.length}
+          value={countInput}
           onChange={applyCount}
           step="1"
         />
@@ -2121,6 +2125,7 @@ function NumberField({ label, value, onChange, step = "any", suffix }) {
           step={step}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={(e) => e.target.select()}
           style={{
             width: "100%",
             boxSizing: "border-box",
