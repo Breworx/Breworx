@@ -148,3 +148,276 @@ const STEP_FOR_UNIT = { kg: 0.5, g: 50, L: 1, ea: 1 };
 
 function seedInventory() {
   const d0 = new Date();
+  const mk = (offset) => {
+    const d = new Date(d0);
+    d.setDate(d.getDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  return [
+    {
+      id: uid(),
+      name: "Maris Otter",
+      category: "Grain",
+      qty: 42,
+      unit: "kg",
+      threshold: 20,
+      lots: [{ id: uid(), lotNumber: "MO-2291", qty: 42, date: mk(14), poNumber: "PO-101" }],
+    },
+    {
+      id: uid(),
+      name: "Cascade",
+      category: "Hops",
+      qty: 0.8,
+      unit: "kg",
+      threshold: 1,
+      lots: [{ id: uid(), lotNumber: "CAS-0087", qty: 0.8, date: mk(30), poNumber: "PO-098" }],
+    },
+    {
+      id: uid(),
+      name: "Citra",
+      category: "Hops",
+      qty: 1.6,
+      unit: "kg",
+      threshold: 1,
+      lots: [{ id: uid(), lotNumber: "CIT-1142", qty: 1.6, date: mk(14), poNumber: "PO-101" }],
+    },
+    {
+      id: uid(),
+      name: "US-05 Ale Yeast",
+      category: "Yeast",
+      qty: 6,
+      unit: "ea",
+      threshold: 4,
+      lots: [{ id: uid(), lotNumber: "US05-6631", qty: 6, date: mk(14), poNumber: "PO-101" }],
+    },
+    {
+      id: uid(),
+      name: "Crystal 60L",
+      category: "Grain",
+      qty: 9,
+      unit: "kg",
+      threshold: 10,
+      lots: [{ id: uid(), lotNumber: "C60-0459", qty: 9, date: mk(30), poNumber: "PO-098" }],
+    },
+    {
+      id: uid(),
+      name: "Irish Moss",
+      category: "Other",
+      qty: 250,
+      unit: "g",
+      threshold: 100,
+      lots: [{ id: uid(), lotNumber: "IM-0021", qty: 250, date: mk(30), poNumber: "PO-098" }],
+    },
+  ];
+}
+
+function seedPurchaseOrders() {
+  const d0 = new Date();
+  const mk = (offset) => {
+    const d = new Date(d0);
+    d.setDate(d.getDate() - offset);
+    return d.toISOString().slice(0, 10);
+  };
+  return [
+    {
+      id: uid(),
+      poNumber: "PO-101",
+      supplier: "Riverbend Malt & Hop Co.",
+      orderDate: mk(16),
+      receivedDate: mk(14),
+      status: "Received",
+      lines: [
+        { id: uid(), name: "Maris Otter", category: "Grain", qty: 42, unit: "kg", lotNumber: "MO-2291" },
+        { id: uid(), name: "Citra", category: "Hops", qty: 1.6, unit: "kg", lotNumber: "CIT-1142" },
+        { id: uid(), name: "US-05 Ale Yeast", category: "Yeast", qty: 6, unit: "ea", lotNumber: "US05-6631" },
+      ],
+    },
+    {
+      id: uid(),
+      poNumber: "PO-102",
+      supplier: "Cold Coast Hop Supply",
+      orderDate: mk(2),
+      receivedDate: null,
+      status: "Ordered",
+      lines: [
+        { id: uid(), name: "Cascade", category: "Hops", qty: 2, unit: "kg", lotNumber: "" },
+        { id: uid(), name: "Simcoe", category: "Hops", qty: 1, unit: "kg", lotNumber: "" },
+      ],
+    },
+  ];
+}
+
+function seedRecipes() {
+  return [
+    {
+      id: uid(),
+      name: "Foghorn Amber",
+      style: "American Amber Ale",
+      volume: 20,
+      og: 1.058,
+      fg: 1.012,
+      ingredients: [
+        { id: uid(), name: "Maris Otter", category: "Grain", qty: 4.5, unit: "kg" },
+        { id: uid(), name: "Crystal 60L", category: "Grain", qty: 0.5, unit: "kg" },
+        { id: uid(), name: "Cascade", category: "Hops", qty: 0.05, unit: "kg" },
+        { id: uid(), name: "US-05 Ale Yeast", category: "Yeast", qty: 1, unit: "ea" },
+        { id: uid(), name: "Irish Moss", category: "Other", qty: 5, unit: "g" },
+      ],
+    },
+    {
+      id: uid(),
+      name: "Low Tide Saison",
+      style: "Farmhouse Saison",
+      volume: 18,
+      og: 1.052,
+      fg: 1.004,
+      ingredients: [
+        { id: uid(), name: "Maris Otter", category: "Grain", qty: 4, unit: "kg" },
+        { id: uid(), name: "Citra", category: "Hops", qty: 0.03, unit: "kg" },
+        { id: uid(), name: "US-05 Ale Yeast", category: "Yeast", qty: 1, unit: "ea" },
+      ],
+    },
+  ];
+}
+
+function attenuation(og, fg, current) {
+  if (og === fg) return 0;
+  const pct = ((og - current) / (og - fg)) * 100;
+  return Math.min(100, Math.max(0, pct));
+}
+
+function latestReading(batch) {
+  return batch.readings[batch.readings.length - 1];
+}
+
+function Tank({ batch }) {
+  const latest = latestReading(batch);
+  const pct = attenuation(batch.og, batch.fg, latest.gravity);
+  const color = STAGE_COLOR[batch.stage];
+  return (
+    <div style={{ width: 46, height: 88, position: "relative", flexShrink: 0 }}>
+      <svg width="46" height="88" viewBox="0 0 46 88">
+        <defs>
+          <clipPath id={`clip-${batch.id}`}>
+            <path d="M6 6 H40 V52 L23 84 L6 52 Z" />
+          </clipPath>
+        </defs>
+        <path
+          d="M6 6 H40 V52 L23 84 L6 52 Z"
+          fill="none"
+          stroke="#3A413D"
+          strokeWidth="2"
+        />
+        <g clipPath={`url(#clip-${batch.id})`}>
+          <rect
+            x="0"
+            y={84 - (78 * pct) / 100}
+            width="46"
+            height="88"
+            fill={color}
+            opacity="0.85"
+          />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function StagePill({ stage }) {
+  return (
+    <span
+      style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: STAGE_COLOR[stage],
+        border: `1px solid ${STAGE_COLOR[stage]}`,
+        borderRadius: 3,
+        padding: "3px 7px",
+        display: "inline-block",
+      }}
+    >
+      {stage}
+    </span>
+  );
+}
+
+function BatchCard({ batch, onOpen }) {
+  const latest = latestReading(batch);
+  const pct = attenuation(batch.og, batch.fg, latest.gravity);
+  const days = daysBetween(batch.startDate, today());
+  return (
+    <button
+      onClick={() => onOpen(batch.id)}
+      style={{
+        display: "flex",
+        gap: 16,
+        alignItems: "center",
+        background: "#1F2422",
+        border: "1px solid #2C332F",
+        borderRadius: 6,
+        padding: "16px 18px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+        transition: "border-color 0.15s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2C332F")}
+    >
+      <Tank batch={batch} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+            <span
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                color: "#5C6B63",
+                fontSize: 13,
+              }}
+            >
+              #{batch.number}
+            </span>
+            <h3
+              style={{
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 18,
+                color: "#EDE7D9",
+                margin: 0,
+                textOverflow: "ellipsis",
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {batch.name}
+            </h3>
+          </div>
+          <StagePill stage={batch.stage} />
+        </div>
+        <div style={{ color: "#8A9591", fontSize: 13, marginTop: 2 }}>{batch.style}</div>
+        <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#B8C0BC" }}>
+          <span>SG {latest.gravity.toFixed(3)}</span>
+          <span>{latest.temp}°C</span>
+          <span>{days}d</span>
+          <span style={{ color: STAGE_COLOR[batch.stage] }}>{pct.toFixed(0)}% attn</span>
+        </div>
+        {batch.packaging && (
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#5C6B63", marginTop: 6 }}>
+            {CONTAINERS.filter((c) => (batch.packaging[c.key] || 0) > 0)
+              .map((c) => `${batch.packaging[c.key]}× ${c.shortLabel}`)
+              .join(" · ") || "No containers logged"}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function InventoryItemCard({ item, onAdjust }) {
+  const low = item.qty <= item.threshold;
+  const step = STEP_FOR_UNIT[item.unit] ?? 1;
+  const displayQty = Number.isInteger(item.qty) ? item.qty : item.qty.toFixed(2);
+  return (
+    
