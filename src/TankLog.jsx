@@ -37,13 +37,21 @@ const packagedVolume = (packaging) =>
 function BreworxMark({ size = 24 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      {/* Outer ring */}
-      <circle cx="20" cy="20" r="15.5" stroke="#C17A3D" strokeWidth="2" />
-      {/* Rising gravity line hitting the point */}
-      <path d="M7 27 L15 22 L22 25 L30 12" stroke="#D4A24C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      {/* The point itself */}
-      <circle cx="30" cy="12" r="3" fill="#C17A3D" />
-      <circle cx="30" cy="12" r="6" stroke="#C17A3D" strokeWidth="1.2" opacity="0.5" />
+      <defs>
+        <clipPath id="bp-tank-clip">
+          <path d="M9 5 H29 V23 L19 34 L9 23 Z" />
+        </clipPath>
+      </defs>
+      {/* Fermenter tank outline */}
+      <path d="M9 5 H29 V23 L19 34 L9 23 Z" stroke="#C17A3D" strokeWidth="2.2" strokeLinejoin="round" />
+      {/* Liquid fill */}
+      <g clipPath="url(#bp-tank-clip)">
+        <rect x="7" y="16" width="24" height="20" fill="#C17A3D" opacity="0.32" />
+      </g>
+      {/* Reading marker calling out the point on the tank */}
+      <line x1="29" y1="16" x2="35" y2="10" stroke="#D4A24C" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="35" cy="10" r="3" fill="#D4A24C" />
+      <circle cx="35" cy="10" r="6" stroke="#D4A24C" strokeWidth="1.1" opacity="0.5" />
     </svg>
   );
 }
@@ -1979,8 +1987,8 @@ function AuthScreen() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 30 }}>
           <div
             style={{
-              width: 52,
-              height: 52,
+              width: 72,
+              height: 72,
               borderRadius: "50%",
               background: "#1F2422",
               border: "1px solid #2C332F",
@@ -1990,7 +1998,7 @@ function AuthScreen() {
               marginBottom: 14,
             }}
           >
-            <BreworxMark size={26} />
+            <BreworxMark size={40} />
           </div>
           <span
             style={{
@@ -2357,8 +2365,8 @@ export default function TankLog() {
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#C17A3D" }}>
-                <BreworxMark size={16} />
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                <BreworxMark size={22} />
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, letterSpacing: "0.12em", textTransform: "uppercase" }}>
                   Brewpoint
                 </span>
               </div>
