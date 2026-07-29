@@ -61,6 +61,27 @@ const remainingVolume = (batch) => {
   return Math.max(0, Math.round(rem * 100) / 100);
 };
 
+// A tank is occupied if some batch is sitting on it and hasn't been fully
+// packaged out yet. excludeBatchId lets a batch ignore its own current
+// assignment when checking whether it can stay put.
+function tankIsOccupied(batches, tankId, excludeBatchId) {
+  return batches.some((b) => {
+    if (b.tankId !== tankId) return false;
+    if (excludeBatchId && b.id === excludeBatchId) return false;
+    const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
+    return !fullyDone;
+  });
+}
+
+function occupyingBatch(batches, tankId, excludeBatchId) {
+  return batches.find((b) => {
+    if (b.tankId !== tankId) return false;
+    if (excludeBatchId && b.id === excludeBatchId) return false;
+    const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
+    return !fullyDone;
+  });
+}
+
 function aggregatePackagingCounts(batch) {
   const totals = {};
   CONTAINERS.forEach((c) => (totals[c.key] = 0));
@@ -751,11 +772,12 @@ function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
   );
 }
 
-function AssignTankModal({ batch, tanks, onClose, onSave }) {
+function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   const [tankId, setTankId] = useState(batch.tankId || "");
 
   const submit = () => {
     const tank = tanks.find((t) => t.id === tankId) || null;
+    if (tank && tankIsOccupied(batches, tank.id, batch.id)) return;
     onSave(batch.id, tank);
     onClose();
   };
@@ -781,11 +803,15 @@ function AssignTankModal({ batch, tanks, onClose, onSave }) {
             }}
           >
             <option value="">Unassigned</option>
-            {tanks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.capacity}L)
-              </option>
-            ))}
+            {tanks.map((t) => {
+              const occupied = tankIsOccupied(batches, t.id, batch.id);
+              const occupant = occupied ? occupyingBatch(batches, t.id, batch.id) : null;
+              return (
+                <option key={t.id} value={t.id} disabled={occupied}>
+                  {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                </option>
+              );
+            })}
           </select>
         </label>
         <button
@@ -1534,7 +1560,7 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks }) {
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches }) {
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
@@ -1564,6 +1590,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const submit = () => {
     if (!name.trim()) return;
     const tank = tanks.find((t) => t.id === tankId) || null;
+    if (tank && tankIsOccupied(batches, tank.id)) return;
     onAdd({
       id: uid(),
       number: nextNumber,
@@ -1640,11 +1667,15 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               }}
             >
               <option value="">Unassigned</option>
-              {tanks.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.capacity}L)
-                </option>
-              ))}
+              {tanks.map((t) => {
+                const occupied = tankIsOccupied(batches, t.id);
+                const occupant = occupied ? occupyingBatch(batches, t.id) : null;
+                return (
+                  <option key={t.id} value={t.id} disabled={occupied}>
+                    {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
         )}
@@ -3383,7 +3414,7 @@ export default function TankLog() {
             {!loadingData && view === "brewery" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {tanks.map((t) => {
-                  const inUseCount = batches.filter((b) => b.tankId === t.id).length;
+                  const occupant = occupyingBatch(batches, t.id);
                   return (
                     <div
                       key={t.id}
@@ -3403,7 +3434,7 @@ export default function TankLog() {
                           {t.name}
                         </h3>
                         <div style={{ color: "#8A9591", fontSize: 12.5, marginTop: 3 }}>
-                          {t.capacity}L{inUseCount > 0 ? ` · in use by ${inUseCount} batch${inUseCount !== 1 ? "es" : ""}` : ""}
+                          {t.capacity}L{occupant ? ` · occupied by ${occupant.name}` : " · empty"}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -3413,7 +3444,7 @@ export default function TankLog() {
                         >
                           <Settings size={14} />
                         </button>
-                        {inUseCount === 0 && (
+                        {!occupant && (
                           <button
                             onClick={() => setDeleteTankTarget(t)}
                             style={{ background: "none", border: "1px solid #4A3420", borderRadius: 4, color: "#C17A3D", cursor: "pointer", padding: 6 }}
@@ -3581,6 +3612,7 @@ export default function TankLog() {
           recipes={recipes}
           presetRecipe={brewRecipe}
           tanks={tanks}
+          batches={batches}
         />
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
@@ -3594,7 +3626,7 @@ export default function TankLog() {
         <ConfirmDeleteTankModal tank={deleteTankTarget} onClose={() => setDeleteTankTarget(null)} onConfirm={deleteTank} />
       )}
       {assignTankTarget && (
-        <AssignTankModal batch={assignTankTarget} tanks={tanks} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
+        <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
       )}
       {logTarget && (
         <LogReadingModal batch={logTarget} onClose={() => setLogTarget(null)} onLog={logReading} />
