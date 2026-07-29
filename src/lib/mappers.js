@@ -24,10 +24,11 @@ export function rowToBatch(row) {
   };
 }
 
-export function batchToRow(batch, userId) {
+export function batchToRow(batch, userId, companyId) {
   return {
     id: batch.id,
     user_id: userId,
+    company_id: companyId,
     number: batch.number,
     name: batch.name,
     style: batch.style,
@@ -59,10 +60,11 @@ export function rowToInventoryItem(row) {
   };
 }
 
-export function inventoryItemToRow(item, userId) {
+export function inventoryItemToRow(item, userId, companyId) {
   return {
     id: item.id,
     user_id: userId,
+    company_id: companyId,
     name: item.name,
     category: item.category,
     qty: item.qty,
@@ -84,10 +86,11 @@ export function rowToPO(row) {
   };
 }
 
-export function poToRow(po, userId) {
+export function poToRow(po, userId, companyId) {
   return {
     id: po.id,
     user_id: userId,
+    company_id: companyId,
     po_number: po.poNumber,
     supplier: po.supplier,
     order_date: po.orderDate,
@@ -99,25 +102,4 @@ export function poToRow(po, userId) {
 
 export function rowToRecipe(row) {
   return {
-    id: row.id,
-    name: row.name,
-    style: row.style,
-    volume: row.volume,
-    og: row.og,
-    fg: row.fg,
-    ingredients: row.ingredients || [],
-  };
-}
-
-export function recipeToRow(recipe, userId) {
-  return {
-    id: recipe.id,
-    user_id: userId,
-    name: recipe.name,
-    style: recipe.style,
-    volume: recipe.volume,
-    og: recipe.og,
-    fg: recipe.fg,
-    ingredients: recipe.ingredients || [],
-  };
-}
+    id: row
