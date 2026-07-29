@@ -97,9 +97,24 @@ function packagingByMonth(batches) {
 // A tank is occupied if some batch is sitting on it and hasn't been fully
 // packaged out yet. excludeBatchId lets a batch ignore its own current
 // assignment when checking whether it can stay put.
+// A batch can sit on a single tank (tankId) or be split across several
+// (splitTanks) — this returns every tank id it currently occupies either way.
+function batchTankIds(batch) {
+  if (batch.splitTanks && batch.splitTanks.length > 0) return batch.splitTanks.map((t) => t.tankId);
+  if (batch.tankId) return [batch.tankId];
+  return [];
+}
+
+function batchTankSummary(batch) {
+  if (batch.splitTanks && batch.splitTanks.length > 0) {
+    return batch.splitTanks.map((t) => `${t.tankName} (${t.volume}L)`).join(" + ");
+  }
+  return batch.tankName || "";
+}
+
 function tankIsOccupied(batches, tankId, excludeBatchId) {
   return batches.some((b) => {
-    if (b.tankId !== tankId) return false;
+    if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
@@ -108,7 +123,7 @@ function tankIsOccupied(batches, tankId, excludeBatchId) {
 
 function occupyingBatch(batches, tankId, excludeBatchId) {
   return batches.find((b) => {
-    if (b.tankId !== tankId) return false;
+    if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
@@ -640,7 +655,7 @@ function BatchCard({ batch, onOpen }) {
           <StagePill stage={batch.stage} />
         </div>
         <div style={{ color: "#8A9591", fontSize: 13, marginTop: 2 }}>
-          {batch.style}{batch.tankName ? ` · ${batch.tankName}` : ""}
+          {batch.style}{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : ""}
         </div>
         <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#B8C0BC" }}>
           <span>SG {latest.gravity.toFixed(3)}</span>
@@ -2518,6 +2533,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [preBoilGravity, setPreBoilGravity] = useState("");
   const [topUpWater, setTopUpWater] = useState("");
   const [tankId, setTankId] = useState("");
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitRows, setSplitRows] = useState([{ id: uid(), tankId: "", volume: "" }]);
   const [nameFocused, setNameFocused] = useState(false);
   const [batchIngredients, setBatchIngredients] = useState(
     presetRecipe ? presetRecipe.ingredients.map((i) => ({ ...i })) : []
@@ -2563,6 +2580,14 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     return item ? item.qty : null;
   };
 
+  const addSplitRow = () => setSplitRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }]);
+  const updateSplitRow = (id, patch) =>
+    setSplitRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeSplitRow = (id) => setSplitRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
+  const splitTotal = splitRows.reduce((sum, r) => sum + (Number(r.volume) || 0), 0);
+  const noSingleTankFits =
+    !splitMode && tanks.length > 0 && Number(volume) > 0 && !tanks.some((t) => !tankIsOccupied(batches, t.id) && t.capacity >= Number(volume));
+
   const nameMatches =
     name.trim().length === 0
       ? recipes
@@ -2571,7 +2596,17 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const submit = () => {
     if (!name.trim()) return;
     const tank = tanks.find((t) => t.id === tankId) || null;
-    if (tank && tankIsOccupied(batches, tank.id)) return;
+    if (!splitMode && tank && tankIsOccupied(batches, tank.id)) return;
+    let finalSplitTanks = [];
+    if (splitMode) {
+      finalSplitTanks = splitRows
+        .filter((r) => r.tankId && Number(r.volume) > 0)
+        .map((r) => {
+          const t = tanks.find((tk) => tk.id === r.tankId);
+          return { tankId: r.tankId, tankName: t ? t.name : "", volume: Number(r.volume) || 0 };
+        });
+      if (finalSplitTanks.some((t) => tankIsOccupied(batches, t.tankId))) return;
+    }
     onAdd({
       id: uid(),
       number: nextNumber,
@@ -2587,8 +2622,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       startDate: today(),
       recipeId: activeRecipe ? activeRecipe.id : null,
       recipeName: activeRecipe ? activeRecipe.name : null,
-      tankId: tank ? tank.id : null,
-      tankName: tank ? tank.name : null,
+      tankId: splitMode ? null : tank ? tank.id : null,
+      tankName: splitMode ? null : tank ? tank.name : null,
+      splitTanks: splitMode ? finalSplitTanks : [],
       ingredients: batchIngredients.filter((ing) => ing.name.trim().length > 0 && Number(ing.qty) > 0),
       schedule: batchSchedule,
       readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
@@ -2600,37 +2636,184 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     <Modal title="New Batch" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {tanks.length > 0 && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
-              Tank (optional)
-            </span>
-            <select
-              value={tankId}
-              onChange={(e) => setTankId(e.target.value)}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "#16191A",
-                border: "1px solid #2C332F",
-                borderRadius: 4,
-                padding: "9px 10px",
-                color: "#EDE7D9",
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 14,
-              }}
-            >
-              <option value="">Unassigned</option>
-              {tanks.map((t) => {
-                const occupied = tankIsOccupied(batches, t.id);
-                const occupant = occupied ? occupyingBatch(batches, t.id) : null;
-                return (
-                  <option key={t.id} value={t.id} disabled={occupied}>
-                    {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
+          <div>
+            {!splitMode ? (
+              <>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
+                    Tank (optional)
+                  </span>
+                  <select
+                    value={tankId}
+                    onChange={(e) => setTankId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#16191A",
+                      border: "1px solid #2C332F",
+                      borderRadius: 4,
+                      padding: "9px 10px",
+                      color: "#EDE7D9",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                    }}
+                  >
+                    <option value="">Unassigned</option>
+                    {tanks.map((t) => {
+                      const occupied = tankIsOccupied(batches, t.id);
+                      const occupant = occupied ? occupyingBatch(batches, t.id) : null;
+                      return (
+                        <option key={t.id} value={t.id} disabled={occupied}>
+                          {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                {noSingleTankFits && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#C17A3D", fontSize: 12, marginTop: 6 }}>
+                    <AlertTriangle size={12} />
+                    No single free tank holds {volume}L —{" "}
+                    <button
+                      onClick={() => setSplitMode(true)}
+                      style={{ background: "none", border: "none", color: "#C17A3D", textDecoration: "underline", cursor: "pointer", padding: 0, fontSize: 12 }}
+                    >
+                      split across multiple tanks
+                    </button>
+                  </div>
+                )}
+                {!noSingleTankFits && (
+                  <button
+                    onClick={() => setSplitMode(true)}
+                    style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", padding: 0, fontSize: 11.5, marginTop: 6, display: "block" }}
+                  >
+                    Split this batch across multiple tanks instead
+                  </button>
+                )}
+              </>
+            ) : (
+              <div style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>
+                    Split across tanks
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSplitMode(false);
+                      setSplitRows([{ id: uid(), tankId: "", volume: "" }]);
+                    }}
+                    style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", fontSize: 11.5, padding: 0 }}
+                  >
+                    Use one tank instead
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {splitRows.map((row) => {
+                    const rowTank = tanks.find((t) => t.id === row.tankId);
+                    const overCapacity = rowTank && Number(row.volume) > rowTank.capacity;
+                    return (
+                      <div key={row.id}>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <select
+                            value={row.tankId}
+                            onChange={(e) => updateSplitRow(row.id, { tankId: e.target.value })}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              boxSizing: "border-box",
+                              background: "#1F2422",
+                              border: "1px solid #2C332F",
+                              borderRadius: 4,
+                              padding: "8px 8px",
+                              color: "#EDE7D9",
+                              fontFamily: "'Inter', sans-serif",
+                              fontSize: 13,
+                            }}
+                          >
+                            <option value="">Choose tank</option>
+                            {tanks.map((t) => {
+                              const occupied = tankIsOccupied(batches, t.id) || splitRows.some((r) => r.id !== row.id && r.tankId === t.id);
+                              const occupant = tankIsOccupied(batches, t.id) ? occupyingBatch(batches, t.id) : null;
+                              return (
+                                <option key={t.id} value={t.id} disabled={occupied}>
+                                  {t.name} ({t.capacity}L){occupant ? ` — occupied by ${occupant.name}` : occupied ? " — already used above" : ""}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={row.volume}
+                            onChange={(e) => updateSplitRow(row.id, { volume: e.target.value })}
+                            placeholder="Litres"
+                            style={{
+                              width: 84,
+                              flexShrink: 0,
+                              boxSizing: "border-box",
+                              background: "#1F2422",
+                              border: `1px solid ${overCapacity ? "#6B4A2F" : "#2C332F"}`,
+                              borderRadius: 4,
+                              padding: "8px 8px",
+                              color: overCapacity ? "#C17A3D" : "#EDE7D9",
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: 13,
+                              textAlign: "right",
+                            }}
+                          />
+                          <button
+                            onClick={() => removeSplitRow(row.id)}
+                            aria-label="Remove tank"
+                            style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", flexShrink: 0 }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        {overCapacity && (
+                          <div style={{ color: "#C17A3D", fontSize: 11, marginTop: 3 }}>
+                            Exceeds {rowTank.name}'s {rowTank.capacity}L capacity.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={addSplitRow}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    width: "100%",
+                    background: "none",
+                    border: "1px dashed #3A413D",
+                    borderRadius: 5,
+                    padding: "8px",
+                    color: "#8A9591",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    marginTop: 8,
+                  }}
+                >
+                  <Plus size={13} /> Add another tank
+                </button>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: Math.abs(splitTotal - Number(volume)) > 0.01 ? "#C17A3D" : "#7FA35C",
+                  }}
+                >
+                  <span>Allocated</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{splitTotal.toFixed(1)}L of {Number(volume) || 0}L</span>
+                </div>
+              </div>
+            )}
+          </div>
         )}
         <div style={{ position: "relative" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -3264,14 +3447,16 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </h1>
           <div style={{ color: "#8A9591", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
             <span>
-              {batch.style} · {batch.volume}L{batch.tankName ? ` · ${batch.tankName}` : " · No tank assigned"}
+              {batch.style} · {batch.volume}L{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : " · No tank assigned"}
             </span>
-            <button
-              onClick={() => onAssignTank(batch)}
-              style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
-            >
-              Change
-            </button>
+            {!(batch.splitTanks && batch.splitTanks.length > 0) && (
+              <button
+                onClick={() => onAssignTank(batch)}
+                style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+              >
+                Change
+              </button>
+            )}
           </div>
         </div>
       </div>
