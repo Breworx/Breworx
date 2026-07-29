@@ -34,6 +34,38 @@ const CONTAINERS = [
 const packagedVolume = (packaging) =>
   !packaging ? 0 : CONTAINERS.reduce((sum, c) => sum + (packaging[c.key] || 0) * c.volumeL, 0);
 
+// Packaging is stored as { events: [{id,date,cans330,kegs20,...}], discarded: number }.
+// Batches packaged before this feature existed have the old shape (container
+// counts directly on the packaging object) — read those as a single legacy event.
+function packagingEvents(batch) {
+  if (!batch.packaging) return [];
+  if (Array.isArray(batch.packaging.events)) return batch.packaging.events;
+  const hasLegacyCounts = CONTAINERS.some((c) => batch.packaging[c.key] != null);
+  if (hasLegacyCounts) {
+    const legacy = { id: "legacy", date: batch.startDate };
+    CONTAINERS.forEach((c) => (legacy[c.key] = batch.packaging[c.key] || 0));
+    return [legacy];
+  }
+  return [];
+}
+
+const packagingDiscarded = (batch) => (batch.packaging && batch.packaging.discarded) || 0;
+
+const totalPackagedVolume = (batch) =>
+  packagingEvents(batch).reduce((sum, e) => sum + packagedVolume(e), 0);
+
+const remainingVolume = (batch) => {
+  const rem = batch.volume - totalPackagedVolume(batch) - packagingDiscarded(batch);
+  return Math.max(0, Math.round(rem * 100) / 100);
+};
+
+function aggregatePackagingCounts(batch) {
+  const totals = {};
+  CONTAINERS.forEach((c) => (totals[c.key] = 0));
+  packagingEvents(batch).forEach((e) => CONTAINERS.forEach((c) => (totals[c.key] += e[c.key] || 0)));
+  return totals;
+}
+
 function BreworxMark({ size = 24 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
@@ -397,13 +429,31 @@ function BatchCard({ batch, onOpen }) {
           <span>{days}d</span>
           <span style={{ color: STAGE_COLOR[batch.stage] }}>{pct.toFixed(0)}% attn</span>
         </div>
-        {batch.packaging && (
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#5C6B63", marginTop: 6 }}>
-            {CONTAINERS.filter((c) => (batch.packaging[c.key] || 0) > 0)
-              .map((c) => `${batch.packaging[c.key]}× ${c.shortLabel}`)
-              .join(" · ") || "No containers logged"}
-          </div>
-        )}
+        {batch.packaging && (() => {
+          const totals = aggregatePackagingCounts(batch);
+          const rem = remainingVolume(batch);
+          const pctPackaged = Math.min(100, Math.round((totalPackagedVolume(batch) / batch.volume) * 100));
+          const parts = CONTAINERS.filter((c) => totals[c.key] > 0).map((c) => `${totals[c.key]}× ${c.shortLabel}`);
+          if (rem > 0) parts.push(`${rem}L in tank`);
+          return (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ height: 5, background: "#2C332F", borderRadius: 3, overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pctPackaged}%`,
+                    background: rem > 0 ? "#D4A24C" : "#7FA35C",
+                    borderRadius: 3,
+                  }}
+                />
+              </div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#5C6B63", marginTop: 5 }}>
+                {pctPackaged}% packaged{parts.length > 0 ? " · " : ""}
+                {parts.join(" · ")}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </button>
   );
@@ -1491,25 +1541,31 @@ function BrewDayModal({ batch, onClose, onSave }) {
 function PackagingModal({ batch, onClose, onSave }) {
   const [counts, setCounts] = useState(() => {
     const init = {};
-    CONTAINERS.forEach((c) => (init[c.key] = (batch.packaging && batch.packaging[c.key]) || 0));
+    CONTAINERS.forEach((c) => (init[c.key] = 0));
     return init;
   });
 
-  const totalVolume = CONTAINERS.reduce((sum, c) => sum + (Number(counts[c.key]) || 0) * c.volumeL, 0);
-  const diff = Math.round((totalVolume - batch.volume) * 100) / 100;
+  const remaining = remainingVolume(batch);
+  const sessionVolume = CONTAINERS.reduce((sum, c) => sum + (Number(counts[c.key]) || 0) * c.volumeL, 0);
+  const diff = Math.round((sessionVolume - remaining) * 100) / 100;
+  const leftAfter = Math.max(0, Math.round((remaining - sessionVolume) * 100) / 100);
 
   const submit = () => {
-    const packaging = {};
-    CONTAINERS.forEach((c) => (packaging[c.key] = Number(counts[c.key]) || 0));
-    onSave(batch.id, packaging);
+    const session = {};
+    CONTAINERS.forEach((c) => (session[c.key] = Number(counts[c.key]) || 0));
+    onSave(batch.id, session);
     onClose();
   };
 
   return (
-    <Modal title={`Package — ${batch.name}`} onClose={onClose}>
+    <Modal title={`Log packaging — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ color: "#8A9591", fontSize: 13 }}>
-          Batch volume: <span style={{ color: "#EDE7D9", fontFamily: "'JetBrains Mono', monospace" }}>{batch.volume} L</span>
+          Remaining in tank: <span style={{ color: "#EDE7D9", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span>
+          {" "}of {batch.volume} L batch
+        </div>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>
+          This packaging run
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {CONTAINERS.map((c) => (
@@ -1534,10 +1590,10 @@ function PackagingModal({ batch, onClose, onSave }) {
             fontSize: 13,
           }}
         >
-          <span style={{ color: "#8A9591" }}>Total packaged</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9" }}>{totalVolume.toFixed(2)} L</span>
+          <span style={{ color: "#8A9591" }}>This run</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9" }}>{sessionVolume.toFixed(2)} L</span>
         </div>
-        {Math.abs(diff) > 0.01 && (
+        {diff > 0.01 ? (
           <div
             style={{
               display: "flex",
@@ -1552,24 +1608,73 @@ function PackagingModal({ batch, onClose, onSave }) {
             }}
           >
             <AlertTriangle size={14} />
-            {diff > 0
-              ? `${diff.toFixed(2)} L more than the batch volume — double check counts.`
-              : `${Math.abs(diff).toFixed(2)} L short of the batch volume — some volume unaccounted for.`}
+            {`${diff.toFixed(2)} L more than what's left in the tank — double check counts.`}
           </div>
+        ) : (
+          sessionVolume > 0 && (
+            <div style={{ color: "#5C6B63", fontSize: 12.5 }}>
+              {leftAfter > 0
+                ? `${leftAfter.toFixed(2)} L will still be left in the tank after this run.`
+                : "This clears out everything left in the tank."}
+            </div>
+          )
         )}
         <button
           onClick={submit}
+          disabled={sessionVolume <= 0}
           style={{
             marginTop: 4,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: "#C17A3D",
+            background: sessionVolume > 0 ? "#C17A3D" : "#3A2A22",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: sessionVolume > 0 ? "#16191A" : "#8A6A5A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: sessionVolume > 0 ? "pointer" : "default",
+          }}
+        >
+          <Package size={16} /> Log this packaging run
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function DiscardRemainingModal({ batch, onClose, onConfirm }) {
+  const remaining = remainingVolume(batch);
+
+  const submit = () => {
+    onConfirm(batch.id);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Empty tank — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13 }}>
+          There's <span style={{ color: "#EDE7D9", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span> still sitting in
+          the tank for this batch. Emptying it logs that remainder as loss (trub, dead space, spillage, etc.) and
+          finishes the batch off — it moves fully into your packaged batch history and won't show as outstanding anymore.
+        </div>
+        <button
+          onClick={submit}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#B5502F",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#EDE7D9",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -1577,7 +1682,7 @@ function PackagingModal({ batch, onClose, onSave }) {
             cursor: "pointer",
           }}
         >
-          <Package size={16} /> Confirm packaging
+          Empty tank ({remaining} L to loss)
         </button>
       </div>
     </Modal>
@@ -1651,7 +1756,7 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging }) {
+function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, onOpenPackaging, onDiscardRemaining }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -1783,32 +1888,103 @@ function BatchDetail({ batch, onBack, onAdvance, onLogReading, onEditBrewDay, on
       </div>
       <div style={{ color: "#5C6B63", fontSize: 12.5, marginBottom: 18 }}>{days} days since brew day</div>
 
-      {batch.packaging && (
-        <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>Packaging</div>
-            <button
-              onClick={() => onOpenPackaging(batch)}
-              style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
-            >
-              Edit
-            </button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
-            {CONTAINERS.map((c) => (
-              <div key={c.key} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 10px" }}>
-                <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>{c.shortLabel}</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#EDE7D9", marginTop: 3 }}>
-                  {batch.packaging[c.key] || 0}
+      {batch.packaging && (() => {
+        const events = packagingEvents(batch);
+        const discarded = packagingDiscarded(batch);
+        const totals = aggregatePackagingCounts(batch);
+        const remaining = remainingVolume(batch);
+        return (
+          <>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+              Packaging
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
+              {CONTAINERS.map((c) => (
+                <div key={c.key} style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 10px" }}>
+                  <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63" }}>{c.shortLabel}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#EDE7D9", marginTop: 3 }}>
+                    {totals[c.key] || 0}
+                  </div>
                 </div>
+              ))}
+            </div>
+
+            {events.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                {events.map((e) => (
+                  <div
+                    key={e.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 12px",
+                      background: "#1B1F1D",
+                      border: "1px solid #262C29",
+                      borderRadius: 5,
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B63" }}>{(e.date || "").slice(5)}</span>
+                    <span style={{ color: "#8A9591" }}>
+                      {CONTAINERS.filter((c) => (e[c.key] || 0) > 0).map((c) => `${e[c.key]}× ${c.shortLabel}`).join(" · ") || "—"}
+                    </span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#EDE7D9" }}>{packagedVolume(e).toFixed(2)} L</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={{ color: "#5C6B63", fontSize: 12.5, marginBottom: 18 }}>
-            {packagedVolume(batch.packaging).toFixed(2)} L packaged of {batch.volume} L batch
-          </div>
-        </>
-      )}
+            )}
+
+            <div style={{ color: "#5C6B63", fontSize: 12.5, marginBottom: 10 }}>
+              {totalPackagedVolume(batch).toFixed(2)} L packaged
+              {discarded > 0 ? ` · ${discarded.toFixed(2)} L discarded` : ""}
+              {" "}of {batch.volume} L batch
+              {remaining > 0 ? ` · ${remaining.toFixed(2)} L still in tank` : " · fully accounted for"}
+            </div>
+
+            {remaining > 0 && (
+              <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+                <button
+                  onClick={() => onOpenPackaging(batch)}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    background: "#242B27",
+                    border: "1px solid #3A413D",
+                    borderRadius: 5,
+                    padding: "10px",
+                    color: "#EDE7D9",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Package size={14} /> Log more packaging
+                </button>
+                <button
+                  onClick={() => onDiscardRemaining(batch)}
+                  style={{
+                    flex: 1,
+                    background: "none",
+                    border: "1px solid #4A3420",
+                    borderRadius: 5,
+                    padding: "10px",
+                    color: "#C17A3D",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Empty tank
+                </button>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 26 }}>
         <button
@@ -2003,8 +2179,8 @@ function AuthScreen() {
           <span
             style={{
               fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 11.5,
-              letterSpacing: "0.12em",
+              fontSize: 10,
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
               color: "#C17A3D",
               marginBottom: 6,
@@ -2093,6 +2269,7 @@ export default function TankLog() {
   const [logTarget, setLogTarget] = useState(null);
   const [brewDayTarget, setBrewDayTarget] = useState(null);
   const [packagingTarget, setPackagingTarget] = useState(null);
+  const [discardTarget, setDiscardTarget] = useState(null);
   const [inventory, setInventory] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -2307,10 +2484,26 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   };
 
-  const setPackaging = async (id, packaging) => {
-    const { error } = await supabase.from("batches").update({ packaging, stage: "Packaged" }).eq("id", id);
+  const logPackagingSession = async (id, sessionCounts) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const events = packagingEvents(batch);
+    const newEvent = { id: uid(), date: today(), ...sessionCounts };
+    const newPackaging = { events: [...events, newEvent], discarded: packagingDiscarded(batch) };
+    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
     if (error) return console.error(error);
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging, stage: "Packaged" } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
+  };
+
+  const discardRemaining = async (id) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const events = packagingEvents(batch);
+    const newDiscarded = packagingDiscarded(batch) + remainingVolume(batch);
+    const newPackaging = { events, discarded: newDiscarded };
+    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
   };
 
   const deleteAccount = async () => {
@@ -2330,7 +2523,8 @@ export default function TankLog() {
   };
 
   const activeBatches = batches.filter((b) => b.stage !== "Packaged");
-  const packagedBatches = batches.filter((b) => b.stage === "Packaged");
+  const inProgressBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) > 0);
+  const packagedBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) === 0);
 
   if (session === undefined) {
     return (
@@ -2366,7 +2560,7 @@ export default function TankLog() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#C17A3D" }}>
                 <BreworxMark size={22} />
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, letterSpacing: "0.1em", textTransform: "uppercase" }}>
                   Brewpoint
                 </span>
               </div>
@@ -2469,7 +2663,7 @@ export default function TankLog() {
                 <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
                   Active ({activeBatches.length})
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: packagedBatches.length ? 26 : 0 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
                   {activeBatches.map((b) => (
                     <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
                   ))}
@@ -2479,6 +2673,19 @@ export default function TankLog() {
                     </div>
                   )}
                 </div>
+
+                {inProgressBatches.length > 0 && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
+                      <Package size={12} /> Packaging in progress ({inProgressBatches.length})
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: packagedBatches.length ? 26 : 0 }}>
+                      {inProgressBatches.map((b) => (
+                        <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {packagedBatches.length > 0 && (
                   <>
@@ -2668,6 +2875,7 @@ export default function TankLog() {
             onLogReading={setLogTarget}
             onEditBrewDay={setBrewDayTarget}
             onOpenPackaging={setPackagingTarget}
+            onDiscardRemaining={setDiscardTarget}
           />
         )}
 
@@ -2711,7 +2919,10 @@ export default function TankLog() {
         <BrewDayModal batch={brewDayTarget} onClose={() => setBrewDayTarget(null)} onSave={updateBrewDay} />
       )}
       {packagingTarget && (
-        <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={setPackaging} />
+        <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={logPackagingSession} />
+      )}
+      {discardTarget && (
+        <DiscardRemainingModal batch={discardTarget} onClose={() => setDiscardTarget(null)} onConfirm={discardRemaining} />
       )}
       {showDeleteAccount && (
         <DeleteAccountModal onClose={() => setShowDeleteAccount(false)} onConfirm={deleteAccount} />
