@@ -123,6 +123,7 @@ export function rowToRecipe(row) {
     familyId: row.family_id || row.id,
     version: row.version || 1,
     createdAt: row.created_at || null,
+    isActive: row.is_active !== false,
   };
 }
 
@@ -138,6 +139,7 @@ export function recipeToRow(recipe, userId, companyId) {
     fg: recipe.fg,
     ingredients: recipe.ingredients || [],
     schedule: recipe.schedule || [],
+    is_active: recipe.isActive !== false,
     family_id: recipe.familyId,
     version: recipe.version || 1,
   };
