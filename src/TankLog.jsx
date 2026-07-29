@@ -289,6 +289,56 @@ const ALL_STYLES = [
   ...BA_STYLES.flatMap((g) => g.styles.map((s) => ({ name: s, source: "BA" }))),
 ];
 
+// Parses a BeerXML file (the open interchange format exported by Brewfather,
+// BeerSmith, and most other brewing software) into the shape this app's
+// recipe form expects. Returns null if the file doesn't look like BeerXML.
+// BeerXML amounts for fermentables/hops/misc are always in kilograms.
+function parseBeerXML(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return null;
+  const recipeEl = doc.getElementsByTagName("RECIPE")[0];
+  if (!recipeEl) return null;
+
+  const text = (parent, tag) => {
+    const el = parent.getElementsByTagName(tag)[0];
+    return el ? el.textContent.trim() : "";
+  };
+  const num = (parent, tag) => {
+    const t = text(parent, tag);
+    const n = parseFloat(t);
+    return isNaN(n) ? null : n;
+  };
+
+  const name = text(recipeEl, "NAME") || "Imported recipe";
+  const styleEl = recipeEl.getElementsByTagName("STYLE")[0];
+  const style = styleEl ? text(styleEl, "NAME") : "";
+  const volume = num(recipeEl, "BATCH_SIZE") ?? 20;
+  const og = num(recipeEl, "OG") ?? 1.05;
+  const fg = num(recipeEl, "FG") ?? 1.01;
+
+  const ingredients = [];
+  const collect = (containerTag, itemTag, category, unit, qtyFn) => {
+    const container = recipeEl.getElementsByTagName(containerTag)[0];
+    if (!container) return;
+    Array.from(container.getElementsByTagName(itemTag)).forEach((el) => {
+      ingredients.push({
+        id: uid(),
+        name: text(el, "NAME") || itemTag,
+        category,
+        qty: qtyFn(el),
+        unit,
+      });
+    });
+  };
+
+  collect("FERMENTABLES", "FERMENTABLE", "Grain", "kg", (el) => num(el, "AMOUNT") ?? 0);
+  collect("HOPS", "HOP", "Hops", "kg", (el) => num(el, "AMOUNT") ?? 0);
+  collect("YEASTS", "YEAST", "Yeast", "ea", () => 1);
+  collect("MISCS", "MISC", "Other", "kg", (el) => num(el, "AMOUNT") ?? 0);
+
+  return { name, style, volume, og, fg, ingredients };
+}
+
 const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
 
 const CATEGORY_COLOR = {
@@ -1674,6 +1724,28 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
   const [fg, setFg] = useState(1.01);
   const [ingredients, setIngredients] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
   const [focusedIngredientId, setFocusedIngredientId] = useState(null);
+  const [importError, setImportError] = useState("");
+
+  const handleImportFile = (file) => {
+    if (!file) return;
+    setImportError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseBeerXML(String(reader.result));
+      if (!parsed) {
+        setImportError("Couldn't read that as a BeerXML file — check it's the .xml export, not .bsmx or a zipped file.");
+        return;
+      }
+      setName(parsed.name);
+      setStyle(parsed.style);
+      setVolume(parsed.volume);
+      setOg(parsed.og);
+      setFg(parsed.fg);
+      setIngredients(parsed.ingredients.length > 0 ? parsed.ingredients : ingredients);
+    };
+    reader.onerror = () => setImportError("Couldn't read that file — try exporting it again.");
+    reader.readAsText(file);
+  };
 
   const updateLine = (id, patch) =>
     setIngredients((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -1711,6 +1783,36 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem }) {
   return (
     <Modal title="New recipe" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "none",
+            border: "1px dashed #3A413D",
+            borderRadius: 5,
+            padding: "10px",
+            color: "#8A9591",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="file"
+            accept=".xml"
+            onChange={(e) => handleImportFile(e.target.files && e.target.files[0])}
+            style={{ display: "none" }}
+          />
+          Import from BeerXML (Brewfather, BeerSmith, etc.)
+        </label>
+        {importError && (
+          <div style={{ color: "#C17A3D", fontSize: 12.5, background: "#241D14", border: "1px solid #4A3420", borderRadius: 5, padding: "8px 12px" }}>
+            {importError}
+          </div>
+        )}
+        <div style={{ color: "#5C6B63", fontSize: 11.5, textAlign: "center", margin: "-6px 0 2px" }}>— or fill in manually —</div>
         <TextField label="Recipe name" value={name} onChange={setName} />
         <div style={{ position: "relative" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
