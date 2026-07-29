@@ -23,6 +23,7 @@ export function rowToBatch(row) {
     readings: row.readings || [],
     ingredients: row.ingredients || [],
     packaging: row.packaging || null,
+    schedule: row.schedule || [],
   };
 }
 
@@ -49,6 +50,7 @@ export function batchToRow(batch, userId, companyId) {
     readings: batch.readings || [],
     ingredients: batch.ingredients || [],
     packaging: batch.packaging ?? null,
+    schedule: batch.schedule || [],
   };
 }
 
@@ -115,6 +117,7 @@ export function rowToRecipe(row) {
     og: row.og,
     fg: row.fg,
     ingredients: row.ingredients || [],
+    schedule: row.schedule || [],
   };
 }
 
@@ -129,6 +132,7 @@ export function recipeToRow(recipe, userId, companyId) {
     og: recipe.og,
     fg: recipe.fg,
     ingredients: recipe.ingredients || [],
+    schedule: recipe.schedule || [],
   };
 }
 
