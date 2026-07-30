@@ -5248,12 +5248,41 @@ function HomeView({
   packagedBatches,
   inventory,
   purchaseOrders,
+  foodSafetyRecords,
   onOpenBatch,
   onOpenPO,
   onGoTo,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
+
+  const daysSince = (dateStr) => Math.floor((new Date(today()) - new Date(dateStr)) / 86400000);
+
+  const brewTasks = [...fermentingBatches, ...conditioningBatches]
+    .map((b) => ({ batch: b, next: (b.schedule || []).find((s) => !s.done) }))
+    .filter((x) => x.next);
+
+  const dailyDone = foodSafetyRecords.some((r) => r.category === "checklist" && r.frequency === "daily" && r.date === today());
+  const weeklyDone = foodSafetyRecords.some((r) => r.category === "checklist" && r.frequency === "weekly" && daysSince(r.date) <= 7);
+  const monthlyDone = foodSafetyRecords.some((r) => r.category === "checklist" && r.frequency === "monthly" && daysSince(r.date) <= 31);
+
+  const calibrationByEquipment = {};
+  foodSafetyRecords
+    .filter((r) => r.category === "calibration" && r.equipmentName)
+    .forEach((r) => {
+      const existing = calibrationByEquipment[r.equipmentName];
+      if (!existing || r.date > existing.date) calibrationByEquipment[r.equipmentName] = r;
+    });
+  const overdueCalibrations = Object.values(calibrationByEquipment).filter((r) => r.dueDate && r.dueDate < today());
+
+  const foodSafetyTasks = [
+    ...(!dailyDone ? [{ label: "Daily food safety checklist not done today" }] : []),
+    ...(!weeklyDone ? [{ label: "Weekly food safety checklist not done in the last 7 days" }] : []),
+    ...(!monthlyDone ? [{ label: "Monthly food safety checklist not done in the last month" }] : []),
+    ...overdueCalibrations.map((r) => ({ label: `${r.equipmentName} calibration overdue (was due ${r.dueDate})` })),
+  ];
+
+  const totalTasks = brewTasks.length + foodSafetyTasks.length;
 
   const stats = [
     ["Fermenting", fermentingBatches.length, STAGE_COLOR.Primary, "batches"],
@@ -5274,6 +5303,61 @@ function HomeView({
           </h1>
         )}
       </div>
+
+      {totalTasks > 0 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
+            <AlertTriangle size={12} /> Needs doing ({totalTasks})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {brewTasks.map(({ batch, next }) => (
+              <button
+                key={batch.id}
+                onClick={() => onOpenBatch(batch.id)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  background: "#1F2422",
+                  border: "1px solid #2C332F",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ color: "#EDE7D9", fontSize: 13 }}>
+                  <span style={{ color: "#8A9591" }}>{batch.name}: </span>
+                  {next.label}
+                </span>
+                <span style={{ color: "#C17A3D", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>brew</span>
+              </button>
+            ))}
+            {foodSafetyTasks.map((t, i) => (
+              <button
+                key={i}
+                onClick={() => onGoTo("foodsafety")}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  background: "#1F2422",
+                  border: "1px solid #2C332F",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ color: "#EDE7D9", fontSize: 13 }}>{t.label}</span>
+                <span style={{ color: "#7FA35C", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>food safety</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
         {stats.map(([label, count, color, goTo]) => (
@@ -6469,6 +6553,7 @@ export default function TankLog() {
                 packagedBatches={packagedBatches}
                 inventory={inventory}
                 purchaseOrders={purchaseOrders}
+                foodSafetyRecords={foodSafetyRecords}
                 onOpenBatch={(id) => {
                   setSelectedId(id);
                   setView("batches");
