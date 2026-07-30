@@ -470,7 +470,7 @@ const FOOD_SAFETY_CHECKLISTS = {
 // design in OAuth2), the Client Secret never leaves the Edge Function.
 const XERO_CLIENT_ID = "83E79CF2CB94484C97FD75D0E103C070";
 const XERO_REDIRECT_URI = "https://breworx.vercel.app/xero-callback";
-const XERO_SCOPES = "offline_access accounting.invoices accounting.contacts";
+const XERO_SCOPES = "offline_access accounting.invoices accounting.contacts accounting.settings.read";
 
 function buildXeroAuthUrl(companyId) {
   const params = new URLSearchParams({
