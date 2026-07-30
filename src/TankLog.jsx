@@ -3191,11 +3191,12 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       ? inventory
       : inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
 
-  const libraryMatches = (query, category) => {
-    const source = category === "Grain" ? MALT_LIBRARY_FLAT : category === "Yeast" ? YEAST_LIBRARY_FLAT : [];
+  const libraryMatches = (query) => {
     const q = query.trim().toLowerCase();
-    const matches = q.length === 0 ? source : source.filter((it) => it.name.toLowerCase().includes(q));
-    return matches.slice(0, 8);
+    if (q.length === 0) return [];
+    const maltMatches = MALT_LIBRARY_FLAT.filter((it) => it.name.toLowerCase().includes(q)).map((it) => ({ ...it, matchCategory: "Grain" }));
+    const yeastMatches = YEAST_LIBRARY_FLAT.filter((it) => it.name.toLowerCase().includes(q)).map((it) => ({ ...it, matchCategory: "Yeast" }));
+    return [...maltMatches, ...yeastMatches].slice(0, 8);
   };
 
   const styleMatches =
@@ -3544,20 +3545,20 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     zIndex: 20,
                   }}
                 >
-                  {libraryMatches(line.name, line.category).length > 0 && (
+                  {libraryMatches(line.name).length > 0 && (
                     <>
                       <div style={{ padding: "6px 10px", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", background: "#F5F1E4" }}>
                         Reference library
                       </div>
-                      {libraryMatches(line.name, line.category).map((it) => (
+                      {libraryMatches(line.name).map((it) => (
                         <button
-                          key={`lib-${it.company}-${it.name}`}
+                          key={`lib-${it.matchCategory}-${it.company}-${it.name}`}
                           onMouseDown={() => {
                             const extra =
-                              line.category === "Grain"
+                              it.matchCategory === "Grain"
                                 ? { potential: it.potential, colorLovibond: it.colorLovibond }
                                 : { attenuation: it.attenuation };
-                            updateLine(line.id, { name: it.name, ...extra });
+                            updateLine(line.id, { name: it.name, category: it.matchCategory, ...extra, libSourced: true });
                             setFocusedIngredientId(null);
                           }}
                           style={{
@@ -3652,29 +3653,52 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.01" suffix={line.unit} />
               {line.category === "Grain" && (
                 <>
-                  <NumberField
-                    label="Potential (PPG, optional)"
-                    value={line.potential ?? ""}
-                    onChange={(v) => updateLine(line.id, { potential: v })}
-                    step="1"
-                  />
-                  <NumberField
-                    label="Color (°L, optional)"
-                    value={line.colorLovibond ?? ""}
-                    onChange={(v) => updateLine(line.id, { colorLovibond: v })}
-                    step="1"
-                  />
+                  {line.libSourced ? (
+                    <>
+                      <LockedField label="Potential (PPG)" value={line.potential} />
+                      <LockedField label="Color" value={line.colorLovibond} suffix="°L" />
+                    </>
+                  ) : (
+                    <>
+                      <NumberField
+                        label="Potential (PPG, optional)"
+                        value={line.potential ?? ""}
+                        onChange={(v) => updateLine(line.id, { potential: v })}
+                        step="1"
+                      />
+                      <NumberField
+                        label="Color (°L, optional)"
+                        value={line.colorLovibond ?? ""}
+                        onChange={(v) => updateLine(line.id, { colorLovibond: v })}
+                        step="1"
+                      />
+                    </>
+                  )}
                 </>
               )}
               {line.category === "Yeast" && (
-                <NumberField
-                  label="Attenuation % (optional)"
-                  value={line.attenuation ?? ""}
-                  onChange={(v) => updateLine(line.id, { attenuation: v })}
-                  step="1"
-                />
+                <>
+                  {line.libSourced ? (
+                    <LockedField label="Attenuation" value={line.attenuation} suffix="%" />
+                  ) : (
+                    <NumberField
+                      label="Attenuation % (optional)"
+                      value={line.attenuation ?? ""}
+                      onChange={(v) => updateLine(line.id, { attenuation: v })}
+                      step="1"
+                    />
+                  )}
+                </>
               )}
             </div>
+            {line.libSourced && (
+              <button
+                onClick={() => updateLine(line.id, { libSourced: false })}
+                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 11.5, fontFamily: "'Inter', sans-serif", padding: "0 0 10px", display: "block" }}
+              >
+                From reference library — tap to edit manually
+              </button>
+            )}
           </div>
         ))}
         <button
@@ -3766,7 +3790,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                               <button
                                 key={`${h.company}-${h.name}`}
                                 onMouseDown={() => {
-                                  updateScheduleStep(s.id, { name: h.name, alphaAcid: h.alphaAcid });
+                                  updateScheduleStep(s.id, { name: h.name, alphaAcid: h.alphaAcid, alphaSourced: true });
                                   setFocusedScheduleId(null);
                                 }}
                                 style={{
@@ -3807,14 +3831,27 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     <Trash2 size={14} />
                   </button>
                 </div>
-                {(s.use === "Boil" || s.use === "First Wort") && (
-                  <NumberField
-                    label="Alpha acid % (optional, for IBU estimate)"
-                    value={s.alphaAcid ?? ""}
-                    onChange={(v) => updateScheduleStep(s.id, { alphaAcid: v })}
-                    step="0.1"
-                  />
-                )}
+                {(s.use === "Boil" || s.use === "First Wort") &&
+                  (s.alphaSourced ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <LockedField label="Alpha acid (for IBU estimate)" value={s.alphaAcid} suffix="%" />
+                      </div>
+                      <button
+                        onClick={() => updateScheduleStep(s.id, { alphaSourced: false })}
+                        style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 11.5, fontFamily: "'Inter', sans-serif", whiteSpace: "nowrap" }}
+                      >
+                        Edit manually
+                      </button>
+                    </div>
+                  ) : (
+                    <NumberField
+                      label="Alpha acid % (optional, for IBU estimate)"
+                      value={s.alphaAcid ?? ""}
+                      onChange={(v) => updateScheduleStep(s.id, { alphaAcid: v })}
+                      step="0.1"
+                    />
+                  ))}
               </div>
             ))}
             {schedule.length === 0 && (
@@ -4268,6 +4305,30 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       >
         Delete recipe
       </button>
+    </div>
+  );
+}
+
+function LockedField({ label, value, suffix }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</span>
+      <div
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          background: "#EBE8D6",
+          border: "1px solid #DDE0C8",
+          borderRadius: 4,
+          padding: "9px 10px",
+          color: "#5C6B54",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 14,
+        }}
+      >
+        {value ?? "—"}
+        {suffix ? ` ${suffix}` : ""}
+      </div>
     </div>
   );
 }
