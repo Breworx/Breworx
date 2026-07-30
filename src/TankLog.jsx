@@ -466,6 +466,23 @@ const FOOD_SAFETY_CHECKLISTS = {
   },
 };
 
+// Xero OAuth — Client ID is safe to expose in the browser (it's public by
+// design in OAuth2), the Client Secret never leaves the Edge Function.
+const XERO_CLIENT_ID = "83E79CF2CB94484C97FD75D0E103C070";
+const XERO_REDIRECT_URI = "https://breworx.vercel.app/xero-callback";
+const XERO_SCOPES = "offline_access accounting.invoices accounting.contacts";
+
+function buildXeroAuthUrl(companyId) {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: XERO_CLIENT_ID,
+    redirect_uri: XERO_REDIRECT_URI,
+    scope: XERO_SCOPES,
+    state: companyId,
+  });
+  return `https://login.xero.com/identity/connect/authorize?${params.toString()}`;
+}
+
 const TRAINING_TOPICS = [
   "Hand washing & personal hygiene",
   "Cleaning and sanitising",
@@ -5750,6 +5767,111 @@ function AuthScreen() {
   );
 }
 
+export function XeroCallback() {
+  const [status, setStatus] = useState("connecting");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const companyId = params.get("state");
+    const errorParam = params.get("error");
+
+    if (errorParam) {
+      setStatus("error");
+      setMessage(`Xero said: ${errorParam}`);
+      return;
+    }
+    if (!code || !companyId) {
+      setStatus("error");
+      setMessage("Missing information from Xero's redirect — try connecting again.");
+      return;
+    }
+
+    (async () => {
+      let userName = null;
+      try {
+        const { data } = await supabase.auth.getSession();
+        userName = data.session?.user?.user_metadata?.name || null;
+      } catch {
+        // ignore — connected_by is just informational
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const functionUrl = `${supabaseUrl}/functions/v1/xero-callback`;
+      try {
+        const res = await fetch(functionUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, companyId, userName }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setStatus("error");
+          setMessage(typeof data.error === "string" ? data.error : "Something went wrong connecting to Xero.");
+        } else {
+          setStatus("success");
+          setMessage(`Connected to ${data.tenantName}.`);
+          setTimeout(() => {
+            window.location.href = "/";
+          }, 2000);
+        }
+      } catch {
+        setStatus("error");
+        setMessage("Couldn't reach the connection service — check your internet and try again.");
+      }
+    })();
+  }, []);
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#16191A",
+        fontFamily: "'Inter', sans-serif",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px 18px",
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
+      `}</style>
+      <div style={{ textAlign: "center", maxWidth: 340 }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+          <BreworxMark size={44} />
+        </div>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", color: "#EDE7D9", fontSize: 20, fontWeight: 500, margin: "0 0 8px" }}>
+          {status === "connecting" && "Connecting to Xero…"}
+          {status === "success" && "Connected"}
+          {status === "error" && "Couldn't connect"}
+        </h1>
+        <p style={{ color: "#8A9591", fontSize: 14, lineHeight: 1.5 }}>{message}</p>
+        {status === "error" && (
+          <button
+            onClick={() => (window.location.href = "/")}
+            style={{
+              marginTop: 16,
+              background: "#C17A3D",
+              border: "none",
+              borderRadius: 5,
+              padding: "10px 18px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Back to Brewpoint
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function TankLog() {
   const [session, setSession] = useState(undefined); // undefined = not checked yet, null = signed out
   const [justConfirmedEmail, setJustConfirmedEmail] = useState(() => {
@@ -5782,6 +5904,8 @@ export default function TankLog() {
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
+  const [xeroConnection, setXeroConnection] = useState(null);
+  const [xeroConnecting, setXeroConnecting] = useState(false);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
@@ -5841,6 +5965,7 @@ export default function TankLog() {
       setTanks([]);
       setStockTakes([]);
       setFoodSafetyRecords([]);
+      setXeroConnection(null);
       return;
     }
     let cancelled = false;
@@ -5868,7 +5993,7 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -5878,6 +6003,7 @@ export default function TankLog() {
         supabase.from("tanks").select("*").order("created_at", { ascending: false }),
         supabase.from("stock_takes").select("*").order("created_at", { ascending: false }),
         supabase.from("food_safety_records").select("*").order("created_at", { ascending: false }),
+        supabase.from("xero_connections").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -5900,6 +6026,8 @@ export default function TankLog() {
       else setTanks(tanksRes.data.map(rowToTank));
       if (stockTakesRes.error) console.error(stockTakesRes.error);
       else setStockTakes(stockTakesRes.data.map(rowToStockTake));
+      if (xeroRes.error) console.error(xeroRes.error);
+      else setXeroConnection(xeroRes.data || null);
       if (foodSafetyRes.error) console.error(foodSafetyRes.error);
       else setFoodSafetyRecords(foodSafetyRes.data.map(rowToFoodSafetyRecord));
       setLoadingData(false);
@@ -6095,6 +6223,12 @@ export default function TankLog() {
       .eq("id", profile.companyId);
     if (error) return console.error(error);
     setFoodSafetyDisclaimerAcceptedAt(acceptedAt);
+  };
+
+  const disconnectXero = async () => {
+    const { error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId);
+    if (error) return console.error(error);
+    setXeroConnection(null);
   };
 
   const completeStockTake = async (lines) => {
@@ -6987,6 +7121,60 @@ export default function TankLog() {
                       />
                       {companyLogo ? "Replace logo" : "Upload logo"}
                     </label>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+                    Xero
+                  </div>
+                  <div style={{ background: "#1F2422", border: "1px solid #2C332F", borderRadius: 6, padding: "14px 16px" }}>
+                    {xeroConnection ? (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <CheckCircle2 size={15} color="#7FA35C" />
+                          <span style={{ color: "#EDE7D9", fontSize: 15, fontFamily: "'Oswald', sans-serif" }}>Connected</span>
+                        </div>
+                        <div style={{ color: "#8A9591", fontSize: 12.5, marginBottom: 12 }}>
+                          {xeroConnection.tenant_name}
+                          {xeroConnection.connected_by ? ` · connected by ${xeroConnection.connected_by}` : ""}
+                        </div>
+                        <button
+                          onClick={disconnectXero}
+                          style={{ background: "none", border: "1px solid #4A3420", borderRadius: 5, padding: "9px", color: "#C17A3D", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
+                        >
+                          Disconnect
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ color: "#8A9591", fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                          Connect Brewpoint to your Xero account. This is step one of the integration — stock
+                          syncing comes next once this connection is confirmed working.
+                        </div>
+                        <button
+                          onClick={() => {
+                            setXeroConnecting(true);
+                            window.location.href = buildXeroAuthUrl(profile.companyId);
+                          }}
+                          disabled={xeroConnecting}
+                          style={{
+                            background: "#13B5EA",
+                            border: "none",
+                            borderRadius: 5,
+                            padding: "10px",
+                            color: "#0B2E3A",
+                            fontFamily: "'Oswald', sans-serif",
+                            fontWeight: 500,
+                            fontSize: 14,
+                            cursor: "pointer",
+                            width: "100%",
+                          }}
+                        >
+                          {xeroConnecting ? "Redirecting to Xero…" : "Connect to Xero"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
