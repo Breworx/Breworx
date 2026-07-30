@@ -3485,9 +3485,6 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [og, setOg] = useState(presetRecipe ? presetRecipe.og : 1.05);
   const [fg, setFg] = useState(presetRecipe ? presetRecipe.fg : 1.01);
   const [temp, setTemp] = useState(20);
-  const [mashPh, setMashPh] = useState(5.4);
-  const [preBoilGravity, setPreBoilGravity] = useState("");
-  const [topUpWater, setTopUpWater] = useState("");
   const [tankId, setTankId] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState([{ id: uid(), tankId: "", volume: "" }]);
@@ -3586,9 +3583,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       volume: Number(volume) || 0,
       og: Number(og),
       fg: Number(fg),
-      mashPh: mashPh === "" ? null : Number(mashPh),
-      preBoilGravity: preBoilGravity === "" ? null : Number(preBoilGravity),
-      topUpWater: topUpWater === "" ? null : Number(topUpWater),
+      mashPh: null,
+      preBoilGravity: null,
+      topUpWater: null,
       stage: "Brewing",
       startDate: today(),
       recipeId: activeRecipe ? activeRecipe.id : null,
@@ -3909,14 +3906,6 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           <NumberField label="Pitch temp" value={temp} onChange={setTemp} step="0.5" suffix="°C" />
           <NumberField label="Original gravity" value={og} onChange={setOg} step="0.001" />
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
-        </div>
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
-          Brew day
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <NumberField label="Mash pH" value={mashPh} onChange={setMashPh} step="0.01" />
-          <NumberField label="Pre-boil gravity" value={preBoilGravity} onChange={setPreBoilGravity} step="0.001" />
-          <NumberField label="Top-up water" value={topUpWater} onChange={setTopUpWater} step="0.1" suffix="L" />
         </div>
         <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
           <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
