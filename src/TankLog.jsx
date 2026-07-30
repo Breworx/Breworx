@@ -4742,6 +4742,128 @@ function StaffTrainingRecordModal({ staffName, records, onClose }) {
   );
 }
 
+function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
+  const [lineData, setLineData] = useState(() => {
+    const init = {};
+    queue.lines.forEach((l) => {
+      init[l.productKey] = { itemCode: "", itemName: "", unitCost: "0", query: "" };
+    });
+    return init;
+  });
+  const [focusedLine, setFocusedLine] = useState(null);
+
+  const updateLine = (productKey, patch) =>
+    setLineData((prev) => ({ ...prev, [productKey]: { ...prev[productKey], ...patch } }));
+
+  const matches = (query) =>
+    query.trim().length === 0 ? xeroItems : xeroItems.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  const submit = () => {
+    const resolvedLines = queue.lines.map((l) => ({
+      productKey: l.productKey,
+      productLabel: l.productLabel,
+      qty: l.qty,
+      itemCode: lineData[l.productKey].itemCode,
+      itemName: lineData[l.productKey].itemName,
+      unitCost: lineData[l.productKey].unitCost,
+    }));
+    onConfirm(resolvedLines);
+  };
+
+  return (
+    <Modal title="Match to Xero items" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13, lineHeight: 1.5 }}>
+          These products haven't been linked to a Xero item yet. Match them below — this only needs doing once per
+          product, future packaging runs will sync automatically. Leave any blank to skip syncing that one.
+        </div>
+        {queue.lines.map((l) => {
+          const line = lineData[l.productKey];
+          return (
+            <div key={l.productKey} style={{ background: "#16191A", border: "1px solid #2C332F", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ color: "#EDE7D9", fontSize: 13.5, marginBottom: 8 }}>
+                {l.productLabel} <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>× {l.qty}</span>
+              </div>
+              <div style={{ position: "relative", marginBottom: 8 }}>
+                <input
+                  type="text"
+                  value={line.itemCode ? line.itemName : line.query}
+                  onChange={(e) => updateLine(l.productKey, { query: e.target.value, itemCode: "", itemName: "" })}
+                  onFocus={() => setFocusedLine(l.productKey)}
+                  onBlur={() => setTimeout(() => setFocusedLine((cur) => (cur === l.productKey ? null : cur)), 150)}
+                  placeholder="Search Xero items…"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: "#1F2422",
+                    border: "1px solid #2C332F",
+                    borderRadius: 4,
+                    padding: "8px 9px",
+                    color: "#EDE7D9",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                  }}
+                />
+                {focusedLine === l.productKey && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: 4,
+                      maxHeight: 160,
+                      overflowY: "auto",
+                      background: "#1B1F1D",
+                      border: "1px solid #2C332F",
+                      borderRadius: 6,
+                      zIndex: 20,
+                    }}
+                  >
+                    {matches(line.query).map((it) => (
+                      <button
+                        key={it.code}
+                        onMouseDown={() => {
+                          updateLine(l.productKey, { itemCode: it.code, itemName: it.name, query: "" });
+                          setFocusedLine(null);
+                        }}
+                        style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 9px", color: "#EDE7D9", fontSize: 13, cursor: "pointer" }}
+                      >
+                        {it.name}
+                      </button>
+                    ))}
+                    {matches(line.query).length === 0 && (
+                      <div style={{ padding: "8px 9px", color: "#5C6B63", fontSize: 12.5 }}>No matching items in Xero.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <NumberField label="Unit cost (for the Xero entry)" value={line.unitCost} onChange={(v) => updateLine(l.productKey, { unitCost: v })} step="0.01" />
+            </div>
+          );
+        })}
+        <button
+          onClick={submit}
+          style={{
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save & sync to Xero
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function FoodSafetyDisclaimerModal({ onAccept }) {
   const [confirmed, setConfirmed] = useState(false);
 
@@ -5813,7 +5935,9 @@ export function XeroCallback() {
         const data = await res.json();
         if (!res.ok || data.error) {
           setStatus("error");
-          setMessage(typeof data.error === "string" ? data.error : "Something went wrong connecting to Xero.");
+          const baseMsg = typeof data.error === "string" ? data.error : "Something went wrong connecting to Xero.";
+          const detailStr = data.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : "";
+          setMessage(detailStr ? `${baseMsg} — ${detailStr}` : baseMsg);
         } else {
           setStatus("success");
           setMessage(`Connected to ${data.tenantName}.`);
@@ -5920,6 +6044,11 @@ export default function TankLog() {
   const [companyLogo, setCompanyLogo] = useState("");
   const [xeroConnection, setXeroConnection] = useState(null);
   const [xeroConnecting, setXeroConnecting] = useState(false);
+  const [xeroSettings, setXeroSettings] = useState(null);
+  const [xeroItemMappings, setXeroItemMappings] = useState([]);
+  const [xeroAccounts, setXeroAccounts] = useState([]);
+  const [xeroItems, setXeroItems] = useState([]);
+  const [xeroMappingQueue, setXeroMappingQueue] = useState(null);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
@@ -5980,6 +6109,8 @@ export default function TankLog() {
       setStockTakes([]);
       setFoodSafetyRecords([]);
       setXeroConnection(null);
+      setXeroSettings(null);
+      setXeroItemMappings([]);
       return;
     }
     let cancelled = false;
@@ -6007,7 +6138,7 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -6018,6 +6149,8 @@ export default function TankLog() {
         supabase.from("stock_takes").select("*").order("created_at", { ascending: false }),
         supabase.from("food_safety_records").select("*").order("created_at", { ascending: false }),
         supabase.from("xero_connections").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
+        supabase.from("xero_settings").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
+        supabase.from("xero_item_mappings").select("*").eq("company_id", myProfile.companyId),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -6038,6 +6171,10 @@ export default function TankLog() {
       else setRecipes(recipesRes.data.map(rowToRecipe));
       if (tanksRes.error) console.error(tanksRes.error);
       else setTanks(tanksRes.data.map(rowToTank));
+      if (xeroSettingsRes.error) console.error(xeroSettingsRes.error);
+      else setXeroSettings(xeroSettingsRes.data || null);
+      if (xeroMappingsRes.error) console.error(xeroMappingsRes.error);
+      else setXeroItemMappings(xeroMappingsRes.data || []);
       if (stockTakesRes.error) console.error(stockTakesRes.error);
       else setStockTakes(stockTakesRes.data.map(rowToStockTake));
       if (xeroRes.error) console.error(xeroRes.error);
@@ -6243,6 +6380,103 @@ export default function TankLog() {
     const { error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId);
     if (error) return console.error(error);
     setXeroConnection(null);
+  };
+
+  const callXeroApi = async (action, extra) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/xero-api`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+      body: JSON.stringify({ action, companyId: profile.companyId, ...extra }),
+    });
+    return res.json();
+  };
+
+  const loadXeroAccounts = async () => {
+    const data = await callXeroApi("listAccounts");
+    if (data.error) return console.error(data.error);
+    setXeroAccounts(data.accounts || []);
+  };
+
+  const saveXeroAdjustmentAccount = async (code, name) => {
+    const { error } = await supabase
+      .from("xero_settings")
+      .upsert({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
+    if (error) return console.error(error);
+    setXeroSettings({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
+  };
+
+  const productKeyFor = (batchName, containerKey) => `${batchName.trim().toLowerCase()}::${containerKey}`;
+
+  const postPackagingLineToXero = async (batch, mapping, qty) => {
+    const result = await callXeroApi("postStock", {
+      itemCode: mapping.xero_item_code,
+      quantity: qty,
+      direction: "increase",
+      unitCost: mapping.unit_cost,
+      adjustmentAccountCode: xeroSettings.adjustment_account_code,
+      reference: `${batch.name} (#${batch.number})`,
+    });
+    if (result.error) console.error("Xero sync failed:", result.error, result.detail);
+    return result;
+  };
+
+  const syncPackagingToXero = async (batch, sessionCounts) => {
+    if (!xeroConnection || !xeroSettings?.adjustment_account_code) return;
+    const lines = CONTAINERS.filter((c) => (sessionCounts[c.key] || 0) > 0).map((c) => ({
+      containerKey: c.key,
+      containerLabel: c.label,
+      qty: sessionCounts[c.key],
+      productKey: productKeyFor(batch.name, c.key),
+      productLabel: `${batch.name} — ${c.label}`,
+    }));
+    if (lines.length === 0) return;
+
+    const unmapped = lines.filter((l) => !xeroItemMappings.some((m) => m.product_key === l.productKey));
+    if (unmapped.length > 0) {
+      const data = await callXeroApi("listItems");
+      setXeroItems(data.items || []);
+      setXeroMappingQueue({ batch, lines });
+      return;
+    }
+
+    for (const line of lines) {
+      const mapping = xeroItemMappings.find((m) => m.product_key === line.productKey);
+      await postPackagingLineToXero(batch, mapping, line.qty);
+    }
+  };
+
+  const confirmXeroMappings = async (resolvedLines) => {
+    const { batch } = xeroMappingQueue;
+    const newMappings = [];
+    for (const line of resolvedLines) {
+      if (!line.itemCode) continue;
+      const record = {
+        id: uid(),
+        company_id: profile.companyId,
+        product_key: line.productKey,
+        product_label: line.productLabel,
+        xero_item_code: line.itemCode,
+        xero_item_name: line.itemName,
+        unit_cost: Number(line.unitCost) || 0,
+      };
+      const { error } = await supabase.from("xero_item_mappings").upsert(record, { onConflict: "company_id,product_key" });
+      if (error) {
+        console.error(error);
+        continue;
+      }
+      newMappings.push(record);
+    }
+    const updatedMappings = [...xeroItemMappings.filter((m) => !newMappings.some((n) => n.product_key === m.product_key)), ...newMappings];
+    setXeroItemMappings(updatedMappings);
+
+    for (const line of resolvedLines) {
+      if (!line.itemCode) continue;
+      const mapping = updatedMappings.find((m) => m.product_key === line.productKey);
+      if (mapping) await postPackagingLineToXero(batch, mapping, line.qty);
+    }
+    setXeroMappingQueue(null);
   };
 
   const completeStockTake = async (lines) => {
@@ -6484,6 +6718,7 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
+    syncPackagingToXero(batch, sessionCounts);
   };
 
   const deletePackagingEvent = async (id, eventId) => {
@@ -7153,6 +7388,57 @@ export default function TankLog() {
                           {xeroConnection.tenant_name}
                           {xeroConnection.connected_by ? ` · connected by ${xeroConnection.connected_by}` : ""}
                         </div>
+
+                        <div style={{ borderTop: "1px solid #2C332F", paddingTop: 12, marginBottom: 12 }}>
+                          <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+                            Stock sync
+                          </div>
+                          <div style={{ color: "#8A9591", fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+                            Packaging a batch pushes stock into Xero automatically. This needs one account chosen —
+                            used only to net the entry to zero, it won't affect your books.
+                          </div>
+                          {xeroSettings?.adjustment_account_code ? (
+                            <div style={{ color: "#7FA35C", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+                              <CheckCircle2 size={13} /> Using "{xeroSettings.adjustment_account_name}"
+                            </div>
+                          ) : xeroAccounts.length > 0 ? (
+                            <select
+                              onChange={(e) => {
+                                const acc = xeroAccounts.find((a) => a.code === e.target.value);
+                                if (acc) saveXeroAdjustmentAccount(acc.code, acc.name);
+                              }}
+                              defaultValue=""
+                              style={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                background: "#16191A",
+                                border: "1px solid #2C332F",
+                                borderRadius: 4,
+                                padding: "9px 10px",
+                                color: "#EDE7D9",
+                                fontFamily: "'Inter', sans-serif",
+                                fontSize: 13,
+                              }}
+                            >
+                              <option value="" disabled>
+                                Choose an account…
+                              </option>
+                              {xeroAccounts.map((a) => (
+                                <option key={a.code} value={a.code}>
+                                  {a.name} ({a.code})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              onClick={loadXeroAccounts}
+                              style={{ background: "#242B27", border: "1px solid #3A413D", borderRadius: 5, padding: "9px", color: "#EDE7D9", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
+                            >
+                              Load accounts from Xero
+                            </button>
+                          )}
+                        </div>
+
                         <button
                           onClick={disconnectXero}
                           style={{ background: "none", border: "1px solid #4A3420", borderRadius: 5, padding: "9px", color: "#C17A3D", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
@@ -7377,6 +7663,14 @@ export default function TankLog() {
           staffName={viewingStaffTraining}
           records={foodSafetyRecords}
           onClose={() => setViewingStaffTraining(null)}
+        />
+      )}
+      {xeroMappingQueue && (
+        <XeroMappingModal
+          queue={xeroMappingQueue}
+          xeroItems={xeroItems}
+          onConfirm={confirmXeroMappings}
+          onClose={() => setXeroMappingQueue(null)}
         />
       )}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
