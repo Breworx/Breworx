@@ -7314,9 +7314,23 @@ export default function TankLog() {
   const updateBrewDayField = async (id, field, value) => {
     const column = BREW_DAY_FIELD_COLUMNS[field];
     if (!column) return;
-    const { error } = await supabase.from("batches").update({ [column]: value }).eq("id", id);
+    const batch = batches.find((b) => b.id === id);
+
+    // SG/pH into tank are the batch's real starting numbers, so the first
+    // reading in the log should reflect them, not the recipe's target OG.
+    let readings = batch?.readings;
+    if (batch && readings && readings.length > 0 && (field === "sgIntoTank" || field === "phIntoTank") && value != null) {
+      readings = readings.map((r, i) =>
+        i === 0 ? { ...r, ...(field === "sgIntoTank" ? { gravity: value } : { ph: value }) } : r
+      );
+    }
+
+    const patch = readings && readings !== batch.readings ? { [column]: value, readings } : { [column]: value };
+    const { error } = await supabase.from("batches").update(patch).eq("id", id);
     if (error) return console.error(error);
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
+    setBatches((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, [field]: value, ...(readings && readings !== batch.readings ? { readings } : {}) } : b))
+    );
   };
 
   const toggleScheduleStep = async (batchId, stepId) => {
