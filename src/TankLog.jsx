@@ -4080,31 +4080,36 @@ function PackagedView({ batches, onOpenBatch }) {
       </div>
 
       {query.trim().length === 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
-          <input
-            type="month"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
-            style={{
-              flex: 1,
-              boxSizing: "border-box",
-              background: "#16191A",
-              border: "1px solid #2C332F",
-              borderRadius: 5,
-              padding: "9px 12px",
-              color: "#EDE7D9",
-              fontFamily: "'Inter', sans-serif",
-              fontSize: 13.5,
-            }}
-          />
-          {monthFilter && (
-            <button
-              onClick={() => setMonthFilter("")}
-              style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
-            >
-              Clear
-            </button>
-          )}
+        <div style={{ marginBottom: 24 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591", display: "block", marginBottom: 5 }}>
+            Search by date
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              style={{
+                flex: 1,
+                boxSizing: "border-box",
+                background: "#16191A",
+                border: "1px solid #2C332F",
+                borderRadius: 5,
+                padding: "9px 12px",
+                color: "#EDE7D9",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13.5,
+              }}
+            />
+            {monthFilter && (
+              <button
+                onClick={() => setMonthFilter("")}
+                style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       )}
 
