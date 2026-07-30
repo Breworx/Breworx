@@ -1020,6 +1020,7 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
   const [trainedBy, setTrainedBy] = useState("");
   const [date, setDate] = useState(today());
   const [checkedTopics, setCheckedTopics] = useState(() => new Set());
+  const [staffConfirmed, setStaffConfirmed] = useState(false);
 
   const knownStaff = [...new Set(existingRecords.filter((r) => r.category === "training" && r.staffName).map((r) => r.staffName))];
   const staffMatches = staffName.trim().length === 0 ? knownStaff : knownStaff.filter((n) => n.toLowerCase().includes(staffName.trim().toLowerCase()));
@@ -1037,9 +1038,9 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
     });
 
   const submit = async () => {
-    if (!staffName.trim() || checkedTopics.size === 0) return;
+    if (!staffName.trim() || checkedTopics.size === 0 || !staffConfirmed) return;
     for (const topic of checkedTopics) {
-      await onSave({ category: "training", date, staffName: staffName.trim(), topic, trainedBy: trainedBy.trim() });
+      await onSave({ category: "training", date, staffName: staffName.trim(), topic, trainedBy: trainedBy.trim(), staffConfirmed });
     }
     onClose();
   };
@@ -1157,19 +1158,55 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
         </div>
 
         <button
-          onClick={submit}
-          disabled={!staffName.trim() || checkedTopics.size === 0}
+          onClick={() => setStaffConfirmed(!staffConfirmed)}
           style={{
-            background: staffName.trim() && checkedTopics.size > 0 ? "#C17A3D" : "#3A2A22",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            background: "#16191A",
+            border: "1px solid #2C332F",
+            borderRadius: 6,
+            padding: "12px",
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <div
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              border: `1.5px solid ${staffConfirmed ? "#7FA35C" : "#3A413D"}`,
+              background: staffConfirmed ? "#7FA35C" : "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              marginTop: 1,
+            }}
+          >
+            {staffConfirmed && <CheckCircle2 size={14} color="#16191A" />}
+          </div>
+          <span style={{ color: "#EDE7D9", fontSize: 13, lineHeight: 1.5 }}>
+            {staffName.trim() || "The staff member"} confirms they understand and completed this training — ticked
+            in place of a signature.
+          </span>
+        </button>
+
+        <button
+          onClick={submit}
+          disabled={!staffName.trim() || checkedTopics.size === 0 || !staffConfirmed}
+          style={{
+            background: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "#C17A3D" : "#3A2A22",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: staffName.trim() && checkedTopics.size > 0 ? "#16191A" : "#8A6A5A",
+            color: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "#16191A" : "#8A6A5A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: staffName.trim() && checkedTopics.size > 0 ? "pointer" : "default",
+            cursor: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "pointer" : "default",
           }}
         >
           Save {checkedTopics.size > 0 ? `${checkedTopics.size} training record${checkedTopics.size !== 1 ? "s" : ""}` : "training record"}
@@ -4881,7 +4918,16 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
               <div style={{ color: "#EDE7D9", marginTop: 4 }}>
                 {r.category === "checklist" && `${checkedCount}/${r.items.length} items checked${r.notes ? ` — ${r.notes}` : ""}`}
                 {r.category === "calibration" && `${r.equipmentName} — ${r.result || "no result noted"}`}
-                {r.category === "training" && `${r.staffName} — ${r.topic}${r.trainedBy ? ` (by ${r.trainedBy})` : ""}`}
+                {r.category === "training" && (
+                  <>
+                    {r.staffName} — {r.topic}{r.trainedBy ? ` (by ${r.trainedBy})` : ""}
+                    {r.staffConfirmed ? (
+                      <span style={{ color: "#7FA35C" }}> · confirmed</span>
+                    ) : (
+                      <span style={{ color: "#C17A3D" }}> · not confirmed</span>
+                    )}
+                  </>
+                )}
                 {(r.category === "water" || r.category === "recall" || r.category === "incident") && (r.notes || "—")}
               </div>
               <div style={{ color: "#5C6B63", fontSize: 11, marginTop: 3 }}>{r.userName}</div>
