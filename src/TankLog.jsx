@@ -3605,6 +3605,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       mashPh: null,
       preBoilGravity: null,
       topUpWater: null,
+      phIntoTank: null,
+      sgIntoTank: null,
       stage: "Brewing",
       startDate: today(),
       recipeId: activeRecipe ? activeRecipe.id : null,
@@ -4190,10 +4192,11 @@ function DiacetylTestModal({ batch, onClose, onLog }) {
 function LogReadingModal({ batch, onClose, onLog }) {
   const [gravity, setGravity] = useState(latestReading(batch).gravity);
   const [temp, setTemp] = useState(latestReading(batch).temp);
+  const [ph, setPh] = useState(latestReading(batch).ph ?? "");
   const [note, setNote] = useState("");
 
   const submit = () => {
-    onLog(batch.id, { id: uid(), date: today(), gravity: Number(gravity), temp: Number(temp), note: note.trim() });
+    onLog(batch.id, { id: uid(), date: today(), gravity: Number(gravity), temp: Number(temp), ph: ph === "" ? null : Number(ph), note: note.trim() });
     onClose();
   };
 
@@ -4203,6 +4206,7 @@ function LogReadingModal({ batch, onClose, onLog }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Gravity" value={gravity} onChange={setGravity} step="0.001" />
           <NumberField label="Temp" value={temp} onChange={setTemp} step="0.5" suffix="°C" />
+          <NumberField label="pH (optional)" value={ph} onChange={setPh} step="0.01" />
         </div>
         <TextField label="Note (optional)" value={note} onChange={setNote} />
         <button
@@ -4228,26 +4232,18 @@ function LogReadingModal({ batch, onClose, onLog }) {
   );
 }
 
-function BrewDayModal({ batch, onClose, onSave }) {
-  const [mashPh, setMashPh] = useState(batch.mashPh ?? "");
-  const [preBoilGravity, setPreBoilGravity] = useState(batch.preBoilGravity ?? "");
-  const [topUpWater, setTopUpWater] = useState(batch.topUpWater ?? "");
+function EditBrewDayFieldModal({ target, onClose, onSave }) {
+  const [value, setValue] = useState(target.value ?? "");
 
   const submit = () => {
-    onSave(batch.id, {
-      mashPh: mashPh === "" ? null : Number(mashPh),
-      preBoilGravity: preBoilGravity === "" ? null : Number(preBoilGravity),
-      topUpWater: topUpWater === "" ? null : Number(topUpWater),
-    });
+    onSave(target.batch.id, target.field, value === "" ? null : Number(value));
     onClose();
   };
 
   return (
-    <Modal title={`Brew day — ${batch.name}`} onClose={onClose}>
+    <Modal title={`${target.label} — ${target.batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <NumberField label="Mash pH" value={mashPh} onChange={setMashPh} step="0.01" />
-        <NumberField label="Pre-boil gravity" value={preBoilGravity} onChange={setPreBoilGravity} step="0.001" />
-        <NumberField label="Top-up water" value={topUpWater} onChange={setTopUpWater} step="0.1" suffix="L" />
+        <NumberField label={target.label} value={value} onChange={setValue} step={target.step} suffix={target.suffix} />
         <button
           onClick={submit}
           style={{
@@ -4264,7 +4260,7 @@ function BrewDayModal({ batch, onClose, onSave }) {
             cursor: "pointer",
           }}
         >
-          Save brew day details
+          Save
         </button>
       </div>
     </Modal>
@@ -4489,7 +4485,7 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDay, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -4637,25 +4633,27 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         );
       })()}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Brew day</div>
-        <button
-          onClick={() => onEditBrewDay(batch)}
-          style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
-        >
-          Edit
-        </button>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+        Brew day
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 22 }}>
         {[
-          ["Mash pH", batch.mashPh != null ? batch.mashPh.toFixed(2) : "—"],
-          ["Pre-boil SG", batch.preBoilGravity != null ? batch.preBoilGravity.toFixed(3) : "—"],
-          ["Top-up water", batch.topUpWater != null ? `${batch.topUpWater} L` : "—"],
-        ].map(([label, val]) => (
-          <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+          ["Mash pH", batch.mashPh, "mashPh", 0.01, "", 2],
+          ["Pre-boil SG", batch.preBoilGravity, "preBoilGravity", 0.001, "", 3],
+          ["Top-up water", batch.topUpWater, "topUpWater", 0.1, "L", 1],
+          ["pH into tank", batch.phIntoTank, "phIntoTank", 0.01, "", 2],
+          ["SG into tank", batch.sgIntoTank, "sgIntoTank", 0.001, "", 3],
+        ].map(([label, rawVal, field, step, suffix, decimals]) => (
+          <button
+            key={field}
+            onClick={() => onEditBrewDayField({ batch, field, label, value: rawVal, step, suffix })}
+            style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px", cursor: "pointer", textAlign: "left" }}
+          >
             <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2A3324", marginTop: 3 }}>{val}</div>
-          </div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2A3324", marginTop: 3 }}>
+              {rawVal != null ? `${rawVal.toFixed(decimals)}${suffix ? ` ${suffix}` : ""}` : "—"}
+            </div>
+          </button>
         ))}
       </div>
 
@@ -4980,6 +4978,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
+            {r.ph != null && (
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 48, flexShrink: 0 }}>pH {r.ph.toFixed(2)}</span>
+            )}
             {r.note && <span style={{ flex: 1, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
             {batch.readings.length > 1 && (
               <button
@@ -6523,7 +6524,7 @@ export default function TankLog() {
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [logTarget, setLogTarget] = useState(null);
-  const [brewDayTarget, setBrewDayTarget] = useState(null);
+  const [brewDayFieldTarget, setBrewDayFieldTarget] = useState(null);
   const [packagingTarget, setPackagingTarget] = useState(null);
   const [discardTarget, setDiscardTarget] = useState(null);
   const [inventory, setInventory] = useState([]);
@@ -7302,13 +7303,20 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, readings } : b)));
   };
 
-  const updateBrewDay = async (id, patch) => {
-    const { error } = await supabase
-      .from("batches")
-      .update({ mash_ph: patch.mashPh, pre_boil_gravity: patch.preBoilGravity, top_up_water: patch.topUpWater })
-      .eq("id", id);
+  const BREW_DAY_FIELD_COLUMNS = {
+    mashPh: "mash_ph",
+    preBoilGravity: "pre_boil_gravity",
+    topUpWater: "top_up_water",
+    phIntoTank: "ph_into_tank",
+    sgIntoTank: "sg_into_tank",
+  };
+
+  const updateBrewDayField = async (id, field, value) => {
+    const column = BREW_DAY_FIELD_COLUMNS[field];
+    if (!column) return;
+    const { error } = await supabase.from("batches").update({ [column]: value }).eq("id", id);
     if (error) return console.error(error);
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
   };
 
   const toggleScheduleStep = async (batchId, stepId) => {
@@ -8210,7 +8218,7 @@ export default function TankLog() {
             onMoveBack={moveStageBack}
             onLogReading={setLogTarget}
             onDeleteReading={deleteReading}
-            onEditBrewDay={setBrewDayTarget}
+            onEditBrewDayField={setBrewDayFieldTarget}
             onOpenPackaging={setPackagingTarget}
             onDeletePackagingEvent={deletePackagingEvent}
             onDiscardRemaining={setDiscardTarget}
@@ -8425,8 +8433,8 @@ export default function TankLog() {
       {logTarget && (
         <LogReadingModal batch={logTarget} onClose={() => setLogTarget(null)} onLog={logReading} />
       )}
-      {brewDayTarget && (
-        <BrewDayModal batch={brewDayTarget} onClose={() => setBrewDayTarget(null)} onSave={updateBrewDay} />
+      {brewDayFieldTarget && (
+        <EditBrewDayFieldModal target={brewDayFieldTarget} onClose={() => setBrewDayFieldTarget(null)} onSave={updateBrewDayField} />
       )}
       {packagingTarget && (
         <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={logPackagingSession} />
