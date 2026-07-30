@@ -208,6 +208,114 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 
+// --- Recipe calculation engine ---------------------------------------------
+// Formulas adapted to metric units (kg, L, g) from the standard brewing
+// references: Tinseth (IBU), Morey (SRM), and the common gravity-points model
+// for OG. These are estimates, same as any brewing software — real mash
+// efficiency and hop utilization vary batch to batch.
+
+// OG from the grain bill. Each grain ingredient may carry a `potential`
+// field — gravity points per kg per litre at 100% efficiency (roughly 37
+// for a standard base malt, lower for specialty/crystal malts).
+function calcOG(ingredients, batchVolumeL, efficiencyPct) {
+  const grains = (ingredients || []).filter((i) => i.category === "Grain" && i.potential);
+  if (grains.length === 0 || !batchVolumeL) return null;
+  const totalPoints = grains.reduce((sum, g) => sum + (Number(g.qty) || 0) * (Number(g.potential) || 0), 0);
+  const eff = (Number(efficiencyPct) || 100) / 100;
+  return 1 + (totalPoints * eff) / batchVolumeL / 1000;
+}
+
+// SRM (colour) via the Morey equation, converted from kg/L to the
+// lb/gallon units the original formula uses.
+function calcSRM(ingredients, batchVolumeL) {
+  const grains = (ingredients || []).filter((i) => i.category === "Grain" && i.colorLovibond);
+  if (grains.length === 0 || !batchVolumeL) return null;
+  const kgToLb = 2.20462;
+  const lToGal = 0.264172;
+  const mcu = grains.reduce((sum, g) => sum + (Number(g.qty) || 0) * kgToLb * (Number(g.colorLovibond) || 0), 0) / (batchVolumeL * lToGal);
+  if (mcu <= 0) return null;
+  return 1.4922 * Math.pow(mcu, 0.6859);
+}
+
+// IBU via Tinseth, using only Boil and First Wort hop additions from the
+// schedule (dry hop / whirlpool additions aren't counted here, same as most
+// calculators default to for standard bittering IBU).
+function calcIBU(schedule, batchVolumeL, og) {
+  const hopAdds = (schedule || []).filter((s) => (s.use === "Boil" || s.use === "First Wort") && s.alphaAcid);
+  if (hopAdds.length === 0 || !batchVolumeL) return null;
+  const gravity = og || 1.05;
+  const lToGal = 0.264172;
+  const volumeGal = batchVolumeL * lToGal;
+  const totalIBU = hopAdds.reduce((sum, h) => {
+    const aaDecimal = (Number(h.alphaAcid) || 0) / 100;
+    const weightOz = (Number(h.amount) || 0) * (h.unit === "kg" ? 35.274 : h.unit === "g" ? 0.035274 : 1);
+    const time = h.use === "First Wort" ? 20 : Number(h.time) || 0; // first wort gets a fixed effective utilization time
+    const bignessFactor = 1.65 * Math.pow(0.000125, gravity - 1);
+    const boilTimeFactor = (1 - Math.exp(-0.04 * time)) / 4.15;
+    const utilization = bignessFactor * boilTimeFactor;
+    const ibu = (aaDecimal * weightOz * 7490 * utilization) / volumeGal;
+    return sum + ibu;
+  }, 0);
+  return totalIBU;
+}
+
+function calcFG(og, attenuationPct) {
+  if (!og || !attenuationPct) return null;
+  return og - (og - 1) * (Number(attenuationPct) / 100);
+}
+
+function calcABV(og, fg) {
+  if (!og || !fg) return null;
+  return (og - fg) * 131.25;
+}
+
+// --- Water chemistry ---------------------------------------------------
+// ppm contributed per gram of salt dissolved per litre of water, derived
+// from each salt's molecular weight and ion content.
+const SALT_CONTRIBUTIONS = {
+  gypsum: { label: "Gypsum (CaSO4)", ca: 232.8, so4: 558.0 },
+  calciumChloride: { label: "Calcium Chloride (CaCl2)", ca: 272.6, cl: 482.3 },
+  epsomSalt: { label: "Epsom Salt (MgSO4)", mg: 98.6, so4: 389.8 },
+  tableSalt: { label: "Table Salt (NaCl)", na: 393.4, cl: 606.7 },
+  bakingSoda: { label: "Baking Soda (NaHCO3)", na: 273.7, hco3: 726.4 },
+  chalk: { label: "Chalk (CaCO3)", ca: 400.5, hco3: 733.3 }, // reported as HCO3-equivalent alkalinity; dissolves poorly outside the mash
+};
+
+const WATER_PROFILE_PRESETS = {
+  "RO / Distilled": { ca: 0, mg: 0, na: 0, cl: 0, so4: 0, hco3: 0 },
+  "Balanced / Pale Ale": { ca: 75, mg: 5, na: 10, cl: 75, so4: 100, hco3: 50 },
+  "Hoppy / IPA": { ca: 100, mg: 5, na: 10, cl: 50, so4: 200, hco3: 25 },
+  "Malty / Stout": { ca: 100, mg: 10, na: 15, cl: 100, so4: 50, hco3: 150 },
+  "Pilsner": { ca: 40, mg: 5, na: 5, cl: 15, so4: 15, hco3: 25 },
+};
+
+function calcResultingWaterProfile(sourceWater, saltGrams, batchVolumeL) {
+  const result = { ...(sourceWater || { ca: 0, mg: 0, na: 0, cl: 0, so4: 0, hco3: 0 }) };
+  if (!batchVolumeL) return result;
+  Object.entries(saltGrams || {}).forEach(([saltKey, grams]) => {
+    const contrib = SALT_CONTRIBUTIONS[saltKey];
+    if (!contrib || !grams) return;
+    Object.entries(contrib).forEach(([ion, ppmPerGramPerLitre]) => {
+      if (ion === "label") return;
+      result[ion] = (result[ion] || 0) + (Number(grams) * ppmPerGramPerLitre) / batchVolumeL;
+    });
+  });
+  return result;
+}
+
+// Residual alkalinity — a standard, well-established metric for whether the
+// water will push mash pH up (higher RA) or down (lower RA), as CaCO3
+// equivalent. This is NOT a mash pH prediction — that also depends on grain
+// colour/acidity, which varies too much to estimate reliably here.
+function calcResidualAlkalinity(waterProfile) {
+  const hco3 = waterProfile.hco3 || 0;
+  const ca = waterProfile.ca || 0;
+  const mg = waterProfile.mg || 0;
+  const alkalinityAsCaCO3 = hco3 * 0.8202; // HCO3 to CaCO3-equivalent
+  return alkalinityAsCaCO3 - (ca / 1.4 + mg / 1.7);
+}
+
+
 function formatHistoryStamp(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -2742,9 +2850,20 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
   const [focusedIngredientId, setFocusedIngredientId] = useState(null);
   const [importError, setImportError] = useState("");
   const [schedule, setSchedule] = useState(editingRecipe ? (editingRecipe.schedule || []).map((s) => ({ ...s })) : []);
+  const [efficiency, setEfficiency] = useState(editingRecipe ? editingRecipe.efficiency ?? 72 : 72);
+  const [boilTime, setBoilTime] = useState(editingRecipe ? editingRecipe.boilTime ?? 60 : 60);
+  const [sourceWaterPreset, setSourceWaterPreset] = useState("RO / Distilled");
+  const [sourceWater, setSourceWater] = useState(
+    editingRecipe?.waterChemistry?.sourceWater || WATER_PROFILE_PRESETS["RO / Distilled"]
+  );
+  const [targetWaterPreset, setTargetWaterPreset] = useState(editingRecipe?.waterChemistry?.targetPreset || "Balanced / Pale Ale");
+  const [saltGrams, setSaltGrams] = useState(
+    editingRecipe?.waterChemistry?.saltGrams || { gypsum: "", calciumChloride: "", epsomSalt: "", tableSalt: "", bakingSoda: "", chalk: "" }
+  );
+  const [showWaterChemistry, setShowWaterChemistry] = useState(!!editingRecipe?.waterChemistry);
 
   const addScheduleStep = () =>
-    setSchedule((prev) => [...prev, { id: uid(), use: "Boil", time: 60, name: "", amount: 0, unit: "kg" }]);
+    setSchedule((prev) => [...prev, { id: uid(), use: "Boil", time: 60, name: "", amount: 0, unit: "g" }]);
 
   const updateScheduleStep = (id, patch) =>
     setSchedule((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -2792,6 +2911,19 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       ? []
       : ALL_STYLES.filter((s) => s.name.toLowerCase().includes(style.trim().toLowerCase())).slice(0, 30);
 
+  const calcEst = {
+    og: calcOG(ingredients, Number(volume), Number(efficiency)),
+  };
+  calcEst.fg = calcFG(calcEst.og, ingredients.find((i) => i.category === "Yeast")?.attenuation);
+  calcEst.abv = calcABV(calcEst.og, calcEst.fg);
+  calcEst.ibu = calcIBU(schedule, Number(volume), calcEst.og);
+  calcEst.srm = calcSRM(ingredients, Number(volume));
+
+  const resultingWater = calcResultingWaterProfile(sourceWater, saltGrams, Number(volume));
+  const residualAlkalinity = calcResidualAlkalinity(resultingWater);
+  const targetProfile = WATER_PROFILE_PRESETS[targetWaterPreset];
+  const sulfateChlorideRatio = resultingWater.cl > 0 ? (resultingWater.so4 / resultingWater.cl).toFixed(1) : "—";
+
   const submit = () => {
     const clean = ingredients.filter((l) => l.name.trim());
     if (!name.trim() || clean.length === 0) return;
@@ -2808,6 +2940,9 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
       schedule: cleanSchedule,
       familyId: editingRecipe ? editingRecipe.familyId : null,
+      efficiency: Number(efficiency) || 72,
+      boilTime: Number(boilTime) || 60,
+      waterChemistry: showWaterChemistry ? { sourceWater, targetPreset: targetWaterPreset, saltGrams } : null,
     });
     onClose();
   };
@@ -2930,7 +3065,120 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
           <NumberField label="Batch volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
           <NumberField label="Target OG" value={og} onChange={setOg} step="0.001" />
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
+          <NumberField label="Boil time" value={boilTime} onChange={setBoilTime} step="5" suffix="min" />
+          <NumberField label="Mash efficiency" value={efficiency} onChange={setEfficiency} step="1" suffix="%" />
         </div>
+
+        <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px" }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+            Estimated from your ingredient list
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            {[
+              ["OG", calcEst.og ? calcEst.og.toFixed(3) : "—"],
+              ["FG", calcEst.fg ? calcEst.fg.toFixed(3) : "—"],
+              ["ABV", calcEst.abv ? `${calcEst.abv.toFixed(1)}%` : "—"],
+              ["IBU", calcEst.ibu ? Math.round(calcEst.ibu) : "—"],
+              ["SRM", calcEst.srm ? calcEst.srm.toFixed(1) : "—"],
+            ].map(([label, val]) => (
+              <div key={label}>
+                <div style={{ fontSize: 10, color: "#9BA88A" }}>{label}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: "#2A3324" }}>{val}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "#9BA88A", marginTop: 8, lineHeight: 1.4 }}>
+            Fill in potential/color on grains, alpha acid on boil hops, and attenuation on yeast to see these — same as any brewing calculator, treat them as estimates.
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowWaterChemistry((v) => !v)}
+          style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+        >
+          {showWaterChemistry ? "Hide water chemistry" : "Add water chemistry (optional)"}
+        </button>
+
+        {showWaterChemistry && (
+          <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+              Source water
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <SelectField
+                label="Start from a preset"
+                value={sourceWaterPreset}
+                onChange={(v) => {
+                  setSourceWaterPreset(v);
+                  setSourceWater(WATER_PROFILE_PRESETS[v]);
+                }}
+                options={Object.keys(WATER_PROFILE_PRESETS)}
+              />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+              {["ca", "mg", "na", "cl", "so4", "hco3"].map((ion) => (
+                <NumberField
+                  key={ion}
+                  label={`${ion.toUpperCase()} (ppm)`}
+                  value={sourceWater[ion] ?? 0}
+                  onChange={(v) => setSourceWater((prev) => ({ ...prev, [ion]: Number(v) || 0 }))}
+                  step="1"
+                />
+              ))}
+            </div>
+
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+              Salt additions (grams, for this whole batch)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+              {Object.entries(SALT_CONTRIBUTIONS).map(([key, salt]) => (
+                <NumberField
+                  key={key}
+                  label={salt.label}
+                  value={saltGrams[key] ?? ""}
+                  onChange={(v) => setSaltGrams((prev) => ({ ...prev, [key]: v }))}
+                  step="0.1"
+                  suffix="g"
+                />
+              ))}
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <SelectField
+                label="Target profile (for reference)"
+                value={targetWaterPreset}
+                onChange={setTargetWaterPreset}
+                options={Object.keys(WATER_PROFILE_PRESETS).filter((k) => k !== "RO / Distilled")}
+              />
+            </div>
+
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                Resulting profile vs. target
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 8 }}>
+                {["ca", "mg", "na", "cl", "so4", "hco3"].map((ion) => (
+                  <div key={ion}>
+                    <div style={{ fontSize: 10, color: "#9BA88A" }}>{ion.toUpperCase()}</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "#2A3324" }}>
+                      {Math.round(resultingWater[ion] || 0)}
+                      <span style={{ color: "#9BA88A", fontSize: 11 }}> / {targetProfile[ion]}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: "#5C6B54" }}>
+                Sulfate : Chloride ratio — <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{sulfateChlorideRatio}</span>
+              </div>
+              <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 4 }}>
+                Residual alkalinity — <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{Math.round(residualAlkalinity)}</span> ppm as CaCO3
+              </div>
+              <div style={{ fontSize: 11, color: "#9BA88A", marginTop: 6, lineHeight: 1.4 }}>
+                Lower residual alkalinity gives more room for pale/acidic grists; higher suits darker beers. This isn't a mash pH prediction — measure with a pH meter or strips on brew day.
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
           Ingredients
@@ -3072,6 +3320,30 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={CATEGORIES} />
               <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
               <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.01" suffix={line.unit} />
+              {line.category === "Grain" && (
+                <>
+                  <NumberField
+                    label="Potential (pts/kg/L, optional)"
+                    value={line.potential ?? ""}
+                    onChange={(v) => updateLine(line.id, { potential: v })}
+                    step="1"
+                  />
+                  <NumberField
+                    label="Color (°L, optional)"
+                    value={line.colorLovibond ?? ""}
+                    onChange={(v) => updateLine(line.id, { colorLovibond: v })}
+                    step="1"
+                  />
+                </>
+              )}
+              {line.category === "Yeast" && (
+                <NumberField
+                  label="Attenuation % (optional)"
+                  value={line.attenuation ?? ""}
+                  onChange={(v) => updateLine(line.id, { attenuation: v })}
+                  step="1"
+                />
+              )}
             </div>
           </div>
         ))}
@@ -3116,12 +3388,15 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     step="1"
                   />
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: (s.use === "Boil" || s.use === "First Wort") ? 8 : 0 }}>
                   <div style={{ flex: 1 }}>
                     <TextField label="What to add" value={s.name} onChange={(v) => updateScheduleStep(s.id, { name: v })} />
                   </div>
                   <div style={{ width: 64, flexShrink: 0 }}>
                     <NumberField label="Amt" value={s.amount} onChange={(v) => updateScheduleStep(s.id, { amount: v })} step="0.01" />
+                  </div>
+                  <div style={{ width: 60, flexShrink: 0 }}>
+                    <SelectField label="Unit" value={s.unit || "g"} onChange={(v) => updateScheduleStep(s.id, { unit: v })} options={["g", "kg", "ea"]} />
                   </div>
                   <button
                     onClick={() => removeScheduleStep(s.id)}
@@ -3131,6 +3406,14 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     <Trash2 size={14} />
                   </button>
                 </div>
+                {(s.use === "Boil" || s.use === "First Wort") && (
+                  <NumberField
+                    label="Alpha acid % (optional, for IBU estimate)"
+                    value={s.alphaAcid ?? ""}
+                    onChange={(v) => updateScheduleStep(s.id, { alphaAcid: v })}
+                    step="0.1"
+                  />
+                )}
               </div>
             ))}
             {schedule.length === 0 && (
@@ -3181,7 +3464,45 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
   );
 }
 
-function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, onSwitchVersion, onEdit, onSetActive }) {
+function ScaleRecipeModal({ recipe, onClose, onScale }) {
+  const [newVolume, setNewVolume] = useState(recipe.volume);
+
+  const submit = () => {
+    if (!newVolume || Number(newVolume) <= 0) return;
+    onScale(recipe, Number(newVolume));
+    onClose();
+  };
+
+  return (
+    <Modal title={`Scale ${recipe.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.5 }}>
+          Currently brewed at {recipe.volume}L. This scales every ingredient, hop addition, and salt addition proportionally, and saves it as a new version.
+        </div>
+        <NumberField label="New batch volume" value={newVolume} onChange={setNewVolume} step="0.5" suffix="L" />
+        <button
+          onClick={submit}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Create scaled version
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, onSwitchVersion, onEdit, onSetActive, onScale }) {
   const shortages = recipe.ingredients.filter((ing) => {
     const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
     return !stock || stock.qty < ing.qty;
@@ -3232,6 +3553,37 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       <div style={{ color: "#5C6B54", fontSize: 14, marginBottom: 12 }}>
         {recipe.style} · {recipe.volume}L · OG {recipe.og.toFixed(3)} → FG {recipe.fg.toFixed(3)}
       </div>
+
+      {(() => {
+        const calcOgVal = calcOG(recipe.ingredients, recipe.volume, recipe.efficiency);
+        const calcFgVal = calcFG(calcOgVal, recipe.ingredients.find((i) => i.category === "Yeast")?.attenuation);
+        const calcAbv = calcABV(calcOgVal, calcFgVal);
+        const calcIbuVal = calcIBU(recipe.schedule, recipe.volume, calcOgVal);
+        const calcSrmVal = calcSRM(recipe.ingredients, recipe.volume);
+        if (!calcAbv && !calcIbuVal && !calcSrmVal) return null;
+        return (
+          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+            {calcAbv && (
+              <div>
+                <div style={{ fontSize: 10, color: "#9BA88A" }}>Est. ABV</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: "#2A3324" }}>{calcAbv.toFixed(1)}%</div>
+              </div>
+            )}
+            {calcIbuVal && (
+              <div>
+                <div style={{ fontSize: 10, color: "#9BA88A" }}>Est. IBU</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: "#2A3324" }}>{Math.round(calcIbuVal)}</div>
+              </div>
+            )}
+            {calcSrmVal && (
+              <div>
+                <div style={{ fontSize: 10, color: "#9BA88A" }}>Est. SRM</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: "#2A3324" }}>{calcSrmVal.toFixed(1)}</div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {versions.length > 1 && (
         <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 16 }}>
@@ -3405,6 +3757,24 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
         }}
       >
         Edit — save as new version
+      </button>
+
+      <button
+        onClick={() => onScale(recipe)}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "1px solid #DDE0C8",
+          borderRadius: 5,
+          padding: "11px",
+          color: "#5C6B54",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginTop: 10,
+        }}
+      >
+        Scale to a different batch size
       </button>
 
       <button
@@ -6761,6 +7131,7 @@ export default function TankLog() {
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [deleteSupplierTarget, setDeleteSupplierTarget] = useState(null);
+  const [scaleRecipeTarget, setScaleRecipeTarget] = useState(null);
   const [viewingSupplierDocs, setViewingSupplierDocs] = useState(null);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [teammates, setTeammates] = useState([]);
@@ -7054,6 +7425,36 @@ export default function TankLog() {
 
     setRecipes((prev) => [newRecipe, ...prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: false } : rec))]);
     setSelectedRecipeId(newRecipe.id);
+  };
+
+  const scaleRecipe = (recipe, newVolume) => {
+    const ratio = newVolume / recipe.volume;
+    const scaledIngredients = recipe.ingredients.map((i) => ({ ...i, qty: Math.round(i.qty * ratio * 1000) / 1000 }));
+    const scaledSchedule = (recipe.schedule || []).map((s) => ({ ...s, amount: Math.round((Number(s.amount) || 0) * ratio * 1000) / 1000 }));
+    let scaledWaterChemistry = null;
+    if (recipe.waterChemistry) {
+      const saltGrams = Object.fromEntries(
+        Object.entries(recipe.waterChemistry.saltGrams || {}).map(([k, v]) => [
+          k,
+          v === "" || v == null ? "" : Math.round(Number(v) * ratio * 100) / 100,
+        ])
+      );
+      scaledWaterChemistry = { ...recipe.waterChemistry, saltGrams };
+    }
+    addRecipe({
+      id: uid(),
+      name: recipe.name,
+      style: recipe.style,
+      volume: newVolume,
+      og: recipe.og,
+      fg: recipe.fg,
+      ingredients: scaledIngredients,
+      schedule: scaledSchedule,
+      familyId: recipe.familyId,
+      efficiency: recipe.efficiency,
+      boilTime: recipe.boilTime,
+      waterChemistry: scaledWaterChemistry,
+    });
   };
 
   const setActiveRecipeVersion = async (recipeId, familyId) => {
@@ -8506,6 +8907,7 @@ export default function TankLog() {
             onSwitchVersion={setSelectedRecipeId}
             onEdit={setEditRecipeTarget}
             onSetActive={setActiveRecipeVersion}
+            onScale={setScaleRecipeTarget}
           />
         )}
 
@@ -8627,6 +9029,9 @@ export default function TankLog() {
           }}
           onSave={(data) => (editingSupplier ? updateSupplier(editingSupplier.id, data) : addSupplier(data))}
         />
+      )}
+      {scaleRecipeTarget && (
+        <ScaleRecipeModal recipe={scaleRecipeTarget} onClose={() => setScaleRecipeTarget(null)} onScale={scaleRecipe} />
       )}
       {deleteSupplierTarget && (
         <ConfirmDeleteSupplierModal
