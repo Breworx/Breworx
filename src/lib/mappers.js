@@ -191,3 +191,42 @@ export function stockTakeToRow(stockTake, userId, companyId) {
     lines: stockTake.lines || [],
   };
 }
+
+export function rowToFoodSafetyRecord(row) {
+  return {
+    id: row.id,
+    category: row.category,
+    frequency: row.frequency,
+    date: row.date,
+    userName: row.user_name,
+    items: row.items || [],
+    equipmentName: row.equipment_name,
+    result: row.result,
+    dueDate: row.due_date,
+    staffName: row.staff_name,
+    topic: row.topic,
+    trainedBy: row.trained_by,
+    notes: row.notes,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function foodSafetyRecordToRow(record, userId, companyId) {
+  return {
+    id: record.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: record.userName,
+    category: record.category,
+    frequency: record.frequency || null,
+    date: record.date,
+    items: record.items || [],
+    equipment_name: record.equipmentName || null,
+    result: record.result || null,
+    due_date: record.dueDate || null,
+    staff_name: record.staffName || null,
+    topic: record.topic || null,
+    trained_by: record.trainedBy || null,
+    notes: record.notes || null,
+  };
+}
