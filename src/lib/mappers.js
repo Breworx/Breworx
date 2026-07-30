@@ -66,6 +66,7 @@ export function rowToInventoryItem(row) {
     threshold: row.threshold,
     lots: row.lots || [],
     history: row.history || [],
+    supplierId: row.supplier_id || null,
   };
 }
 
@@ -79,6 +80,7 @@ export function inventoryItemToRow(item, userId, companyId) {
     qty: item.qty,
     unit: item.unit,
     threshold: item.threshold,
+    supplier_id: item.supplierId || null,
     lots: item.lots || [],
     history: item.history || [],
   };
