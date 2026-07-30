@@ -22,6 +22,10 @@ import {
   supplierToRow,
   rowToSupplierDocument,
   supplierDocumentToRow,
+  rowToConsumable,
+  consumableToRow,
+  rowToPackageType,
+  packageTypeToRow,
 } from "./lib/mappers";
 
 // The path a batch follows depends on whether the brewery has any Brite Beer
@@ -7792,6 +7796,8 @@ export default function TankLog() {
   const [packagingTarget, setPackagingTarget] = useState(null);
   const [discardTarget, setDiscardTarget] = useState(null);
   const [inventory, setInventory] = useState([]);
+  const [consumables, setConsumables] = useState([]);
+  const [packageTypes, setPackageTypes] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
@@ -7873,6 +7879,8 @@ export default function TankLog() {
     if (!user) {
       setBatches([]);
       setInventory([]);
+      setConsumables([]);
+      setPackageTypes([]);
       setPurchaseOrders([]);
       setRecipes([]);
       setProfile(null);
@@ -7915,11 +7923,13 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
+        supabase.from("consumables").select("*").order("created_at", { ascending: false }),
+        supabase.from("package_types").select("*").order("created_at", { ascending: false }),
         supabase.from("purchase_orders").select("*").order("created_at", { ascending: false }),
         supabase.from("recipes").select("*").order("created_at", { ascending: false }),
         supabase.from("tanks").select("*").order("created_at", { ascending: false }),
@@ -7944,6 +7954,10 @@ export default function TankLog() {
       else setBatches(batchesRes.data.map(rowToBatch));
       if (inventoryRes.error) console.error(inventoryRes.error);
       else setInventory(inventoryRes.data.map(rowToInventoryItem));
+      if (consumablesRes.error) console.error(consumablesRes.error);
+      else setConsumables(consumablesRes.data.map(rowToConsumable));
+      if (packageTypesRes.error) console.error(packageTypesRes.error);
+      else setPackageTypes(packageTypesRes.data.map(rowToPackageType));
       if (poRes.error) console.error(poRes.error);
       else setPurchaseOrders(poRes.data.map(rowToPO));
       if (recipesRes.error) console.error(recipesRes.error);
