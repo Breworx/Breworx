@@ -24,11 +24,20 @@ import {
   supplierDocumentToRow,
 } from "./lib/mappers";
 
-const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
+// The path a batch follows depends on whether the brewery has any Brite Beer
+// Tanks configured — if so, beer moves through one before packaging.
+function getStages(hasBriteTanks) {
+  return hasBriteTanks
+    ? ["Brewing", "Primary", "Cooling", "Brite Tank", "Packaged"]
+    : ["Brewing", "Primary", "Cooling", "Packaged"];
+}
 
 const STAGE_COLOR = {
   Brewing: "#8A6A3D",
   Primary: "#5C9A3C",
+  Cooling: "#B8925A",
+  "Brite Tank": "#D4A24C",
+  // Kept for any batches created before this stage restructure.
   Secondary: "#B8925A",
   Conditioning: "#D4A24C",
   Packaged: "#9BA88A",
@@ -1814,7 +1823,7 @@ function SelectField({ label, value, onChange, options }) {
 
 function AddTankModal({ onClose, onAdd }) {
   const [countInput, setCountInput] = useState("1");
-  const [rows, setRows] = useState([{ id: uid(), name: "Tank 1", capacity: 20 }]);
+  const [rows, setRows] = useState([{ id: uid(), name: "Tank 1", capacity: 20, type: "Fermenter" }]);
 
   const applyCount = (raw) => {
     setCountInput(raw);
@@ -1827,7 +1836,7 @@ function AddTankModal({ onClose, onAdd }) {
       const next = [...prev];
       const lastCapacity = prev[prev.length - 1]?.capacity ?? 20;
       while (next.length < clamped) {
-        next.push({ id: uid(), name: `Tank ${next.length + 1}`, capacity: lastCapacity });
+        next.push({ id: uid(), name: `Tank ${next.length + 1}`, capacity: lastCapacity, type: "Fermenter" });
       }
       return next;
     });
@@ -1838,7 +1847,7 @@ function AddTankModal({ onClose, onAdd }) {
   const submit = () => {
     const clean = rows.filter((r) => r.name.trim());
     if (clean.length === 0) return;
-    clean.forEach((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0 }));
+    clean.forEach((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0, type: r.type || "Fermenter" }));
     onClose();
   };
 
@@ -1857,8 +1866,8 @@ function AddTankModal({ onClose, onAdd }) {
             <div
               key={row.id}
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 100px",
+                display: "flex",
+                flexDirection: "column",
                 gap: 8,
                 background: "#F5F1E4",
                 border: "1px solid #DDE0C8",
@@ -1866,8 +1875,16 @@ function AddTankModal({ onClose, onAdd }) {
                 padding: "10px 10px",
               }}
             >
-              <TextField label={`Tank ${i + 1} ID`} value={row.name} onChange={(v) => updateRow(row.id, { name: v })} />
-              <NumberField label="Litres" value={row.capacity} onChange={(v) => updateRow(row.id, { capacity: v })} step="1" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px", gap: 8 }}>
+                <TextField label={`Tank ${i + 1} ID`} value={row.name} onChange={(v) => updateRow(row.id, { name: v })} />
+                <NumberField label="Litres" value={row.capacity} onChange={(v) => updateRow(row.id, { capacity: v })} step="1" />
+              </div>
+              <SelectField
+                label="Type"
+                value={row.type || "Fermenter"}
+                onChange={(v) => updateRow(row.id, { type: v })}
+                options={["Fermenter", "Brite Tank"]}
+              />
             </div>
           ))}
         </div>
@@ -1898,10 +1915,11 @@ function AddTankModal({ onClose, onAdd }) {
 function EditTankModal({ tank, onClose, onSave }) {
   const [name, setName] = useState(tank.name);
   const [capacity, setCapacity] = useState(tank.capacity);
+  const [type, setType] = useState(tank.type || "Fermenter");
 
   const submit = () => {
     if (!name.trim()) return;
-    onSave(tank.id, { name: name.trim(), capacity: Number(capacity) || 0 });
+    onSave(tank.id, { name: name.trim(), capacity: Number(capacity) || 0, type });
     onClose();
   };
 
@@ -1910,6 +1928,7 @@ function EditTankModal({ tank, onClose, onSave }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Tank ID" value={name} onChange={setName} />
         <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
+        <SelectField label="Type" value={type} onChange={setType} options={["Fermenter", "Brite Tank"]} />
         <div style={{ color: "#9BA88A", fontSize: 12 }}>
           Renaming won't retroactively update batches already assigned to this tank — reassign them from the batch's page if needed.
         </div>
@@ -4095,6 +4114,79 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   );
 }
 
+function DiacetylTestModal({ batch, onClose, onLog }) {
+  const [result, setResult] = useState(null);
+  const [notes, setNotes] = useState("");
+
+  const submit = () => {
+    if (!result) return;
+    onLog(batch.id, { id: uid(), date: new Date().toISOString(), result, notes: notes.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title={`Diacetyl test — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => setResult("pass")}
+            style={{
+              flex: 1,
+              background: result === "pass" ? "#5C9A3C" : "none",
+              border: `1px solid ${result === "pass" ? "#5C9A3C" : "#DDE0C8"}`,
+              borderRadius: 5,
+              padding: "14px",
+              color: result === "pass" ? "#16191A" : "#2A3324",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 15,
+              cursor: "pointer",
+            }}
+          >
+            Pass
+          </button>
+          <button
+            onClick={() => setResult("fail")}
+            style={{
+              flex: 1,
+              background: result === "fail" ? "#B5502F" : "none",
+              border: `1px solid ${result === "fail" ? "#B5502F" : "#DDE0C8"}`,
+              borderRadius: 5,
+              padding: "14px",
+              color: result === "fail" ? "#2A3324" : "#2A3324",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 15,
+              cursor: "pointer",
+            }}
+          >
+            Fail
+          </button>
+        </div>
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
+        <button
+          onClick={submit}
+          disabled={!result}
+          style={{
+            background: result ? "#5C9A3C" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: result ? "#16191A" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: result ? "pointer" : "default",
+          }}
+        >
+          Save test result
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function LogReadingModal({ batch, onClose, onLog }) {
   const [gravity, setGravity] = useState(latestReading(batch).gravity);
   const [temp, setTemp] = useState(latestReading(batch).temp);
@@ -4397,11 +4489,11 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDay, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDay, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
-  const stageIdx = STAGES.indexOf(batch.stage);
+  const stageIdx = stages.indexOf(batch.stage);
   const chartData = batch.readings.map((r) => ({
     date: r.date.slice(5),
     gravity: r.gravity,
@@ -4601,7 +4693,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       )}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "center" }}>
-        {STAGES.map((s, i) => (
+        {stages.map((s, i) => (
           <React.Fragment key={s}>
             <span
               style={{
@@ -4613,7 +4705,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             >
               {s.toUpperCase()}
             </span>
-            {i < STAGES.length - 1 && <span style={{ flex: 1, height: 1, background: i < stageIdx ? STAGE_COLOR[batch.stage] : "#DDE0C8" }} />}
+            {i < stages.length - 1 && <span style={{ flex: 1, height: 1, background: i < stageIdx ? STAGE_COLOR[batch.stage] : "#DDE0C8" }} />}
           </React.Fragment>
         ))}
       </div>
@@ -4746,31 +4838,41 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         >
           <Droplet size={15} /> Log reading
         </button>
-        {stageIdx < STAGES.length - 1 && (
-          <button
-            onClick={() => (STAGES[stageIdx + 1] === "Packaged" ? onOpenPackaging(batch) : onAdvance(batch.id))}
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              background: "#5C9A3C",
-              border: "none",
-              borderRadius: 5,
-              padding: "11px",
-              color: "#16191A",
-              fontFamily: "'Oswald', sans-serif",
-              fontWeight: 500,
-              fontSize: 13.5,
-              letterSpacing: "0.02em",
-              cursor: "pointer",
-            }}
-          >
-            {STAGES[stageIdx + 1] === "Packaged" && <Package size={15} />}
-            {STAGES[stageIdx + 1] === "Packaged" ? "Package batch" : `Advance to ${STAGES[stageIdx + 1]}`}
-          </button>
-        )}
+        {stageIdx < stages.length - 1 && (() => {
+          const nextStage = stages[stageIdx + 1];
+          const needsDiacetylPass = batch.stage === "Primary" && nextStage === "Cooling";
+          const hasDiacetylPass = (batch.diacetylTests || []).some((t) => t.result === "pass");
+          const blocked = needsDiacetylPass && !hasDiacetylPass;
+          return (
+            <button
+              onClick={() => {
+                if (blocked) return;
+                nextStage === "Packaged" ? onOpenPackaging(batch) : onAdvance(batch.id);
+              }}
+              disabled={blocked}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                background: blocked ? "#E8E4D4" : "#5C9A3C",
+                border: "none",
+                borderRadius: 5,
+                padding: "11px",
+                color: blocked ? "#A3AC94" : "#16191A",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 13.5,
+                letterSpacing: "0.02em",
+                cursor: blocked ? "default" : "pointer",
+              }}
+            >
+              {nextStage === "Packaged" && <Package size={15} />}
+              {blocked ? "Log a passing diacetyl test first" : nextStage === "Packaged" ? "Package batch" : `Advance to ${nextStage}`}
+            </button>
+          );
+        })()}
       </div>
 
       {stageIdx > 0 && batch.stage !== "Packaged" && (
@@ -4788,8 +4890,53 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             display: "block",
           }}
         >
-          ← Move back to {STAGES[stageIdx - 1]}
+          ← Move back to {stages[stageIdx - 1]}
         </button>
+      )}
+
+      {(batch.stage === "Primary" || (batch.diacetylTests && batch.diacetylTests.length > 0)) && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+              Diacetyl test
+            </div>
+            {batch.stage === "Primary" && (
+              <button
+                onClick={() => onLogDiacetylTest(batch)}
+                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+              >
+                Log test
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[...(batch.diacetylTests || [])].reverse().map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "9px 12px",
+                  background: "#FBF6EC",
+                  border: `1px solid ${t.result === "pass" ? "#DDE0C8" : "#E3D3A0"}`,
+                  borderRadius: 5,
+                  fontSize: 13,
+                }}
+              >
+                <span style={{ color: t.result === "pass" ? "#5C9A3C" : "#B5502F", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, textTransform: "uppercase" }}>
+                  {t.result}
+                </span>
+                <span style={{ color: "#9BA88A", fontSize: 11.5 }}>{formatHistoryStamp(t.date)}</span>
+              </div>
+            ))}
+            {(!batch.diacetylTests || batch.diacetylTests.length === 0) && (
+              <div style={{ color: "#9BA88A", fontSize: 12.5 }}>
+                No tests logged yet — needs at least one pass before this batch can move to Cooling.
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {chartData.length > 1 && (
@@ -6430,6 +6577,7 @@ export default function TankLog() {
   const [editRecipeTarget, setEditRecipeTarget] = useState(null);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState(null);
   const [assignTankTarget, setAssignTankTarget] = useState(null);
+  const [diacetylTestTarget, setDiacetylTestTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
   // sign-in, sign-out, or token refresh — session becomes null on sign-out.
@@ -6978,7 +7126,7 @@ export default function TankLog() {
   };
 
   const updateTank = async (id, patch) => {
-    const { error } = await supabase.from("tanks").update({ name: patch.name, capacity: patch.capacity }).eq("id", id);
+    const { error } = await supabase.from("tanks").update({ name: patch.name, capacity: patch.capacity, type: patch.type }).eq("id", id);
     if (error) return console.error(error);
     setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   };
@@ -7102,9 +7250,14 @@ export default function TankLog() {
   const advance = async (id) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const idx = STAGES.indexOf(batch.stage);
-    if (idx >= STAGES.length - 1) return;
-    const nextStage = STAGES[idx + 1];
+    const stages = getStages(hasBriteTanks);
+    const idx = stages.indexOf(batch.stage);
+    if (idx >= stages.length - 1) return;
+    const nextStage = stages[idx + 1];
+    if (batch.stage === "Primary" && nextStage === "Cooling") {
+      const hasPass = (batch.diacetylTests || []).some((t) => t.result === "pass");
+      if (!hasPass) return;
+    }
     const { error } = await supabase.from("batches").update({ stage: nextStage }).eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage } : b)));
@@ -7113,12 +7266,22 @@ export default function TankLog() {
   const moveStageBack = async (id) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const idx = STAGES.indexOf(batch.stage);
+    const stages = getStages(hasBriteTanks);
+    const idx = stages.indexOf(batch.stage);
     if (idx <= 0) return;
-    const prevStage = STAGES[idx - 1];
+    const prevStage = stages[idx - 1];
     const { error } = await supabase.from("batches").update({ stage: prevStage }).eq("id", id);
     if (error) return console.error(error);
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: prevStage } : b)));
+  };
+
+  const logDiacetylTest = async (id, test) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const diacetylTests = [...(batch.diacetylTests || []), test];
+    const { error } = await supabase.from("batches").update({ diacetyl_tests: diacetylTests }).eq("id", id);
+    if (error) return console.error(error);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, diacetylTests } : b)));
   };
 
   const logReading = async (id, reading) => {
@@ -7208,8 +7371,10 @@ export default function TankLog() {
     }
   };
 
+  const hasBriteTanks = tanks.some((t) => t.type === "Brite Tank");
+  const stages = getStages(hasBriteTanks);
   const fermentingBatches = batches.filter((b) => ["Brewing", "Primary", "Secondary"].includes(b.stage));
-  const conditioningBatches = batches.filter((b) => b.stage === "Conditioning");
+  const conditioningBatches = batches.filter((b) => ["Cooling", "Brite Tank", "Conditioning"].includes(b.stage));
   const inProgressBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) > 0);
   const packagedBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) === 0);
 
@@ -7731,9 +7896,27 @@ export default function TankLog() {
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2A3324", margin: 0 }}>
-                          {t.name}
-                        </h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2A3324", margin: 0 }}>
+                            {t.name}
+                          </h3>
+                          {t.type === "Brite Tank" && (
+                            <span
+                              style={{
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: 10,
+                                letterSpacing: "0.05em",
+                                textTransform: "uppercase",
+                                color: "#D4A24C",
+                                border: "1px solid #E3D3A0",
+                                borderRadius: 3,
+                                padding: "2px 6px",
+                              }}
+                            >
+                              Brite
+                            </span>
+                          )}
+                        </div>
                         <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
                           {t.capacity}L{occupant ? ` · occupied by ${occupant.name}` : " · empty"}
                         </div>
@@ -8034,6 +8217,8 @@ export default function TankLog() {
             onAssignTank={setAssignTankTarget}
             onToggleScheduleStep={toggleScheduleStep}
             onDeleteBatch={setDeleteBatchTarget}
+            stages={stages}
+            onLogDiacetylTest={setDiacetylTestTarget}
           />
         )}
 
@@ -8141,6 +8326,13 @@ export default function TankLog() {
           xeroItems={xeroItems}
           onConfirm={confirmXeroMappings}
           onClose={() => setXeroMappingQueue(null)}
+        />
+      )}
+      {diacetylTestTarget && (
+        <DiacetylTestModal
+          batch={diacetylTestTarget}
+          onClose={() => setDiacetylTestTarget(null)}
+          onLog={logDiacetylTest}
         />
       )}
       {showSuppliersModal && (
