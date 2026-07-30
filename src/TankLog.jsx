@@ -3114,7 +3114,7 @@ function RecipeCard({ recipe, onOpen }) {
   );
 }
 
-function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editingRecipe }) {
+function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editingRecipe, standalone = false, onSaveAndBrew }) {
   const [name, setName] = useState(editingRecipe ? editingRecipe.name : "");
   const [style, setStyle] = useState(editingRecipe ? editingRecipe.style : "");
   const [styleFocused, setStyleFocused] = useState(false);
@@ -3232,9 +3232,8 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
     onClose();
   };
 
-  return (
-    <Modal title={editingRecipe ? `Save new version — ${editingRecipe.name}` : "New recipe"} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+  const content = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <label
           style={{
             display: "flex",
@@ -3854,7 +3853,80 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
         >
           {editingRecipe ? "Save as new version" : "Save recipe"}
         </button>
+        {onSaveAndBrew && (
+          <button
+            onClick={() => {
+              const clean = ingredients.filter((l) => l.name.trim());
+              if (!name.trim() || clean.length === 0) return;
+              const cleanSchedule = schedule
+                .filter((s) => s.name.trim())
+                .map((s) => ({ ...s, name: s.name.trim(), amount: Number(s.amount) || 0, label: buildScheduleLabel(s.use, s.time, s.name.trim()) }));
+              onSaveAndBrew({
+                id: uid(),
+                name: name.trim(),
+                style: style.trim() || "Unspecified",
+                volume: Number(volume) || 0,
+                og: Number(og),
+                fg: Number(fg),
+                ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
+                schedule: cleanSchedule,
+                familyId: editingRecipe ? editingRecipe.familyId : null,
+                efficiency: Number(efficiency) || 72,
+                boilTime: Number(boilTime) || 60,
+                waterChemistry: showWaterChemistry ? { sourceWater, targetPreset: targetWaterPreset, saltGrams } : null,
+              });
+            }}
+            style={{
+              background: "none",
+              border: "1px solid #5C9A3C",
+              borderRadius: 5,
+              padding: "12px",
+              color: "#5C9A3C",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 15,
+              letterSpacing: "0.03em",
+              cursor: "pointer",
+            }}
+          >
+            Save & brew this recipe
+          </button>
+        )}
+    </div>
+  );
+
+  if (standalone) {
+    return (
+      <div style={{ maxWidth: 640 }}>
+        <button
+          onClick={onClose}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "none",
+            border: "none",
+            color: "#5C6B54",
+            cursor: "pointer",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            padding: 0,
+            marginBottom: 18,
+          }}
+        >
+          <ChevronLeft size={16} /> Back
+        </button>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: "0 0 16px", fontWeight: 500 }}>
+          Recipe Builder
+        </h1>
+        {content}
       </div>
+    );
+  }
+
+  return (
+    <Modal title={editingRecipe ? `Save new version — ${editingRecipe.name}` : "New recipe"} onClose={onClose}>
+      {content}
     </Modal>
   );
 }
@@ -7820,6 +7892,16 @@ export default function TankLog() {
 
     setRecipes((prev) => [newRecipe, ...prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: false } : rec))]);
     setSelectedRecipeId(newRecipe.id);
+    return newRecipe;
+  };
+
+  const saveAndBrewRecipe = async (r) => {
+    const newRecipe = await addRecipe(r);
+    if (!newRecipe) return;
+    setBrewRecipe(newRecipe);
+    setSelectedRecipeId(null);
+    setView("batches");
+    setShowAdd(true);
   };
 
   const scaleRecipe = (recipe, newVolume) => {
@@ -8497,6 +8579,7 @@ export default function TankLog() {
               ["inventory", "Inventory"],
               ["orders", "Purchase Orders"],
               ["recipes", "Recipes"],
+              ["recipeBuilder", "Recipe Builder"],
               ["brewery", "Brewery"],
               ["foodsafety", "Food Safety"],
               ["settings", "Settings"],
@@ -8564,7 +8647,7 @@ export default function TankLog() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && (
                 <button
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
@@ -8937,6 +9020,17 @@ export default function TankLog() {
                 </>
               );
             })()}
+
+            {!loadingData && view === "recipeBuilder" && (
+              <AddRecipeModal
+                standalone
+                onClose={() => setView("recipes")}
+                onAdd={addRecipe}
+                onSaveAndBrew={saveAndBrewRecipe}
+                inventory={inventory}
+                onAddInventoryItem={addInventoryItem}
+              />
+            )}
 
             {!loadingData && view === "brewery" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
