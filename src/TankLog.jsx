@@ -18,6 +18,10 @@ import {
   stockTakeToRow,
   rowToFoodSafetyRecord,
   foodSafetyRecordToRow,
+  rowToSupplier,
+  supplierToRow,
+  rowToSupplierDocument,
+  supplierDocumentToRow,
 } from "./lib/mappers";
 
 const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
@@ -1269,6 +1273,114 @@ function FoodSafetyNoteModal({ category, title, onClose, onSave }) {
   );
 }
 
+function SupplierFormModal({ supplier, onClose, onSave }) {
+  const [name, setName] = useState(supplier ? supplier.name : "");
+  const [contactName, setContactName] = useState(supplier ? supplier.contactName || "" : "");
+  const [phone, setPhone] = useState(supplier ? supplier.phone || "" : "");
+  const [email, setEmail] = useState(supplier ? supplier.email || "" : "");
+  const [address, setAddress] = useState(supplier ? supplier.address || "" : "");
+  const [notes, setNotes] = useState(supplier ? supplier.notes || "" : "");
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), contactName: contactName.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), notes: notes.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title={supplier ? "Edit supplier" : "New supplier"} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Supplier name" value={name} onChange={setName} />
+        <TextField label="Contact name (optional)" value={contactName} onChange={setContactName} />
+        <TextField label="Phone (optional)" value={phone} onChange={setPhone} />
+        <TextField label="Email (optional)" value={email} onChange={setEmail} />
+        <TextField label="Address (optional)" value={address} onChange={setAddress} />
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
+        <button
+          onClick={submit}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          {supplier ? "Save changes" : "Add supplier"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
+  return (
+    <Modal title="Suppliers" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <button
+          onClick={onAddNew}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "none",
+            border: "1px dashed #C9D1AC",
+            borderRadius: 5,
+            padding: "10px",
+            color: "#5C6B54",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={14} /> Add supplier
+        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {suppliers.map((s) => (
+            <div
+              key={s.id}
+              style={{
+                padding: "10px 12px",
+                background: "#FBF6EC",
+                border: "1px solid #EBE8D6",
+                borderRadius: 5,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#2A3324", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{s.name}</div>
+                  {(s.contactName || s.phone || s.email) && (
+                    <div style={{ color: "#5C6B54", fontSize: 12, marginTop: 2 }}>
+                      {[s.contactName, s.phone, s.email].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+                  <button onClick={() => onEdit(s)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
+                    Edit
+                  </button>
+                  <button onClick={() => onDelete(s)} style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {suppliers.length === 0 && (
+            <div style={{ color: "#9BA88A", fontSize: 13, padding: "10px 2px" }}>No suppliers added yet.</div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function StockTakeModal({ inventory, onClose, onComplete }) {
   const [counts, setCounts] = useState(() => {
     const init = {};
@@ -1867,6 +1979,38 @@ function ConfirmDeleteRecipeModal({ recipe, onClose, onConfirm }) {
           }}
         >
           Delete recipe
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ConfirmDeleteSupplierModal({ supplier, onClose, onConfirm }) {
+  return (
+    <Modal title={`Delete ${supplier.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          This removes the supplier and any documents (certificates, etc.) attached to them. This can't be undone.
+        </div>
+        <button
+          onClick={() => {
+            onConfirm(supplier.id);
+            onClose();
+          }}
+          style={{
+            background: "#B5502F",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#2A3324",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Delete supplier
         </button>
       </div>
     </Modal>
@@ -4672,6 +4816,133 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
   );
 }
 
+function SupplierDocumentsModal({ supplier, documents, onClose, onUpload, onDelete, onOpen }) {
+  const [file, setFile] = useState(null);
+  const [name, setName] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    const result = await onUpload(supplier.id, file, name.trim(), expiryDate || null);
+    setUploading(false);
+    if (result?.error) {
+      setError(result.error);
+      return;
+    }
+    setFile(null);
+    setName("");
+    setExpiryDate("");
+  };
+
+  const isExpiring = (d) => d && daysBetween(today(), d) <= 30;
+  const isExpired = (d) => d && d < today();
+
+  return (
+    <Modal title={`${supplier.name} — documents`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {documents.map((doc) => (
+            <div
+              key={doc.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px",
+                background: "#FBF6EC",
+                border: `1px solid ${isExpired(doc.expiryDate) ? "#E3D3A0" : "#EBE8D6"}`,
+                borderRadius: 5,
+                fontSize: 13,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "#2A3324" }}>{doc.name}</div>
+                <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>
+                  {doc.uploadedBy}
+                  {doc.expiryDate && (
+                    <span style={{ color: isExpired(doc.expiryDate) || isExpiring(doc.expiryDate) ? "#B5502F" : "#9BA88A" }}>
+                      {" "}
+                      · {isExpired(doc.expiryDate) ? "expired" : "expires"} {doc.expiryDate}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+                <button onClick={() => onOpen(doc)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
+                  View
+                </button>
+                <button onClick={() => onDelete(doc)} style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+          {documents.length === 0 && (
+            <div style={{ color: "#9BA88A", fontSize: 13, padding: "10px 2px" }}>No documents uploaded yet.</div>
+          )}
+        </div>
+
+        <div style={{ borderTop: "1px solid #EBE8D6", paddingTop: 14 }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+            Upload a document
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                background: "none",
+                border: "1px dashed #C9D1AC",
+                borderRadius: 5,
+                padding: "10px",
+                color: "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="file"
+                onChange={(e) => setFile(e.target.files && e.target.files[0])}
+                style={{ display: "none" }}
+              />
+              {file ? file.name : "Choose a file (PDF, image, etc.)"}
+            </label>
+            <TextField label="Document name (optional)" value={name} onChange={setName} />
+            <TextField label="Expiry date (optional)" type="date" value={expiryDate} onChange={setExpiryDate} />
+            {error && <div style={{ color: "#B5502F", fontSize: 12.5 }}>{error}</div>}
+            <button
+              onClick={submit}
+              disabled={!file || uploading}
+              style={{
+                background: file && !uploading ? "#5C9A3C" : "#E8E4D4",
+                border: "none",
+                borderRadius: 5,
+                padding: "12px",
+                color: file && !uploading ? "#16191A" : "#A3AC94",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 15,
+                letterSpacing: "0.03em",
+                cursor: file && !uploading ? "pointer" : "default",
+              }}
+            >
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function StaffTrainingRecordModal({ staffName, records, onClose }) {
   const trainingRecords = records
     .filter((r) => r.category === "training" && r.staffName === staffName)
@@ -4965,7 +5236,7 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote, onOpenStaff }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote, onOpenStaff, suppliers, onOpenSupplier }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
 
@@ -5093,6 +5364,36 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
           Something went wrong
         </button>
       </div>
+
+      {suppliers.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Suppliers
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+            {suppliers.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => onOpenSupplier(s)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 14px",
+                  background: "#FFFFFF",
+                  border: "1px solid #EBE8D6",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 11.5 }}>Documents →</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         History ({filteredRecords.length})
@@ -6050,6 +6351,13 @@ export default function TankLog() {
   const [xeroAccounts, setXeroAccounts] = useState([]);
   const [xeroItems, setXeroItems] = useState([]);
   const [xeroMappingQueue, setXeroMappingQueue] = useState(null);
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierDocuments, setSupplierDocuments] = useState([]);
+  const [showSuppliersModal, setShowSuppliersModal] = useState(false);
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [deleteSupplierTarget, setDeleteSupplierTarget] = useState(null);
+  const [viewingSupplierDocs, setViewingSupplierDocs] = useState(null);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
@@ -6112,6 +6420,8 @@ export default function TankLog() {
       setXeroConnection(null);
       setXeroSettings(null);
       setXeroItemMappings([]);
+      setSuppliers([]);
+      setSupplierDocuments([]);
       return;
     }
     let cancelled = false;
@@ -6139,7 +6449,7 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -6152,6 +6462,8 @@ export default function TankLog() {
         supabase.from("xero_connections").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
         supabase.from("xero_settings").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
         supabase.from("xero_item_mappings").select("*").eq("company_id", myProfile.companyId),
+        supabase.from("suppliers").select("*").order("name", { ascending: true }),
+        supabase.from("supplier_documents").select("*").order("uploaded_at", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -6182,6 +6494,10 @@ export default function TankLog() {
       else setXeroConnection(xeroRes.data || null);
       if (foodSafetyRes.error) console.error(foodSafetyRes.error);
       else setFoodSafetyRecords(foodSafetyRes.data.map(rowToFoodSafetyRecord));
+      if (suppliersRes.error) console.error(suppliersRes.error);
+      else setSuppliers(suppliersRes.data.map(rowToSupplier));
+      if (supplierDocsRes.error) console.error(supplierDocsRes.error);
+      else setSupplierDocuments(supplierDocsRes.data.map(rowToSupplierDocument));
       setLoadingData(false);
     })();
     return () => {
@@ -6526,6 +6842,81 @@ export default function TankLog() {
       .single();
     if (error) return console.error(error);
     setFoodSafetyRecords((prev) => [rowToFoodSafetyRecord(data), ...prev]);
+  };
+
+  const addSupplier = async (supplier) => {
+    const payload = { id: uid(), ...supplier };
+    const { data, error } = await supabase
+      .from("suppliers")
+      .insert(supplierToRow(payload, profile.companyId))
+      .select()
+      .single();
+    if (error) return console.error(error);
+    setSuppliers((prev) => [...prev, rowToSupplier(data)].sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const updateSupplier = async (id, patch) => {
+    const supplier = suppliers.find((s) => s.id === id);
+    if (!supplier) return;
+    const updated = { ...supplier, ...patch };
+    const { error } = await supabase
+      .from("suppliers")
+      .update(supplierToRow(updated, profile.companyId))
+      .eq("id", id);
+    if (error) return console.error(error);
+    setSuppliers((prev) => prev.map((s) => (s.id === id ? updated : s)).sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const deleteSupplier = async (id) => {
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
+    if (error) return console.error(error);
+    setSuppliers((prev) => prev.filter((s) => s.id !== id));
+    setSupplierDocuments((prev) => prev.filter((d) => d.supplierId !== id));
+  };
+
+  const uploadSupplierDocument = async (supplierId, file, name, expiryDate) => {
+    const filePath = `${profile.companyId}/${supplierId}/${uid()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage.from("supplier-documents").upload(filePath, file);
+    if (uploadError) {
+      console.error(uploadError);
+      return { error: uploadError.message };
+    }
+    const payload = {
+      id: uid(),
+      supplierId,
+      name: name || file.name,
+      filePath,
+      fileType: file.type,
+      expiryDate: expiryDate || null,
+      uploadedBy: user.name,
+    };
+    const { data, error } = await supabase
+      .from("supplier_documents")
+      .insert(supplierDocumentToRow(payload, profile.companyId))
+      .select()
+      .single();
+    if (error) {
+      console.error(error);
+      return { error: error.message };
+    }
+    setSupplierDocuments((prev) => [rowToSupplierDocument(data), ...prev]);
+    return { success: true };
+  };
+
+  const deleteSupplierDocument = async (doc) => {
+    await supabase.storage.from("supplier-documents").remove([doc.filePath]);
+    const { error } = await supabase.from("supplier_documents").delete().eq("id", doc.id);
+    if (error) return console.error(error);
+    setSupplierDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+  };
+
+  const openSupplierDocument = async (doc) => {
+    const { data, error } = await supabase.storage.from("supplier-documents").createSignedUrl(doc.filePath, 60);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
   };
 
   const addTank = async (t) => {
@@ -6968,6 +7359,8 @@ export default function TankLog() {
                 onStartTraining={() => setShowTrainingModal(true)}
                 onStartNote={(category, title) => setActiveNoteModal({ category, title })}
                 onOpenStaff={setViewingStaffTraining}
+                suppliers={suppliers}
+                onOpenSupplier={setViewingSupplierDocs}
               />
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
@@ -7074,6 +7467,22 @@ export default function TankLog() {
                       }}
                     >
                       Past reports ({stockTakes.length})
+                    </button>
+                    <button
+                      onClick={() => setShowSuppliersModal(true)}
+                      style={{
+                        flex: 1,
+                        background: "none",
+                        border: "1px solid #DDE0C8",
+                        borderRadius: 5,
+                        padding: "9px",
+                        color: "#5C6B54",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Suppliers ({suppliers.length})
                     </button>
                   </div>
                   <input
@@ -7672,6 +8081,45 @@ export default function TankLog() {
           xeroItems={xeroItems}
           onConfirm={confirmXeroMappings}
           onClose={() => setXeroMappingQueue(null)}
+        />
+      )}
+      {showSuppliersModal && (
+        <SuppliersModal
+          suppliers={suppliers}
+          onClose={() => setShowSuppliersModal(false)}
+          onAddNew={() => {
+            setEditingSupplier(null);
+            setShowSupplierForm(true);
+          }}
+          onEdit={(s) => {
+            setEditingSupplier(s);
+            setShowSupplierForm(true);
+          }}
+          onDelete={setDeleteSupplierTarget}
+        />
+      )}
+      {showSupplierForm && (
+        <SupplierFormModal
+          supplier={editingSupplier}
+          onClose={() => setShowSupplierForm(false)}
+          onSave={(data) => (editingSupplier ? updateSupplier(editingSupplier.id, data) : addSupplier(data))}
+        />
+      )}
+      {deleteSupplierTarget && (
+        <ConfirmDeleteSupplierModal
+          supplier={deleteSupplierTarget}
+          onClose={() => setDeleteSupplierTarget(null)}
+          onConfirm={deleteSupplier}
+        />
+      )}
+      {viewingSupplierDocs && (
+        <SupplierDocumentsModal
+          supplier={viewingSupplierDocs}
+          documents={supplierDocuments.filter((d) => d.supplierId === viewingSupplierDocs.id)}
+          onClose={() => setViewingSupplierDocs(null)}
+          onUpload={uploadSupplierDocument}
+          onDelete={deleteSupplierDocument}
+          onOpen={openSupplierDocument}
         />
       )}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
