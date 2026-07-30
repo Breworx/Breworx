@@ -1,9 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import TankLog from "./TankLog.jsx";
+import TankLog, { XeroCallback } from "./TankLog.jsx";
+
+const isXeroCallback = window.location.pathname === "/xero-callback";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <TankLog />
+    {isXeroCallback ? <XeroCallback /> : <TankLog />}
   </React.StrictMode>
 );
