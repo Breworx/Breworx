@@ -455,6 +455,283 @@ const ALL_STYLES = [
   ...BA_STYLES.flatMap((g) => g.styles.map((s) => ({ name: s, source: "BA" }))),
 ];
 
+// Reference libraries of common malts, hops, and yeast strains from major
+// suppliers worldwide, used to auto-fill the brewing-science fields (potential,
+// colour, alpha acid, attenuation) when building a recipe. Figures are typical
+// published values for each product — treat them as a solid starting point,
+// not an exact spec sheet; edit them if you have the maltster's own numbers.
+const MALT_LIBRARY = {
+  "Gladfield (NZ)": [
+    { name: "Gladfield Pale Malt", potential: 38, colorLovibond: 3 },
+    { name: "Gladfield American Ale Malt", potential: 38, colorLovibond: 3 },
+    { name: "Gladfield Pilsner Malt", potential: 38, colorLovibond: 1.5 },
+    { name: "Gladfield Munich Malt", potential: 37, colorLovibond: 12 },
+    { name: "Gladfield Vienna Malt", potential: 37, colorLovibond: 4 },
+    { name: "Gladfield Wheat Malt", potential: 38, colorLovibond: 2.5 },
+    { name: "Gladfield Rye Malt", potential: 36, colorLovibond: 4 },
+    { name: "Gladfield Light Crystal", potential: 36, colorLovibond: 25 },
+    { name: "Gladfield Medium Crystal", potential: 35, colorLovibond: 60 },
+    { name: "Gladfield Dark Crystal", potential: 34, colorLovibond: 130 },
+    { name: "Gladfield Chocolate Malt", potential: 33, colorLovibond: 280 },
+    { name: "Gladfield Roasted Barley", potential: 32, colorLovibond: 500 },
+    { name: "Gladfield Manuka Smoked Malt", potential: 37, colorLovibond: 3.5 },
+    { name: "Gladfield Toffee Malt", potential: 36, colorLovibond: 30 },
+    { name: "Gladfield Biscuit Malt", potential: 36, colorLovibond: 25 },
+  ],
+  "Weyermann (Germany)": [
+    { name: "Weyermann Pilsner", potential: 38, colorLovibond: 1.7 },
+    { name: "Weyermann Vienna", potential: 37.5, colorLovibond: 3.5 },
+    { name: "Weyermann Munich I", potential: 37, colorLovibond: 8 },
+    { name: "Weyermann Munich II", potential: 36.5, colorLovibond: 15 },
+    { name: "Weyermann Wheat Malt", potential: 38.5, colorLovibond: 2.6 },
+    { name: "Weyermann Melanoidin", potential: 36, colorLovibond: 27 },
+    { name: "Weyermann CaraHell", potential: 35, colorLovibond: 10 },
+    { name: "Weyermann CaraRed", potential: 35, colorLovibond: 20 },
+    { name: "Weyermann CaraMunich I", potential: 34, colorLovibond: 45 },
+    { name: "Weyermann CaraMunich III", potential: 34, colorLovibond: 65 },
+    { name: "Weyermann CaraAroma", potential: 33, colorLovibond: 130 },
+    { name: "Weyermann Carafa I", potential: 32, colorLovibond: 320 },
+    { name: "Weyermann Carafa II", potential: 32, colorLovibond: 415 },
+    { name: "Weyermann Carafa III", potential: 32, colorLovibond: 525 },
+    { name: "Weyermann Acidulated Malt", potential: 27, colorLovibond: 3.6 },
+  ],
+  "Simpsons (UK)": [
+    { name: "Simpsons Golden Promise", potential: 38, colorLovibond: 3 },
+    { name: "Simpsons Maris Otter Pale Ale", potential: 38, colorLovibond: 3 },
+    { name: "Simpsons Best Malt", potential: 37.5, colorLovibond: 2.5 },
+    { name: "Simpsons Aromatic Malt", potential: 36, colorLovibond: 20 },
+    { name: "Simpsons Golden Naked Oats", potential: 33, colorLovibond: 26 },
+    { name: "Simpsons Crystal Medium", potential: 34, colorLovibond: 55 },
+    { name: "Simpsons Crystal Dark", potential: 33, colorLovibond: 120 },
+    { name: "Simpsons Extra Dark Crystal", potential: 33, colorLovibond: 150 },
+    { name: "Simpsons Chocolate Malt", potential: 32, colorLovibond: 450 },
+  ],
+  "Crisp (UK)": [
+    { name: "Crisp Maris Otter", potential: 38, colorLovibond: 3 },
+    { name: "Crisp Best Ale Malt", potential: 38, colorLovibond: 3 },
+    { name: "Crisp Pale Ale Malt", potential: 38, colorLovibond: 2.5 },
+    { name: "Crisp Munich Malt", potential: 37, colorLovibond: 10 },
+    { name: "Crisp Wheat Malt", potential: 38, colorLovibond: 2.5 },
+    { name: "Crisp Crystal Malt (Medium)", potential: 34, colorLovibond: 60 },
+    { name: "Crisp Crystal Rye", potential: 33, colorLovibond: 60 },
+    { name: "Crisp Chocolate Malt", potential: 32, colorLovibond: 450 },
+    { name: "Crisp Black Malt", potential: 30, colorLovibond: 500 },
+  ],
+  "Bairds (UK)": [
+    { name: "Bairds Pale Ale Malt", potential: 38, colorLovibond: 3 },
+    { name: "Bairds Munich Malt", potential: 37, colorLovibond: 10 },
+    { name: "Bairds Crystal Malt", potential: 34, colorLovibond: 60 },
+    { name: "Bairds Chocolate Malt", potential: 32, colorLovibond: 450 },
+    { name: "Bairds Roasted Barley", potential: 32, colorLovibond: 550 },
+  ],
+  "Briess (USA)": [
+    { name: "Briess 2-Row Brewers Malt", potential: 37, colorLovibond: 1.8 },
+    { name: "Briess Pale Ale Malt", potential: 37, colorLovibond: 3 },
+    { name: "Briess Munich Malt 10L", potential: 37, colorLovibond: 10 },
+    { name: "Briess Munich Malt 20L", potential: 36, colorLovibond: 20 },
+    { name: "Briess Wheat Malt", potential: 38, colorLovibond: 2.2 },
+    { name: "Briess Victory Malt", potential: 35, colorLovibond: 28 },
+    { name: "Briess Caramel Malt 10L", potential: 35, colorLovibond: 10 },
+    { name: "Briess Caramel Malt 40L", potential: 35, colorLovibond: 40 },
+    { name: "Briess Caramel Malt 60L", potential: 34, colorLovibond: 60 },
+    { name: "Briess Caramel Malt 90L", potential: 34, colorLovibond: 90 },
+    { name: "Briess Caramel Malt 120L", potential: 33, colorLovibond: 120 },
+    { name: "Briess Chocolate Malt", potential: 34, colorLovibond: 350 },
+    { name: "Briess Black Malt", potential: 32, colorLovibond: 500 },
+  ],
+  "Rahr (USA)": [
+    { name: "Rahr 2-Row Pale", potential: 37, colorLovibond: 1.8 },
+    { name: "Rahr Pale Ale Malt", potential: 37, colorLovibond: 3.5 },
+    { name: "Rahr Munich 10L", potential: 36, colorLovibond: 10 },
+    { name: "Rahr Munich 20L", potential: 36, colorLovibond: 20 },
+    { name: "Rahr Crystal 15L", potential: 35, colorLovibond: 15 },
+    { name: "Rahr Crystal 40L", potential: 35, colorLovibond: 40 },
+    { name: "Rahr Crystal 60L", potential: 34, colorLovibond: 60 },
+    { name: "Rahr Chocolate Malt", potential: 34, colorLovibond: 350 },
+  ],
+  "Dingemans (Belgium)": [
+    { name: "Dingemans Pilsner", potential: 38, colorLovibond: 1.8 },
+    { name: "Dingemans Pale Ale", potential: 38, colorLovibond: 3.5 },
+    { name: "Dingemans Munich", potential: 37, colorLovibond: 10 },
+    { name: "Dingemans Biscuit", potential: 36, colorLovibond: 23 },
+    { name: "Dingemans Aromatic", potential: 36, colorLovibond: 20 },
+    { name: "Dingemans CaraMunich", potential: 34, colorLovibond: 60 },
+    { name: "Dingemans Special B", potential: 33, colorLovibond: 150 },
+    { name: "Dingemans Chocolate", potential: 32, colorLovibond: 350 },
+  ],
+  "Castle Malting (Belgium)": [
+    { name: "Castle Pilsen", potential: 38, colorLovibond: 1.8 },
+    { name: "Castle Munich", potential: 37, colorLovibond: 10 },
+    { name: "Castle CaraMunich", potential: 34, colorLovibond: 60 },
+    { name: "Castle Special B", potential: 33, colorLovibond: 150 },
+    { name: "Castle Chocolate", potential: 32, colorLovibond: 350 },
+  ],
+  "Viking Malt (Nordic)": [
+    { name: "Viking Pilsner Malt", potential: 38, colorLovibond: 1.8 },
+    { name: "Viking Pale Ale Malt", potential: 37.5, colorLovibond: 3 },
+    { name: "Viking Munich Malt", potential: 37, colorLovibond: 10 },
+    { name: "Viking Caramel 60", potential: 34, colorLovibond: 60 },
+  ],
+  "Joe White Maltings (Australia)": [
+    { name: "JW Traditional Ale Malt", potential: 38, colorLovibond: 3 },
+    { name: "JW Pilsner Malt", potential: 38, colorLovibond: 1.8 },
+    { name: "JW Munich Malt", potential: 37, colorLovibond: 10 },
+    { name: "JW Wheat Malt", potential: 38, colorLovibond: 2.3 },
+    { name: "JW Caramalt", potential: 35, colorLovibond: 25 },
+    { name: "JW Chocolate Malt", potential: 33, colorLovibond: 300 },
+  ],
+};
+
+const HOP_LIBRARY = {
+  "USA": [
+    { name: "Cascade", alphaAcid: 6 },
+    { name: "Centennial", alphaAcid: 10 },
+    { name: "Citra", alphaAcid: 12.5 },
+    { name: "Simcoe", alphaAcid: 13 },
+    { name: "Mosaic", alphaAcid: 11.5 },
+    { name: "Amarillo", alphaAcid: 9 },
+    { name: "Chinook", alphaAcid: 13 },
+    { name: "Columbus / CTZ", alphaAcid: 15 },
+    { name: "Willamette", alphaAcid: 5 },
+    { name: "Nugget", alphaAcid: 13 },
+    { name: "Cluster", alphaAcid: 7 },
+    { name: "Magnum (US)", alphaAcid: 13.5 },
+    { name: "Idaho 7", alphaAcid: 12 },
+    { name: "El Dorado", alphaAcid: 15 },
+    { name: "Azacca", alphaAcid: 14 },
+    { name: "Cashmere", alphaAcid: 9 },
+  ],
+  "New Zealand": [
+    { name: "Nelson Sauvin", alphaAcid: 12 },
+    { name: "Motueka", alphaAcid: 7 },
+    { name: "Riwaka", alphaAcid: 6.5 },
+    { name: "Wakatu", alphaAcid: 7 },
+    { name: "Rakau", alphaAcid: 10.5 },
+    { name: "Waimea", alphaAcid: 16 },
+    { name: "Kohatu", alphaAcid: 6.5 },
+    { name: "Taiheke", alphaAcid: 6.5 },
+    { name: "Dr Rudi", alphaAcid: 11 },
+  ],
+  "Germany": [
+    { name: "Hallertau Mittelfrüh", alphaAcid: 4 },
+    { name: "Hallertau Blanc", alphaAcid: 9.5 },
+    { name: "Tettnang", alphaAcid: 4.5 },
+    { name: "Perle (German)", alphaAcid: 7.5 },
+    { name: "Magnum (German)", alphaAcid: 13 },
+    { name: "Saphir", alphaAcid: 4 },
+    { name: "Mandarina Bavaria", alphaAcid: 8 },
+    { name: "Herkules", alphaAcid: 15 },
+    { name: "Huell Melon", alphaAcid: 7 },
+  ],
+  "UK": [
+    { name: "East Kent Goldings", alphaAcid: 5 },
+    { name: "Fuggle", alphaAcid: 4.5 },
+    { name: "Target", alphaAcid: 10.5 },
+    { name: "Challenger", alphaAcid: 7.5 },
+    { name: "First Gold", alphaAcid: 8 },
+    { name: "Bramling Cross", alphaAcid: 5.5 },
+    { name: "Pilgrim", alphaAcid: 9.5 },
+  ],
+  "Australia": [
+    { name: "Galaxy", alphaAcid: 14 },
+    { name: "Vic Secret", alphaAcid: 15.5 },
+    { name: "Ella (Stella)", alphaAcid: 14.5 },
+    { name: "Enigma", alphaAcid: 14 },
+    { name: "Topaz", alphaAcid: 16 },
+  ],
+  "Czech Republic": [{ name: "Saaz", alphaAcid: 3.5 }],
+  "Slovenia": [
+    { name: "Styrian Goldings", alphaAcid: 5.5 },
+    { name: "Celeia", alphaAcid: 4.5 },
+  ],
+};
+
+const YEAST_LIBRARY = {
+  "Fermentis (Belgium, dry)": [
+    { name: "Fermentis SafAle US-05", attenuation: 78 },
+    { name: "Fermentis SafAle S-04", attenuation: 75 },
+    { name: "Fermentis SafAle K-97", attenuation: 78 },
+    { name: "Fermentis SafAle T-58", attenuation: 78 },
+    { name: "Fermentis SafAle WB-06", attenuation: 82 },
+    { name: "Fermentis SafAle BE-134", attenuation: 86 },
+    { name: "Fermentis SafLager W-34/70", attenuation: 82 },
+    { name: "Fermentis SafLager S-23", attenuation: 82 },
+  ],
+  "Lallemand (Canada, dry)": [
+    { name: "Lallemand Verdant IPA", attenuation: 80 },
+    { name: "Lallemand London ESB", attenuation: 73 },
+    { name: "Lallemand Nottingham", attenuation: 80 },
+    { name: "Lallemand Windsor", attenuation: 70 },
+    { name: "Lallemand BRY-97", attenuation: 78 },
+    { name: "Lallemand Diamond Lager", attenuation: 82 },
+    { name: "Lallemand New England", attenuation: 78 },
+    { name: "Lallemand Munich Classic", attenuation: 75 },
+    { name: "Lallemand Farmhouse", attenuation: 82 },
+    { name: "Lallemand Belle Saison", attenuation: 85 },
+  ],
+  "Mangrove Jack's (NZ, dry)": [
+    { name: "Mangrove Jack's M02 California Lager", attenuation: 78 },
+    { name: "Mangrove Jack's M15 Empire Ale", attenuation: 75 },
+    { name: "Mangrove Jack's M20 Bavarian Wheat", attenuation: 78 },
+    { name: "Mangrove Jack's M21 Belgian Wit", attenuation: 78 },
+    { name: "Mangrove Jack's M27 Belgian Ale", attenuation: 78 },
+    { name: "Mangrove Jack's M29 French Saison", attenuation: 85 },
+    { name: "Mangrove Jack's M31 Belgian Tripel", attenuation: 82 },
+    { name: "Mangrove Jack's M36 Liberty Bell Ale", attenuation: 78 },
+    { name: "Mangrove Jack's M42 New World Strong Ale", attenuation: 78 },
+    { name: "Mangrove Jack's M44 US West Coast", attenuation: 78 },
+    { name: "Mangrove Jack's M54 Californian Lager", attenuation: 78 },
+  ],
+  "Wyeast (USA, liquid)": [
+    { name: "Wyeast 1056 American Ale", attenuation: 75 },
+    { name: "Wyeast 1084 Irish Ale", attenuation: 73 },
+    { name: "Wyeast 1098 British Ale", attenuation: 75 },
+    { name: "Wyeast 1187 Ringwood Ale", attenuation: 78 },
+    { name: "Wyeast 1214 Belgian Abbey", attenuation: 78 },
+    { name: "Wyeast 1272 American Ale II", attenuation: 74 },
+    { name: "Wyeast 1318 London Ale III", attenuation: 71 },
+    { name: "Wyeast 1332 Northwest Ale", attenuation: 72 },
+    { name: "Wyeast 1450 Denny's Favorite", attenuation: 74 },
+    { name: "Wyeast 1469 West Yorkshire", attenuation: 70 },
+    { name: "Wyeast 1728 Scottish Ale", attenuation: 71 },
+    { name: "Wyeast 1762 Belgian Abbey II", attenuation: 76 },
+    { name: "Wyeast 2007 Pilsen Lager", attenuation: 74 },
+    { name: "Wyeast 2124 Bohemian Lager", attenuation: 73 },
+    { name: "Wyeast 2206 Bavarian Lager", attenuation: 74 },
+    { name: "Wyeast 3068 Weihenstephan Wheat", attenuation: 75 },
+    { name: "Wyeast 3711 French Saison", attenuation: 85 },
+    { name: "Wyeast 3724 Belgian Saison", attenuation: 80 },
+    { name: "Wyeast 3787 Trappist High Gravity", attenuation: 78 },
+  ],
+  "White Labs (USA, liquid)": [
+    { name: "WLP001 California Ale", attenuation: 76 },
+    { name: "WLP002 English Ale", attenuation: 68 },
+    { name: "WLP004 Irish Ale", attenuation: 71 },
+    { name: "WLP007 Dry English Ale", attenuation: 78 },
+    { name: "WLP008 East Coast Ale", attenuation: 75 },
+    { name: "WLP029 German Ale / Kölsch", attenuation: 74 },
+    { name: "WLP036 Dusseldorf Alt", attenuation: 73 },
+    { name: "WLP300 Hefeweizen Ale", attenuation: 74 },
+    { name: "WLP500 Trappist Ale", attenuation: 80 },
+    { name: "WLP530 Abbey Ale", attenuation: 76 },
+    { name: "WLP565 Belgian Saison I", attenuation: 76 },
+    { name: "WLP775 English Fuller's", attenuation: 73 },
+    { name: "WLP800 Pilsner Lager", attenuation: 74 },
+    { name: "WLP830 German Lager", attenuation: 74 },
+    { name: "WLP833 German Bock Lager", attenuation: 73 },
+  ],
+  "Imperial Yeast (USA, liquid)": [
+    { name: "Imperial A07 Flagship", attenuation: 74 },
+    { name: "Imperial A38 Juice", attenuation: 75 },
+    { name: "Imperial B32 Dry Hop", attenuation: 78 },
+    { name: "Imperial L17 Harvest", attenuation: 82 },
+  ],
+};
+
+const MALT_LIBRARY_FLAT = Object.entries(MALT_LIBRARY).flatMap(([company, items]) => items.map((i) => ({ ...i, company })));
+const HOP_LIBRARY_FLAT = Object.entries(HOP_LIBRARY).flatMap(([region, items]) => items.map((i) => ({ ...i, company: region })));
+const YEAST_LIBRARY_FLAT = Object.entries(YEAST_LIBRARY).flatMap(([company, items]) => items.map((i) => ({ ...i, company })));
+
 // Parses a BeerXML file (the open interchange format exported by Brewfather,
 // BeerSmith, and most other brewing software) into the shape this app's
 // recipe form expects. Returns null if the file doesn't look like BeerXML.
@@ -2848,6 +3125,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
     editingRecipe ? editingRecipe.ingredients.map((i) => ({ ...i })) : [{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]
   );
   const [focusedIngredientId, setFocusedIngredientId] = useState(null);
+  const [focusedScheduleId, setFocusedScheduleId] = useState(null);
   const [importError, setImportError] = useState("");
   const [schedule, setSchedule] = useState(editingRecipe ? (editingRecipe.schedule || []).map((s) => ({ ...s })) : []);
   const [efficiency, setEfficiency] = useState(editingRecipe ? editingRecipe.efficiency ?? 72 : 72);
@@ -2905,6 +3183,13 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
     query.trim().length === 0
       ? inventory
       : inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  const libraryMatches = (query, category) => {
+    const source = category === "Grain" ? MALT_LIBRARY_FLAT : category === "Yeast" ? YEAST_LIBRARY_FLAT : [];
+    const q = query.trim().toLowerCase();
+    const matches = q.length === 0 ? source : source.filter((it) => it.name.toLowerCase().includes(q));
+    return matches.slice(0, 8);
+  };
 
   const styleMatches =
     style.trim().length === 0
@@ -3253,6 +3538,45 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     zIndex: 20,
                   }}
                 >
+                  {libraryMatches(line.name, line.category).length > 0 && (
+                    <>
+                      <div style={{ padding: "6px 10px", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", background: "#F5F1E4" }}>
+                        Reference library
+                      </div>
+                      {libraryMatches(line.name, line.category).map((it) => (
+                        <button
+                          key={`lib-${it.company}-${it.name}`}
+                          onMouseDown={() => {
+                            const extra =
+                              line.category === "Grain"
+                                ? { potential: it.potential, colorLovibond: it.colorLovibond }
+                                : { attenuation: it.attenuation };
+                            updateLine(line.id, { name: it.name, ...extra });
+                            setFocusedIngredientId(null);
+                          }}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            width: "100%",
+                            textAlign: "left",
+                            background: "none",
+                            border: "none",
+                            borderBottom: "1px solid #EBE8D6",
+                            padding: "9px 10px",
+                            color: "#2A3324",
+                            fontSize: 13,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span>{it.name}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A", marginLeft: 8, flexShrink: 0 }}>
+                            {it.company}
+                          </span>
+                        </button>
+                      ))}
+                    </>
+                  )}
                   {ingredientMatches(line.name).map((it) => (
                     <button
                       key={it.id}
@@ -3389,8 +3713,79 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                   />
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: (s.use === "Boil" || s.use === "First Wort") ? 8 : 0 }}>
-                  <div style={{ flex: 1 }}>
-                    <TextField label="What to add" value={s.name} onChange={(v) => updateScheduleStep(s.id, { name: v })} />
+                  <div style={{ flex: 1, position: "relative" }}>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+                        What to add
+                      </span>
+                      <input
+                        type="text"
+                        value={s.name}
+                        onChange={(e) => updateScheduleStep(s.id, { name: e.target.value })}
+                        onFocus={() => setFocusedScheduleId(s.id)}
+                        onBlur={() => setTimeout(() => setFocusedScheduleId((cur) => (cur === s.id ? null : cur)), 150)}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          background: "#F5F1E4",
+                          border: "1px solid #DDE0C8",
+                          borderRadius: 4,
+                          padding: "9px 10px",
+                          color: "#2A3324",
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 14,
+                        }}
+                      />
+                    </label>
+                    {focusedScheduleId === s.id &&
+                      HOP_LIBRARY_FLAT.filter((h) => h.name.toLowerCase().includes(s.name.trim().toLowerCase())).length > 0 && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            right: 0,
+                            marginTop: 4,
+                            maxHeight: 200,
+                            overflowY: "auto",
+                            background: "#F8F5EA",
+                            border: "1px solid #DDE0C8",
+                            borderRadius: 6,
+                            zIndex: 20,
+                          }}
+                        >
+                          {HOP_LIBRARY_FLAT.filter((h) => h.name.toLowerCase().includes(s.name.trim().toLowerCase()))
+                            .slice(0, 8)
+                            .map((h) => (
+                              <button
+                                key={`${h.company}-${h.name}`}
+                                onMouseDown={() => {
+                                  updateScheduleStep(s.id, { name: h.name, alphaAcid: h.alphaAcid });
+                                  setFocusedScheduleId(null);
+                                }}
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  width: "100%",
+                                  textAlign: "left",
+                                  background: "none",
+                                  border: "none",
+                                  borderBottom: "1px solid #EBE8D6",
+                                  padding: "8px 10px",
+                                  color: "#2A3324",
+                                  fontSize: 13,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <span>{h.name}</span>
+                                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A", marginLeft: 8, flexShrink: 0 }}>
+                                  {h.company} · {h.alphaAcid}% AA
+                                </span>
+                              </button>
+                            ))}
+                        </div>
+                      )}
                   </div>
                   <div style={{ width: 64, flexShrink: 0 }}>
                     <NumberField label="Amt" value={s.amount} onChange={(v) => updateScheduleStep(s.id, { amount: v })} step="0.01" />
