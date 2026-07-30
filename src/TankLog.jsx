@@ -4500,6 +4500,107 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
   );
 }
 
+function FoodSafetyDisclaimerModal({ onAccept }) {
+  const [confirmed, setConfirmed] = useState(false);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(10,12,11,0.85)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        zIndex: 60,
+      }}
+    >
+      <div
+        style={{
+          background: "#1B1F1D",
+          border: "1px solid #2C332F",
+          borderBottom: "none",
+          borderRadius: "10px 10px 0 0",
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          padding: "22px 22px 26px",
+        }}
+      >
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#EDE7D9", margin: "0 0 14px", fontWeight: 500 }}>
+          Before you use Food Safety
+        </h2>
+        <div style={{ color: "#8A9591", fontSize: 13.5, lineHeight: 1.6, marginBottom: 16 }}>
+          This section is a record-keeping tool built to reflect MPI's National Programme 3 guidance (Dec 2025) for
+          breweries. It's here to help you organise checklists, calibration, and training records — it is not
+          food safety advice, and using it does not register your business, satisfy your legal obligations, or
+          replace verification by MPI, your local council, or a qualified food safety consultant.
+        </div>
+        <div style={{ color: "#8A9591", fontSize: 13.5, lineHeight: 1.6, marginBottom: 20 }}>
+          Your business is responsible for meeting the Food Act 2014 and National Programme requirements that apply
+          to it. Brewpoint and its creators are not responsible for your food safety compliance, registration, or
+          verification outcomes.
+        </div>
+        <button
+          onClick={() => setConfirmed(!confirmed)}
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            background: "none",
+            border: "none",
+            padding: 0,
+            marginBottom: 20,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <div
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              border: `1.5px solid ${confirmed ? "#7FA35C" : "#3A413D"}`,
+              background: confirmed ? "#7FA35C" : "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              marginTop: 1,
+            }}
+          >
+            {confirmed && <CheckCircle2 size={14} color="#16191A" />}
+          </div>
+          <span style={{ color: "#EDE7D9", fontSize: 13.5, lineHeight: 1.5 }}>
+            I accept responsibility, on behalf of my company, for our food safety compliance and understand
+            Brewpoint is not responsible for it.
+          </span>
+        </button>
+        <button
+          onClick={() => confirmed && onAccept()}
+          disabled={!confirmed}
+          style={{
+            width: "100%",
+            background: confirmed ? "#C17A3D" : "#3A2A22",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: confirmed ? "#16191A" : "#8A6A5A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: confirmed ? "pointer" : "default",
+          }}
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote }) {
   const categoryLabel = {
     checklist: "Checklist",
@@ -5249,6 +5350,7 @@ export default function TankLog() {
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
+  const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
   const [showAddTank, setShowAddTank] = useState(false);
@@ -5301,6 +5403,7 @@ export default function TankLog() {
       setProfile(null);
       setCompanyName("");
       setCompanyLogo("");
+      setFoodSafetyDisclaimerAcceptedAt(null);
       setTeammates([]);
       setTanks([]);
       setStockTakes([]);
@@ -5333,7 +5436,7 @@ export default function TankLog() {
       setProfile(myProfile);
 
       const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes] = await Promise.all([
-        supabase.from("companies").select("name, logo_url").eq("id", myProfile.companyId).single(),
+        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
@@ -5348,6 +5451,7 @@ export default function TankLog() {
       else {
         setCompanyName(companyRes.data.name);
         setCompanyLogo(companyRes.data.logo_url || "");
+        setFoodSafetyDisclaimerAcceptedAt(companyRes.data.food_safety_disclaimer_accepted_at || null);
       }
       if (teammatesRes.error) console.error(teammatesRes.error);
       else setTeammates(teammatesRes.data.map(rowToProfile));
@@ -5548,6 +5652,16 @@ export default function TankLog() {
     const { error } = await supabase.from("companies").update({ logo_url: null }).eq("id", profile.companyId);
     if (error) return console.error(error);
     setCompanyLogo("");
+  };
+
+  const acceptFoodSafetyDisclaimer = async () => {
+    const acceptedAt = new Date().toISOString();
+    const { error } = await supabase
+      .from("companies")
+      .update({ food_safety_disclaimer_accepted_at: acceptedAt, food_safety_disclaimer_accepted_by: user.name })
+      .eq("id", profile.companyId);
+    if (error) return console.error(error);
+    setFoodSafetyDisclaimerAcceptedAt(acceptedAt);
   };
 
   const completeStockTake = async (lines) => {
@@ -6036,6 +6150,9 @@ export default function TankLog() {
                 onStartTraining={() => setShowTrainingModal(true)}
                 onStartNote={(category, title) => setActiveNoteModal({ category, title })}
               />
+            )}
+            {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
+              <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
             )}
 
             {!loadingData && view === "batches" && (
