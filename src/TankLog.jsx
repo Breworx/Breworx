@@ -3380,9 +3380,10 @@ function Modal({ title, onClose, children }) {
         inset: 0,
         background: "rgba(10,12,11,0.7)",
         display: "flex",
-        alignItems: "flex-end",
+        alignItems: "center",
         justifyContent: "center",
         zIndex: 50,
+        padding: "24px 18px",
       }}
       onClick={onClose}
     >
@@ -3391,8 +3392,7 @@ function Modal({ title, onClose, children }) {
         style={{
           background: "#F8F5EA",
           border: "1px solid #DDE0C8",
-          borderBottom: "none",
-          borderRadius: "10px 10px 0 0",
+          borderRadius: 10,
           width: "100%",
           maxWidth: 480,
           maxHeight: "88vh",
@@ -8088,27 +8088,38 @@ export default function TankLog() {
           suppliers={suppliers}
           onClose={() => setShowSuppliersModal(false)}
           onAddNew={() => {
+            setShowSuppliersModal(false);
             setEditingSupplier(null);
             setShowSupplierForm(true);
           }}
           onEdit={(s) => {
+            setShowSuppliersModal(false);
             setEditingSupplier(s);
             setShowSupplierForm(true);
           }}
-          onDelete={setDeleteSupplierTarget}
+          onDelete={(s) => {
+            setShowSuppliersModal(false);
+            setDeleteSupplierTarget(s);
+          }}
         />
       )}
       {showSupplierForm && (
         <SupplierFormModal
           supplier={editingSupplier}
-          onClose={() => setShowSupplierForm(false)}
+          onClose={() => {
+            setShowSupplierForm(false);
+            setShowSuppliersModal(true);
+          }}
           onSave={(data) => (editingSupplier ? updateSupplier(editingSupplier.id, data) : addSupplier(data))}
         />
       )}
       {deleteSupplierTarget && (
         <ConfirmDeleteSupplierModal
           supplier={deleteSupplierTarget}
-          onClose={() => setDeleteSupplierTarget(null)}
+          onClose={() => {
+            setDeleteSupplierTarget(null);
+            setShowSuppliersModal(true);
+          }}
           onConfirm={deleteSupplier}
         />
       )}
