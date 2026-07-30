@@ -24,10 +24,10 @@ const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
 
 const STAGE_COLOR = {
   Brewing: "#8A6A3D",
-  Primary: "#C17A3D",
+  Primary: "#5C9A3C",
   Secondary: "#B8925A",
   Conditioning: "#D4A24C",
-  Packaged: "#A89A7D",
+  Packaged: "#9BA88A",
 };
 
 const CONTAINERS = [
@@ -176,10 +176,10 @@ function BreworxMark({ size = 24 }) {
         </clipPath>
       </defs>
       {/* Fermenter tank outline */}
-      <path d="M9 5 H29 V23 L19 34 L9 23 Z" stroke="#C17A3D" strokeWidth="2.2" strokeLinejoin="round" />
+      <path d="M9 5 H29 V23 L19 34 L9 23 Z" stroke="#5C9A3C" strokeWidth="2.2" strokeLinejoin="round" />
       {/* Liquid fill */}
       <g clipPath="url(#bp-tank-clip)">
-        <rect x="7" y="16" width="24" height="20" fill="#C17A3D" opacity="0.32" />
+        <rect x="7" y="16" width="24" height="20" fill="#5C9A3C" opacity="0.32" />
       </g>
       {/* Reading marker calling out the point on the tank */}
       <line x1="29" y1="16" x2="35" y2="10" stroke="#D4A24C" strokeWidth="1.8" strokeLinecap="round" />
@@ -497,10 +497,10 @@ const TRAINING_TOPICS = [
 const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
 
 const CATEGORY_COLOR = {
-  Grain: "#C17A3D",
-  Hops: "#7FA35C",
+  Grain: "#5C9A3C",
+  Hops: "#D9A441",
   Yeast: "#B8925A",
-  Other: "#A89A7D",
+  Other: "#9BA88A",
 };
 
 const STEP_FOR_UNIT = { kg: 0.5, g: 50, L: 1, ea: 1 };
@@ -664,7 +664,7 @@ function Tank({ batch }) {
         <path
           d="M6 6 H40 V52 L23 84 L6 52 Z"
           fill="none"
-          stroke="#D8CAAA"
+          stroke="#C9D1AC"
           strokeWidth="2"
         />
         <g clipPath={`url(#clip-${batch.id})`}>
@@ -714,7 +714,7 @@ function BatchCard({ batch, onOpen }) {
         gap: 16,
         alignItems: "center",
         background: "#FFFFFF",
-        border: "1px solid #E4D9C2",
+        border: "1px solid #DDE0C8",
         borderRadius: 6,
         padding: "16px 18px",
         cursor: "pointer",
@@ -723,7 +723,7 @@ function BatchCard({ batch, onOpen }) {
         transition: "border-color 0.15s",
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#E4D9C2")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
       <Tank batch={batch} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -732,7 +732,7 @@ function BatchCard({ batch, onOpen }) {
             <span
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
-                color: "#A89A7D",
+                color: "#9BA88A",
                 fontSize: 13,
               }}
             >
@@ -743,7 +743,7 @@ function BatchCard({ batch, onOpen }) {
                 fontFamily: "'Oswald', sans-serif",
                 fontWeight: 500,
                 fontSize: 18,
-                color: "#2B2420",
+                color: "#2A3324",
                 margin: 0,
                 textOverflow: "ellipsis",
                 overflow: "hidden",
@@ -755,7 +755,7 @@ function BatchCard({ batch, onOpen }) {
           </div>
           <StagePill stage={batch.stage} />
         </div>
-        <div style={{ color: "#6B5F4D", fontSize: 13, marginTop: 2 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13, marginTop: 2 }}>
           {batch.style}{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : ""}
         </div>
         <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#B8C0BC" }}>
@@ -772,17 +772,17 @@ function BatchCard({ batch, onOpen }) {
           if (rem > 0) parts.push(`${rem}L in tank`);
           return (
             <div style={{ marginTop: 8 }}>
-              <div style={{ height: 5, background: "#E4D9C2", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: 5, background: "#DDE0C8", borderRadius: 3, overflow: "hidden" }}>
                 <div
                   style={{
                     height: "100%",
                     width: `${pctPackaged}%`,
-                    background: rem > 0 ? "#D4A24C" : "#7FA35C",
+                    background: rem > 0 ? "#D4A24C" : "#D9A441",
                     borderRadius: 3,
                   }}
                 />
               </div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#A89A7D", marginTop: 5 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#9BA88A", marginTop: 5 }}>
                 {pctPackaged}% packaged{parts.length > 0 ? " · " : ""}
                 {parts.join(" · ")}
               </div>
@@ -804,7 +804,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
         alignItems: "center",
         gap: 14,
         background: "#FFFFFF",
-        border: `1px solid ${low ? "#6B4A2F" : "#E4D9C2"}`,
+        border: `1px solid ${low ? "#6B4A2F" : "#DDE0C8"}`,
         borderRadius: 6,
         padding: "13px 16px",
       }}
@@ -819,7 +819,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
               fontFamily: "'Oswald', sans-serif",
               fontWeight: 500,
               fontSize: 16,
-              color: "#2B2420",
+              color: "#2A3324",
               margin: 0,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -828,7 +828,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
           >
             {item.name}
           </h3>
-          {low && <AlertTriangle size={13} color="#C17A3D" />}
+          {low && <AlertTriangle size={13} color="#5C9A3C" />}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span
@@ -843,7 +843,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             {item.category}
           </span>
           {item.lots && item.lots.length > 0 && (
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#A89A7D" }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A" }}>
               · lot {item.lots[item.lots.length - 1].lotNumber}
               {item.lots.length > 1 ? ` (+${item.lots.length - 1})` : ""}
             </span>
@@ -859,8 +859,8 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             height: 28,
             borderRadius: 4,
             background: "#242B27",
-            border: "1px solid #D8CAAA",
-            color: "#2B2420",
+            border: "1px solid #C9D1AC",
+            color: "#2A3324",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
@@ -873,7 +873,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
           style={{
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 14,
-            color: low ? "#C17A3D" : "#2B2420",
+            color: low ? "#5C9A3C" : "#2A3324",
             width: 68,
             textAlign: "center",
           }}
@@ -888,8 +888,8 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             height: 28,
             borderRadius: 4,
             background: "#242B27",
-            border: "1px solid #D8CAAA",
-            color: "#2B2420",
+            border: "1px solid #C9D1AC",
+            color: "#2A3324",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
@@ -934,8 +934,8 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
                 alignItems: "center",
                 gap: 10,
                 padding: "10px 12px",
-                background: "#FBF6EC",
-                border: "1px solid #EDE4D0",
+                background: "#F8F5EA",
+                border: "1px solid #EBE8D6",
                 borderRadius: 5,
                 fontSize: 13,
                 cursor: "pointer",
@@ -947,8 +947,8 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
                   width: 18,
                   height: 18,
                   borderRadius: 4,
-                  border: `1.5px solid ${checked[i] ? "#7FA35C" : "#D8CAAA"}`,
-                  background: checked[i] ? "#7FA35C" : "none",
+                  border: `1.5px solid ${checked[i] ? "#D9A441" : "#C9D1AC"}`,
+                  background: checked[i] ? "#D9A441" : "none",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -957,7 +957,7 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
               >
                 {checked[i] && <CheckCircle2 size={13} color="#16191A" />}
               </div>
-              <span style={{ color: "#2B2420" }}>{label}</span>
+              <span style={{ color: "#2A3324" }}>{label}</span>
             </button>
           ))}
         </div>
@@ -965,11 +965,11 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
         <button
           onClick={submit}
           style={{
-            background: allChecked ? "#C17A3D" : "#EDE0D2",
+            background: allChecked ? "#5C9A3C" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: allChecked ? "#16191A" : "#C17A3D",
+            color: allChecked ? "#16191A" : "#5C9A3C",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -1012,7 +1012,7 @@ function CalibrationModal({ onClose, onSave }) {
         <button
           onClick={submit}
           style={{
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -1067,7 +1067,7 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ position: "relative" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>Staff member</span>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Staff member</span>
             <input
               type="text"
               value={staffName}
@@ -1080,11 +1080,11 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
               style={{
                 width: "100%",
                 boxSizing: "border-box",
-                background: "#F6EFE2",
-                border: "1px solid #E4D9C2",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
                 borderRadius: 4,
                 padding: "9px 10px",
-                color: "#2B2420",
+                color: "#2A3324",
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 14,
               }}
@@ -1100,8 +1100,8 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
                 marginTop: 4,
                 maxHeight: 160,
                 overflowY: "auto",
-                background: "#FBF6EC",
-                border: "1px solid #E4D9C2",
+                background: "#F8F5EA",
+                border: "1px solid #DDE0C8",
                 borderRadius: 6,
                 zIndex: 20,
               }}
@@ -1113,7 +1113,7 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
                     setStaffName(n);
                     setStaffFocused(false);
                   }}
-                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 10px", color: "#2B2420", fontSize: 13, cursor: "pointer" }}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
                 >
                   {n}
                 </button>
@@ -1125,7 +1125,7 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
         <TextField label="Date" type="date" value={date} onChange={setDate} />
 
         <div>
-          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 8 }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
             Tick every topic completed today
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1141,8 +1141,8 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
                     alignItems: "center",
                     gap: 10,
                     padding: "10px 12px",
-                    background: "#FBF6EC",
-                    border: "1px solid #EDE4D0",
+                    background: "#F8F5EA",
+                    border: "1px solid #EBE8D6",
                     borderRadius: 5,
                     fontSize: 13,
                     cursor: "pointer",
@@ -1154,8 +1154,8 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
                       width: 18,
                       height: 18,
                       borderRadius: 4,
-                      border: `1.5px solid ${checked ? "#7FA35C" : "#D8CAAA"}`,
-                      background: checked ? "#7FA35C" : "none",
+                      border: `1.5px solid ${checked ? "#D9A441" : "#C9D1AC"}`,
+                      background: checked ? "#D9A441" : "none",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -1164,9 +1164,9 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
                   >
                     {checked && <CheckCircle2 size={13} color="#16191A" />}
                   </div>
-                  <span style={{ color: "#2B2420", flex: 1 }}>{topic}</span>
+                  <span style={{ color: "#2A3324", flex: 1 }}>{topic}</span>
                   {done && !checked && (
-                    <span style={{ color: "#A89A7D", fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace" }}>done before</span>
+                    <span style={{ color: "#9BA88A", fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace" }}>done before</span>
                   )}
                 </button>
               );
@@ -1180,8 +1180,8 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
             display: "flex",
             alignItems: "flex-start",
             gap: 10,
-            background: "#F6EFE2",
-            border: "1px solid #E4D9C2",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
             borderRadius: 6,
             padding: "12px",
             cursor: "pointer",
@@ -1193,8 +1193,8 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
               width: 20,
               height: 20,
               borderRadius: 4,
-              border: `1.5px solid ${staffConfirmed ? "#7FA35C" : "#D8CAAA"}`,
-              background: staffConfirmed ? "#7FA35C" : "none",
+              border: `1.5px solid ${staffConfirmed ? "#D9A441" : "#C9D1AC"}`,
+              background: staffConfirmed ? "#D9A441" : "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1204,7 +1204,7 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
           >
             {staffConfirmed && <CheckCircle2 size={14} color="#16191A" />}
           </div>
-          <span style={{ color: "#2B2420", fontSize: 13, lineHeight: 1.5 }}>
+          <span style={{ color: "#2A3324", fontSize: 13, lineHeight: 1.5 }}>
             {staffName.trim() || "The staff member"} confirms they understand and completed this training — ticked
             in place of a signature.
           </span>
@@ -1214,11 +1214,11 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
           onClick={submit}
           disabled={!staffName.trim() || checkedTopics.size === 0 || !staffConfirmed}
           style={{
-            background: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "#C17A3D" : "#EDE0D2",
+            background: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "#5C9A3C" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "#16191A" : "#B5A48F",
+            color: staffName.trim() && checkedTopics.size > 0 && staffConfirmed ? "#16191A" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -1250,7 +1250,7 @@ function FoodSafetyNoteModal({ category, title, onClose, onSave }) {
         <button
           onClick={submit}
           style={{
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -1302,7 +1302,7 @@ function StockTakeModal({ inventory, onClose, onComplete }) {
   return (
     <Modal title="Stock take" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13, lineHeight: 1.5 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.5 }}>
           Walk the brewery and enter what you actually count for each ingredient. Anything left unchanged is
           assumed correct as-is.
         </div>
@@ -1311,10 +1311,10 @@ function StockTakeModal({ inventory, onClose, onComplete }) {
             const counted = counts[it.id];
             const diff = counted === "" ? 0 : Math.round((Number(counted) - it.qty) * 100) / 100;
             return (
-              <div key={it.id} style={{ background: "#F6EFE2", border: `1px solid ${diff !== 0 ? "#E8C9A0" : "#E4D9C2"}`, borderRadius: 6, padding: "10px 12px" }}>
+              <div key={it.id} style={{ background: "#F5F1E4", border: `1px solid ${diff !== 0 ? "#E3D3A0" : "#DDE0C8"}`, borderRadius: 6, padding: "10px 12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ color: "#2B2420", fontSize: 13.5 }}>{it.name}</span>
-                  <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>
+                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>{it.name}</span>
+                  <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>
                     system: {formatQty(it.qty, it.unit)}
                   </span>
                 </div>
@@ -1328,17 +1328,17 @@ function StockTakeModal({ inventory, onClose, onComplete }) {
                       flex: 1,
                       boxSizing: "border-box",
                       background: "#FFFFFF",
-                      border: "1px solid #E4D9C2",
+                      border: "1px solid #DDE0C8",
                       borderRadius: 4,
                       padding: "8px 9px",
-                      color: "#2B2420",
+                      color: "#2A3324",
                       fontFamily: "'JetBrains Mono', monospace",
                       fontSize: 13,
                     }}
                   />
-                  <span style={{ color: "#6B5F4D", fontSize: 12, width: 30, flexShrink: 0 }}>{it.unit}</span>
+                  <span style={{ color: "#5C6B54", fontSize: 12, width: 30, flexShrink: 0 }}>{it.unit}</span>
                   {diff !== 0 && (
-                    <span style={{ color: diff > 0 ? "#7FA35C" : "#C17A3D", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, flexShrink: 0 }}>
+                    <span style={{ color: diff > 0 ? "#D9A441" : "#5C9A3C", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, flexShrink: 0 }}>
                       {diff > 0 ? "+" : ""}
                       {diff}
                     </span>
@@ -1347,12 +1347,12 @@ function StockTakeModal({ inventory, onClose, onComplete }) {
               </div>
             );
           })}
-          {inventory.length === 0 && <div style={{ color: "#A89A7D", fontSize: 13 }}>No ingredients to count yet.</div>}
+          {inventory.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No ingredients to count yet.</div>}
         </div>
         <button
           onClick={submit}
           style={{
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -1387,26 +1387,26 @@ function StockTakeHistoryModal({ stockTakes, onClose, onOpenReport }) {
                 alignItems: "center",
                 padding: "12px 14px",
                 background: "#FFFFFF",
-                border: "1px solid #E4D9C2",
+                border: "1px solid #DDE0C8",
                 borderRadius: 6,
                 cursor: "pointer",
                 textAlign: "left",
               }}
             >
               <div>
-                <div style={{ color: "#2B2420", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{st.date}</div>
-                <div style={{ color: "#6B5F4D", fontSize: 12, marginTop: 2 }}>
+                <div style={{ color: "#2A3324", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{st.date}</div>
+                <div style={{ color: "#5C6B54", fontSize: 12, marginTop: 2 }}>
                   {st.userName || "Unknown"} · {st.lines.length} item{st.lines.length !== 1 ? "s" : ""} checked
                 </div>
               </div>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: discrepancies > 0 ? "#C17A3D" : "#7FA35C" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: discrepancies > 0 ? "#5C9A3C" : "#D9A441" }}>
                 {discrepancies > 0 ? `${discrepancies} off` : "all matched"}
               </span>
             </button>
           );
         })}
         {stockTakes.length === 0 && (
-          <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+          <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
             No stock takes recorded yet.
           </div>
         )}
@@ -1419,7 +1419,7 @@ function StockTakeReportModal({ stockTake, onClose }) {
   return (
     <Modal title={`Stock take — ${stockTake.date}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 12.5 }}>Done by {stockTake.userName || "Unknown"}</div>
+        <div style={{ color: "#5C6B54", fontSize: 12.5 }}>Done by {stockTake.userName || "Unknown"}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {stockTake.lines.map((l) => (
             <div
@@ -1429,21 +1429,21 @@ function StockTakeReportModal({ stockTake, onClose }) {
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "9px 12px",
-                background: "#FBF6EC",
-                border: `1px solid ${l.discrepancy !== 0 ? "#E8C9A0" : "#EDE4D0"}`,
+                background: "#F8F5EA",
+                border: `1px solid ${l.discrepancy !== 0 ? "#E3D3A0" : "#EBE8D6"}`,
                 borderRadius: 5,
                 fontSize: 13,
               }}
             >
-              <span style={{ color: "#2B2420" }}>{l.itemName}</span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", fontSize: 12 }}>
+              <span style={{ color: "#2A3324" }}>{l.itemName}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12 }}>
                 {formatQty(l.systemQty, l.unit)} → {formatQty(l.countedQty, l.unit)}
               </span>
               <span
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 12,
-                  color: l.discrepancy === 0 ? "#A89A7D" : l.discrepancy > 0 ? "#7FA35C" : "#C17A3D",
+                  color: l.discrepancy === 0 ? "#9BA88A" : l.discrepancy > 0 ? "#D9A441" : "#5C9A3C",
                   width: 50,
                   textAlign: "right",
                   flexShrink: 0,
@@ -1475,14 +1475,14 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <NumberField label={`Change (${item.unit} — use a minus sign to subtract)`} value={delta} onChange={setDelta} step="0.01" />
         <TextField label="Batch ID (optional)" value={batchRef} onChange={setBatchRef} />
-        <div style={{ color: "#A89A7D", fontSize: 12 }}>
+        <div style={{ color: "#9BA88A", fontSize: 12 }}>
           Add a batch number here if this adjustment relates to a specific batch — it'll show in the history entry.
         </div>
         <button
           onClick={submit}
           style={{
             marginTop: 4,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -1507,7 +1507,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
     const history = [...(item.history || [])].reverse();
 
   const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)", stocktake: "Stock take correction" };
-  const typeColor = { batch: "#C17A3D", manual: "#6B5F4D", received: "#7FA35C", restored: "#7FA35C", stocktake: "#D4A24C" };
+  const typeColor = { batch: "#5C9A3C", manual: "#5C6B54", received: "#D9A441", restored: "#D9A441", stocktake: "#D4A24C" };
 
   return (
     <div>
@@ -1519,7 +1519,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
           gap: 6,
           background: "none",
           border: "none",
-          color: "#6B5F4D",
+          color: "#5C6B54",
           cursor: "pointer",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
@@ -1531,10 +1531,10 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
       </button>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2B2420", margin: 0, fontWeight: 500 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: 0, fontWeight: 500 }}>
           {item.name}
         </h1>
-        {low && <AlertTriangle size={16} color="#C17A3D" />}
+        {low && <AlertTriangle size={16} color="#5C9A3C" />}
       </div>
       <div
         style={{
@@ -1549,24 +1549,24 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
         {item.category}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 14, background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "16px", marginBottom: 22 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px", marginBottom: 22 }}>
         <button
           onClick={() => onAdjust(item.id, -step)}
           aria-label={`Remove ${step} ${item.unit}`}
-          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #D8CAAA", color: "#2B2420", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <Minus size={16} />
         </button>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, color: low ? "#C17A3D" : "#2B2420" }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, color: low ? "#5C9A3C" : "#2A3324" }}>
             {formatQty(item.qty, item.unit)}
           </div>
-          <div style={{ color: "#A89A7D", fontSize: 11.5, marginTop: 2 }}>low-stock alert at {formatQty(item.threshold, item.unit)}</div>
+          <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 2 }}>low-stock alert at {formatQty(item.threshold, item.unit)}</div>
         </div>
         <button
           onClick={() => onAdjust(item.id, step)}
           aria-label={`Add ${step} ${item.unit}`}
-          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #D8CAAA", color: "#2B2420", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <Plus size={16} />
         </button>
@@ -1577,10 +1577,10 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
         style={{
           width: "100%",
           background: "none",
-          border: "1px solid #E4D9C2",
+          border: "1px solid #DDE0C8",
           borderRadius: 5,
           padding: "10px",
-          color: "#6B5F4D",
+          color: "#5C6B54",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
           cursor: "pointer",
@@ -1590,7 +1590,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
         Log adjustment with a batch ID
       </button>
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         History
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1603,32 +1603,32 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
               alignItems: "center",
               gap: 10,
               padding: "10px 12px",
-              background: "#FBF6EC",
-              border: "1px solid #EDE4D0",
+              background: "#F8F5EA",
+              border: "1px solid #EBE8D6",
               borderRadius: 5,
               fontSize: 13,
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: typeColor[h.type] || "#6B5F4D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <div style={{ color: typeColor[h.type] || "#5C6B54", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 {typeLabel[h.type] || "Change"}
               </div>
-              <div style={{ color: "#6B5F4D", fontSize: 12.5, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {h.note}
               </div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", color: h.delta >= 0 ? "#7FA35C" : "#C17A3D", fontSize: 13.5 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", color: h.delta >= 0 ? "#D9A441" : "#5C9A3C", fontSize: 13.5 }}>
                 {h.delta >= 0 ? "+" : ""}
                 {h.delta} {item.unit}
               </div>
-              <div style={{ color: "#A89A7D", fontSize: 10.5, marginTop: 2 }}>{formatHistoryStamp(h.date)}</div>
-              {h.user && <div style={{ color: "#A89A7D", fontSize: 10.5, marginTop: 1 }}>{h.user}</div>}
+              <div style={{ color: "#9BA88A", fontSize: 10.5, marginTop: 2 }}>{formatHistoryStamp(h.date)}</div>
+              {h.user && <div style={{ color: "#9BA88A", fontSize: 10.5, marginTop: 1 }}>{h.user}</div>}
             </div>
           </div>
         ))}
         {history.length === 0 && (
-          <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+          <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
             No changes logged yet — adjustments, batch usage, and received stock will show up here.
           </div>
         )}
@@ -1640,18 +1640,18 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
 function SelectField({ label, value, onChange, options }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>{label}</span>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
           width: "100%",
           boxSizing: "border-box",
-          background: "#F6EFE2",
-          border: "1px solid #E4D9C2",
+          background: "#F5F1E4",
+          border: "1px solid #DDE0C8",
           borderRadius: 4,
           padding: "9px 10px",
-          color: "#2B2420",
+          color: "#2A3324",
           fontFamily: "'Inter', sans-serif",
           fontSize: 14,
         }}
@@ -1714,8 +1714,8 @@ function AddTankModal({ onClose, onAdd }) {
                 display: "grid",
                 gridTemplateColumns: "1fr 100px",
                 gap: 8,
-                background: "#F6EFE2",
-                border: "1px solid #E4D9C2",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
                 borderRadius: 6,
                 padding: "10px 10px",
               }}
@@ -1730,7 +1730,7 @@ function AddTankModal({ onClose, onAdd }) {
           onClick={submit}
           style={{
             marginTop: 8,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -1764,14 +1764,14 @@ function EditTankModal({ tank, onClose, onSave }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Tank ID" value={name} onChange={setName} />
         <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
-        <div style={{ color: "#A89A7D", fontSize: 12 }}>
+        <div style={{ color: "#9BA88A", fontSize: 12 }}>
           Renaming won't retroactively update batches already assigned to this tank — reassign them from the batch's page if needed.
         </div>
         <button
           onClick={submit}
           style={{
             marginTop: 4,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -1799,10 +1799,10 @@ function ConfirmDeleteBatchModal({ batch, onClose, onConfirm }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div
           style={{
-            color: "#C17A3D",
+            color: "#5C9A3C",
             fontSize: 13,
-            background: "#FCEFDC",
-            border: "1px solid #E8C9A0",
+            background: "#FCF1DC",
+            border: "1px solid #E3D3A0",
             borderRadius: 5,
             padding: "10px 12px",
             lineHeight: 1.5,
@@ -1821,11 +1821,11 @@ function ConfirmDeleteBatchModal({ batch, onClose, onConfirm }) {
           }}
           disabled={!canDelete}
           style={{
-            background: canDelete ? "#B5502F" : "#EDE0D2",
+            background: canDelete ? "#B5502F" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: canDelete ? "#2B2420" : "#B5A48F",
+            color: canDelete ? "#2A3324" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -1844,7 +1844,7 @@ function ConfirmDeleteRecipeModal({ recipe, onClose, onConfirm }) {
   return (
     <Modal title={`Delete ${recipe.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
           This removes the recipe from your list. Batches already brewed from it keep their own copy of the
           ingredients and details, so nothing on past batches is affected. This can't be undone.
         </div>
@@ -1858,7 +1858,7 @@ function ConfirmDeleteRecipeModal({ recipe, onClose, onConfirm }) {
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -1877,7 +1877,7 @@ function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
   return (
     <Modal title={`Delete ${tank.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
           This removes the tank from your brewery list. It's not currently assigned to any batches, so nothing else is affected.
         </div>
         <button
@@ -1890,7 +1890,7 @@ function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -1919,18 +1919,18 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
     <Modal title={`Assign tank — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>Tank</span>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
           <select
             value={tankId}
             onChange={(e) => setTankId(e.target.value)}
             style={{
               width: "100%",
               boxSizing: "border-box",
-              background: "#F6EFE2",
-              border: "1px solid #E4D9C2",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
               borderRadius: 4,
               padding: "9px 10px",
-              color: "#2B2420",
+              color: "#2A3324",
               fontFamily: "'Inter', sans-serif",
               fontSize: 14,
             }}
@@ -1950,7 +1950,7 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
         <button
           onClick={submit}
           style={{
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2003,7 +2003,7 @@ function AddInventoryModal({ onClose, onAdd }) {
           onClick={submit}
           style={{
             marginTop: 8,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2023,7 +2023,7 @@ function AddInventoryModal({ onClose, onAdd }) {
 }
 
 function POStatusPill({ status }) {
-  const color = status === "Received" ? "#7FA35C" : status === "Sent" ? "#C17A3D" : "#6B5F4D";
+  const color = status === "Received" ? "#D9A441" : status === "Sent" ? "#5C9A3C" : "#5C6B54";
   return (
     <span
       style={{
@@ -2056,7 +2056,7 @@ function POCard({ po, onOpen }) {
         alignItems: "center",
         gap: 12,
         background: "#FFFFFF",
-        border: "1px solid #E4D9C2",
+        border: "1px solid #DDE0C8",
         borderRadius: 6,
         padding: "14px 16px",
         cursor: "pointer",
@@ -2064,17 +2064,17 @@ function POCard({ po, onOpen }) {
         width: "100%",
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#E4D9C2")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", fontSize: 13 }}>{po.poNumber}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 13 }}>{po.poNumber}</span>
           <h3
             style={{
               fontFamily: "'Oswald', sans-serif",
               fontWeight: 500,
               fontSize: 16,
-              color: "#2B2420",
+              color: "#2A3324",
               margin: 0,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -2084,7 +2084,7 @@ function POCard({ po, onOpen }) {
             {po.supplier}
           </h3>
         </div>
-        <div style={{ color: "#6B5F4D", fontSize: 12.5, marginTop: 3 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
           {po.lines.length} item{po.lines.length !== 1 ? "s" : ""} · ordered {po.orderDate.slice(5)}
         </div>
       </div>
@@ -2125,15 +2125,15 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Supplier" value={supplier} onChange={setSupplier} />
 
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D", marginTop: 4 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
           Line items
         </div>
         {lines.map((line, i) => (
           <div
             key={line.id}
             style={{
-              background: "#F6EFE2",
-              border: "1px solid #E4D9C2",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
               borderRadius: 6,
               padding: "12px 12px 4px",
               position: "relative",
@@ -2149,7 +2149,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
                   right: 8,
                   background: "none",
                   border: "none",
-                  color: "#6B5F4D",
+                  color: "#5C6B54",
                   cursor: "pointer",
                   padding: 4,
                 }}
@@ -2180,10 +2180,10 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
             justifyContent: "center",
             gap: 6,
             background: "none",
-            border: "1px dashed #D8CAAA",
+            border: "1px dashed #C9D1AC",
             borderRadius: 5,
             padding: "9px",
-            color: "#6B5F4D",
+            color: "#5C6B54",
             fontFamily: "'Inter', sans-serif",
             fontSize: 13,
             cursor: "pointer",
@@ -2196,7 +2196,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
           onClick={submit}
           style={{
             marginTop: 4,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2230,7 +2230,7 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
   return (
     <Modal title={`Receive ${po.poNumber}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
           Enter the lot or batch number printed on each item as it arrives — this is what ties inventory back to this
           specific delivery.
         </div>
@@ -2238,14 +2238,14 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
           <div
             key={l.id}
             style={{
-              background: "#F6EFE2",
-              border: "1px solid #E4D9C2",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
               borderRadius: 6,
               padding: "12px 12px",
             }}
           >
-            <div style={{ color: "#2B2420", fontSize: 13.5, marginBottom: 8 }}>
-              {l.name} <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
+            <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
+              {l.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
             </div>
             <TextField
               label="Lot / batch #"
@@ -2262,7 +2262,7 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2303,7 +2303,7 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
           gap: 6,
           background: "none",
           border: "none",
-          color: "#6B5F4D",
+          color: "#5C6B54",
           cursor: "pointer",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
@@ -2316,19 +2316,19 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
         <div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", fontSize: 13 }}>{po.poNumber}</div>
-          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2B2420", margin: "2px 0 6px", fontWeight: 500 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 13 }}>{po.poNumber}</div>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: "2px 0 6px", fontWeight: 500 }}>
             {po.supplier}
           </h1>
         </div>
         <POStatusPill status={po.status} />
       </div>
-      <div style={{ color: "#6B5F4D", fontSize: 13, marginBottom: 22 }}>
+      <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 22 }}>
         Created {po.orderDate}
         {po.receivedDate ? ` · Received ${po.receivedDate}` : ""}
       </div>
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Line items
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
@@ -2339,28 +2339,28 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
               key={l.id}
               style={{
                 padding: "10px 12px",
-                background: "#FBF6EC",
-                border: "1px solid #EDE4D0",
+                background: "#F8F5EA",
+                border: "1px solid #EBE8D6",
                 borderRadius: 5,
                 fontSize: 13,
               }}
             >
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <span style={{ flex: 1, color: "#2B2420", fontFamily: "'Inter', sans-serif" }}>{l.name}</span>
+                <span style={{ flex: 1, color: "#2A3324", fontFamily: "'Inter', sans-serif" }}>{l.name}</span>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[l.category], fontSize: 11 }}>
                   {l.category}
                 </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2B2420", width: 64, textAlign: "right", flexShrink: 0 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 64, textAlign: "right", flexShrink: 0 }}>
                   {formatQty(l.qty, l.unit)}
                 </span>
                 {po.status === "Received" && (
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", width: 90, flexShrink: 0, textAlign: "right" }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 90, flexShrink: 0, textAlign: "right" }}>
                     {l.lotNumber || "no lot #"}
                   </span>
                 )}
               </div>
               {po.status === "Received" && (
-                <div style={{ color: "#A89A7D", fontSize: 11.5, marginTop: 6 }}>
+                <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 6 }}>
                   {usedIn.length > 0 ? `Used in: ${usedIn.join(", ")}` : "Not used in any batch yet"}
                 </div>
               )}
@@ -2378,7 +2378,7 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2402,7 +2402,7 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2438,7 +2438,7 @@ function RecipeCard({ recipe, onOpen }) {
         alignItems: "center",
         gap: 12,
         background: "#FFFFFF",
-        border: "1px solid #E4D9C2",
+        border: "1px solid #DDE0C8",
         borderRadius: 6,
         padding: "14px 16px",
         cursor: "pointer",
@@ -2446,7 +2446,7 @@ function RecipeCard({ recipe, onOpen }) {
         width: "100%",
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#E4D9C2")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
       <div style={{ minWidth: 0 }}>
         <h3
@@ -2454,7 +2454,7 @@ function RecipeCard({ recipe, onOpen }) {
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 17,
-            color: "#2B2420",
+            color: "#2A3324",
             margin: 0,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -2463,11 +2463,11 @@ function RecipeCard({ recipe, onOpen }) {
         >
           {recipe.name}
         </h3>
-        <div style={{ color: "#6B5F4D", fontSize: 12.5, marginTop: 3 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
           {recipe.style} · {recipe.volume}L · {recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}
         </div>
       </div>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", fontSize: 12.5, flexShrink: 0 }}>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 12.5, flexShrink: 0 }}>
         OG {recipe.og.toFixed(3)}
       </span>
     </button>
@@ -2567,10 +2567,10 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
             justifyContent: "center",
             gap: 7,
             background: "none",
-            border: "1px dashed #D8CAAA",
+            border: "1px dashed #C9D1AC",
             borderRadius: 5,
             padding: "10px",
-            color: "#6B5F4D",
+            color: "#5C6B54",
             fontFamily: "'Inter', sans-serif",
             fontSize: 13,
             cursor: "pointer",
@@ -2585,15 +2585,15 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
           Import from BeerXML (Brewfather, BeerSmith, etc.)
         </label>
         {importError && (
-          <div style={{ color: "#C17A3D", fontSize: 12.5, background: "#FCEFDC", border: "1px solid #E8C9A0", borderRadius: 5, padding: "8px 12px" }}>
+          <div style={{ color: "#5C9A3C", fontSize: 12.5, background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px" }}>
             {importError}
           </div>
         )}
-        <div style={{ color: "#A89A7D", fontSize: 11.5, textAlign: "center", margin: "-6px 0 2px" }}>— or fill in manually —</div>
+        <div style={{ color: "#9BA88A", fontSize: 11.5, textAlign: "center", margin: "-6px 0 2px" }}>— or fill in manually —</div>
         <TextField label="Recipe name" value={name} onChange={setName} />
         <div style={{ position: "relative" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
               Style — search BJCP & BA guides, or type your own
             </span>
             <input
@@ -2606,11 +2606,11 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               style={{
                 width: "100%",
                 boxSizing: "border-box",
-                background: "#F6EFE2",
-                border: "1px solid #E4D9C2",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
                 borderRadius: 4,
                 padding: "9px 10px",
-                color: "#2B2420",
+                color: "#2A3324",
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 14,
               }}
@@ -2626,8 +2626,8 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                 marginTop: 4,
                 maxHeight: 220,
                 overflowY: "auto",
-                background: "#FBF6EC",
-                border: "1px solid #E4D9C2",
+                background: "#F8F5EA",
+                border: "1px solid #DDE0C8",
                 borderRadius: 6,
                 zIndex: 20,
               }}
@@ -2647,9 +2647,9 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     textAlign: "left",
                     background: "none",
                     border: "none",
-                    borderBottom: "1px solid #EDE4D0",
+                    borderBottom: "1px solid #EBE8D6",
                     padding: "9px 10px",
-                    color: "#2B2420",
+                    color: "#2A3324",
                     fontSize: 13,
                     cursor: "pointer",
                   }}
@@ -2659,7 +2659,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     style={{
                       fontFamily: "'JetBrains Mono', monospace",
                       fontSize: 10,
-                      color: "#A89A7D",
+                      color: "#9BA88A",
                       marginLeft: 8,
                       flexShrink: 0,
                     }}
@@ -2677,15 +2677,15 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
         </div>
 
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D", marginTop: 4 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
           Ingredients
         </div>
         {ingredients.map((line, i) => (
           <div
             key={line.id}
             style={{
-              background: "#F6EFE2",
-              border: "1px solid #E4D9C2",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
               borderRadius: 6,
               padding: "12px 12px 4px",
               position: "relative",
@@ -2701,7 +2701,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                   right: 8,
                   background: "none",
                   border: "none",
-                  color: "#6B5F4D",
+                  color: "#5C6B54",
                   cursor: "pointer",
                   padding: 4,
                 }}
@@ -2711,7 +2711,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
             )}
             <div style={{ marginBottom: 10, position: "relative" }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>
+                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
                   Ingredient {i + 1}
                 </span>
                 <input
@@ -2724,11 +2724,11 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
-                    background: "#F6EFE2",
-                    border: "1px solid #E4D9C2",
+                    background: "#F5F1E4",
+                    border: "1px solid #DDE0C8",
                     borderRadius: 4,
                     padding: "9px 10px",
-                    color: "#2B2420",
+                    color: "#2A3324",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 14,
                   }}
@@ -2744,8 +2744,8 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     marginTop: 4,
                     maxHeight: 220,
                     overflowY: "auto",
-                    background: "#FBF6EC",
-                    border: "1px solid #E4D9C2",
+                    background: "#F8F5EA",
+                    border: "1px solid #DDE0C8",
                     borderRadius: 6,
                     zIndex: 20,
                   }}
@@ -2765,15 +2765,15 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                         textAlign: "left",
                         background: "none",
                         border: "none",
-                        borderBottom: "1px solid #EDE4D0",
+                        borderBottom: "1px solid #EBE8D6",
                         padding: "9px 10px",
-                        color: "#2B2420",
+                        color: "#2A3324",
                         fontSize: 13,
                         cursor: "pointer",
                       }}
                     >
                       <span>{it.name}</span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#A89A7D", marginLeft: 8, flexShrink: 0 }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A", marginLeft: 8, flexShrink: 0 }}>
                         {it.qty} {it.unit}
                       </span>
                     </button>
@@ -2802,7 +2802,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                           background: "none",
                           border: "none",
                           padding: "9px 10px",
-                          color: "#C17A3D",
+                          color: "#5C9A3C",
                           fontSize: 13,
                           cursor: "pointer",
                         }}
@@ -2828,10 +2828,10 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
             justifyContent: "center",
             gap: 6,
             background: "none",
-            border: "1px dashed #D8CAAA",
+            border: "1px dashed #C9D1AC",
             borderRadius: 5,
             padding: "9px",
-            color: "#6B5F4D",
+            color: "#5C6B54",
             fontFamily: "'Inter', sans-serif",
             fontSize: 13,
             cursor: "pointer",
@@ -2840,13 +2840,13 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
           <Plus size={14} /> Add ingredient
         </button>
 
-        <div style={{ background: "#F6EFE2", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 12px" }}>
-          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 8 }}>
+        <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
             Brew day schedule — timed additions like hops or finings
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {schedule.map((s) => (
-              <div key={s.id} style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "8px 8px" }}>
+              <div key={s.id} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "8px 8px" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                   <SelectField
                     label="When"
@@ -2871,7 +2871,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                   <button
                     onClick={() => removeScheduleStep(s.id)}
                     aria-label="Remove schedule step"
-                    style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", padding: "0 0 9px" }}
+                    style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: "0 0 9px" }}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -2879,7 +2879,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               </div>
             ))}
             {schedule.length === 0 && (
-              <div style={{ color: "#A89A7D", fontSize: 12.5 }}>No timed additions added yet.</div>
+              <div style={{ color: "#9BA88A", fontSize: 12.5 }}>No timed additions added yet.</div>
             )}
             <button
               onClick={addScheduleStep}
@@ -2889,10 +2889,10 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                 justifyContent: "center",
                 gap: 6,
                 background: "none",
-                border: "1px dashed #D8CAAA",
+                border: "1px dashed #C9D1AC",
                 borderRadius: 5,
                 padding: "8px",
-                color: "#6B5F4D",
+                color: "#5C6B54",
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 12.5,
                 cursor: "pointer",
@@ -2907,7 +2907,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
           onClick={submit}
           style={{
             marginTop: 4,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -2942,7 +2942,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
           gap: 6,
           background: "none",
           border: "none",
-          color: "#6B5F4D",
+          color: "#5C6B54",
           cursor: "pointer",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
@@ -2954,7 +2954,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       </button>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2B2420", margin: "2px 0 6px", fontWeight: 500 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: "2px 0 6px", fontWeight: 500 }}>
           {recipe.name}
         </h1>
         {recipe.isActive && versions.length > 1 && (
@@ -2964,7 +2964,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
               fontSize: 10,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color: "#7FA35C",
+              color: "#D9A441",
               border: "1px solid #33452C",
               borderRadius: 3,
               padding: "3px 7px",
@@ -2974,13 +2974,13 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
           </span>
         )}
       </div>
-      <div style={{ color: "#6B5F4D", fontSize: 14, marginBottom: 12 }}>
+      <div style={{ color: "#5C6B54", fontSize: 14, marginBottom: 12 }}>
         {recipe.style} · {recipe.volume}L · OG {recipe.og.toFixed(3)} → FG {recipe.fg.toFixed(3)}
       </div>
 
       {versions.length > 1 && (
         <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 16 }}>
-          <span style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>
+          <span style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
             Version
           </span>
           <select
@@ -2989,11 +2989,11 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
             style={{
               width: "100%",
               boxSizing: "border-box",
-              background: "#F6EFE2",
-              border: "1px solid #E4D9C2",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
               borderRadius: 4,
               padding: "9px 10px",
-              color: "#2B2420",
+              color: "#2A3324",
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 13,
             }}
@@ -3008,7 +3008,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
         </label>
       )}
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Ingredients
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
@@ -3023,20 +3023,20 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
                 gap: 12,
                 alignItems: "center",
                 padding: "10px 12px",
-                background: "#FBF6EC",
-                border: `1px solid ${short ? "#6B4A2F" : "#EDE4D0"}`,
+                background: "#F8F5EA",
+                border: `1px solid ${short ? "#6B4A2F" : "#EBE8D6"}`,
                 borderRadius: 5,
                 fontSize: 13,
               }}
             >
-              <span style={{ flex: 1, color: "#2B2420", fontFamily: "'Inter', sans-serif" }}>{ing.name}</span>
+              <span style={{ flex: 1, color: "#2A3324", fontFamily: "'Inter', sans-serif" }}>{ing.name}</span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[ing.category], fontSize: 11 }}>
                 {ing.category}
               </span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2B2420", width: 64, textAlign: "right", flexShrink: 0 }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 64, textAlign: "right", flexShrink: 0 }}>
                 {formatQty(ing.qty, ing.unit)}
               </span>
-              {short && <AlertTriangle size={13} color="#C17A3D" />}
+              {short && <AlertTriangle size={13} color="#5C9A3C" />}
             </div>
           );
         })}
@@ -3048,11 +3048,11 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
             display: "flex",
             alignItems: "center",
             gap: 8,
-            color: "#C17A3D",
+            color: "#5C9A3C",
             fontSize: 12.5,
             marginBottom: 14,
-            background: "#FCEFDC",
-            border: "1px solid #E8C9A0",
+            background: "#FCF1DC",
+            border: "1px solid #E3D3A0",
             borderRadius: 5,
             padding: "8px 12px",
           }}
@@ -3064,7 +3064,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
 
       {recipe.schedule && recipe.schedule.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Brew day schedule
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -3073,14 +3073,14 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
                 key={s.id}
                 style={{
                   padding: "9px 12px",
-                  background: "#FBF6EC",
-                  border: "1px solid #EDE4D0",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
                   borderRadius: 5,
                   fontSize: 13,
-                  color: "#2B2420",
+                  color: "#2A3324",
                 }}
               >
-                {s.label} <span style={{ color: "#6B5F4D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.amount} {s.unit})</span>
+                {s.label} <span style={{ color: "#5C6B54", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.amount} {s.unit})</span>
               </div>
             ))}
           </div>
@@ -3095,7 +3095,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
           alignItems: "center",
           justifyContent: "center",
           gap: 7,
-          background: "#C17A3D",
+          background: "#5C9A3C",
           border: "none",
           borderRadius: 5,
           padding: "12px",
@@ -3118,7 +3118,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -3139,10 +3139,10 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
         style={{
           width: "100%",
           background: "none",
-          border: "1px solid #E4D9C2",
+          border: "1px solid #DDE0C8",
           borderRadius: 5,
           padding: "11px",
-          color: "#6B5F4D",
+          color: "#5C6B54",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
           cursor: "pointer",
@@ -3157,10 +3157,10 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
         style={{
           width: "100%",
           background: "none",
-          border: "1px solid #E8C9A0",
+          border: "1px solid #E3D3A0",
           borderRadius: 5,
           padding: "11px",
-          color: "#C17A3D",
+          color: "#5C9A3C",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
           cursor: "pointer",
@@ -3176,7 +3176,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
 function NumberField({ label, value, onChange, step = "any", suffix }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>{label}</span>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>{label}</span>
       <div style={{ position: "relative" }}>
         <input
           type="number"
@@ -3187,17 +3187,17 @@ function NumberField({ label, value, onChange, step = "any", suffix }) {
           style={{
             width: "100%",
             boxSizing: "border-box",
-            background: "#F6EFE2",
-            border: "1px solid #E4D9C2",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
             borderRadius: 4,
             padding: "9px 10px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 14,
           }}
         />
         {suffix && (
-          <span style={{ position: "absolute", right: 10, top: 9, color: "#A89A7D", fontSize: 12 }}>{suffix}</span>
+          <span style={{ position: "absolute", right: 10, top: 9, color: "#9BA88A", fontSize: 12 }}>{suffix}</span>
         )}
       </div>
     </label>
@@ -3207,7 +3207,7 @@ function NumberField({ label, value, onChange, step = "any", suffix }) {
 function TextField({ label, value, onChange, type = "text" }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>{label}</span>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>{label}</span>
       <input
         type={type}
         value={value}
@@ -3215,11 +3215,11 @@ function TextField({ label, value, onChange, type = "text" }) {
         style={{
           width: "100%",
           boxSizing: "border-box",
-          background: "#F6EFE2",
-          border: "1px solid #E4D9C2",
+          background: "#F5F1E4",
+          border: "1px solid #DDE0C8",
           borderRadius: 4,
           padding: "9px 10px",
-          color: "#2B2420",
+          color: "#2A3324",
           fontFamily: "'Inter', sans-serif",
           fontSize: 14,
         }}
@@ -3245,8 +3245,8 @@ function Modal({ title, onClose, children }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#FBF6EC",
-          border: "1px solid #E4D9C2",
+          background: "#F8F5EA",
+          border: "1px solid #DDE0C8",
           borderBottom: "none",
           borderRadius: "10px 10px 0 0",
           width: "100%",
@@ -3257,10 +3257,10 @@ function Modal({ title, onClose, children }) {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2B2420", margin: 0, fontWeight: 500 }}>
+          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>
             {title}
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", padding: 4 }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 4 }}>
             <X size={20} />
           </button>
         </div>
@@ -3404,7 +3404,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
             {!splitMode ? (
               <>
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>
+                  <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
                     Tank (optional)
                   </span>
                   <select
@@ -3413,11 +3413,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     style={{
                       width: "100%",
                       boxSizing: "border-box",
-                      background: "#F6EFE2",
-                      border: "1px solid #E4D9C2",
+                      background: "#F5F1E4",
+                      border: "1px solid #DDE0C8",
                       borderRadius: 4,
                       padding: "9px 10px",
-                      color: "#2B2420",
+                      color: "#2A3324",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: 14,
                     }}
@@ -3436,7 +3436,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                 </label>
                 {noSingleTankFits && (
                   <div style={{ marginTop: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#C17A3D", fontSize: 12, marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C9A3C", fontSize: 12, marginBottom: 8 }}>
                       <AlertTriangle size={12} />
                       No single free tank holds {volume}L.
                     </div>
@@ -3448,11 +3448,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                         justifyContent: "center",
                         gap: 7,
                         width: "100%",
-                        background: "#FCEFDC",
-                        border: "1px solid #E8C9A0",
+                        background: "#FCF1DC",
+                        border: "1px solid #E3D3A0",
                         borderRadius: 5,
                         padding: "10px",
-                        color: "#C17A3D",
+                        color: "#5C9A3C",
                         fontFamily: "'Oswald', sans-serif",
                         fontWeight: 500,
                         fontSize: 13.5,
@@ -3473,10 +3473,10 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                       gap: 7,
                       width: "100%",
                       background: "#242B27",
-                      border: "1px solid #D8CAAA",
+                      border: "1px solid #C9D1AC",
                       borderRadius: 5,
                       padding: "9px",
-                      color: "#2B2420",
+                      color: "#2A3324",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: 12.5,
                       cursor: "pointer",
@@ -3488,9 +3488,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                 )}
               </>
             ) : (
-              <div style={{ background: "#F6EFE2", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>
+                  <span style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
                     Split across tanks
                   </span>
                   <button
@@ -3498,7 +3498,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                       setSplitMode(false);
                       setSplitRows([{ id: uid(), tankId: "", volume: "" }]);
                     }}
-                    style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", fontSize: 11.5, padding: 0 }}
+                    style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontSize: 11.5, padding: 0 }}
                   >
                     Use one tank instead
                   </button>
@@ -3518,10 +3518,10 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                               minWidth: 0,
                               boxSizing: "border-box",
                               background: "#FFFFFF",
-                              border: "1px solid #E4D9C2",
+                              border: "1px solid #DDE0C8",
                               borderRadius: 4,
                               padding: "8px 8px",
-                              color: "#2B2420",
+                              color: "#2A3324",
                               fontFamily: "'Inter', sans-serif",
                               fontSize: 13,
                             }}
@@ -3548,10 +3548,10 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                               flexShrink: 0,
                               boxSizing: "border-box",
                               background: "#FFFFFF",
-                              border: `1px solid ${overCapacity ? "#6B4A2F" : "#E4D9C2"}`,
+                              border: `1px solid ${overCapacity ? "#6B4A2F" : "#DDE0C8"}`,
                               borderRadius: 4,
                               padding: "8px 8px",
-                              color: overCapacity ? "#C17A3D" : "#2B2420",
+                              color: overCapacity ? "#5C9A3C" : "#2A3324",
                               fontFamily: "'JetBrains Mono', monospace",
                               fontSize: 13,
                               textAlign: "right",
@@ -3560,13 +3560,13 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                           <button
                             onClick={() => removeSplitRow(row.id)}
                             aria-label="Remove tank"
-                            style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", flexShrink: 0 }}
+                            style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", flexShrink: 0 }}
                           >
                             <Trash2 size={14} />
                           </button>
                         </div>
                         {overCapacity && (
-                          <div style={{ color: "#C17A3D", fontSize: 11, marginTop: 3 }}>
+                          <div style={{ color: "#5C9A3C", fontSize: 11, marginTop: 3 }}>
                             Exceeds {rowTank.name}'s {rowTank.capacity}L capacity.
                           </div>
                         )}
@@ -3583,10 +3583,10 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     gap: 6,
                     width: "100%",
                     background: "none",
-                    border: "1px dashed #D8CAAA",
+                    border: "1px dashed #C9D1AC",
                     borderRadius: 5,
                     padding: "8px",
-                    color: "#6B5F4D",
+                    color: "#5C6B54",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 12.5,
                     cursor: "pointer",
@@ -3601,7 +3601,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     justifyContent: "space-between",
                     marginTop: 8,
                     fontSize: 12,
-                    color: Math.abs(splitTotal - Number(volume)) > 0.01 ? "#C17A3D" : "#7FA35C",
+                    color: Math.abs(splitTotal - Number(volume)) > 0.01 ? "#5C9A3C" : "#D9A441",
                   }}
                 >
                   <span>Allocated</span>
@@ -3613,7 +3613,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         )}
         <div style={{ position: "relative" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
               Batch name — pick a recipe or type your own
             </span>
             <input
@@ -3631,11 +3631,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               style={{
                 width: "100%",
                 boxSizing: "border-box",
-                background: "#F6EFE2",
-                border: "1px solid #E4D9C2",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
                 borderRadius: 4,
                 padding: "9px 10px",
-                color: "#2B2420",
+                color: "#2A3324",
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 14,
               }}
@@ -3651,8 +3651,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                 marginTop: 4,
                 maxHeight: 220,
                 overflowY: "auto",
-                background: "#FBF6EC",
-                border: "1px solid #E4D9C2",
+                background: "#F8F5EA",
+                border: "1px solid #DDE0C8",
                 borderRadius: 6,
                 zIndex: 20,
               }}
@@ -3672,9 +3672,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     textAlign: "left",
                     background: "none",
                     border: "none",
-                    borderBottom: "1px solid #EDE4D0",
+                    borderBottom: "1px solid #EBE8D6",
                     padding: "9px 10px",
-                    color: "#2B2420",
+                    color: "#2A3324",
                     fontSize: 13,
                     cursor: "pointer",
                   }}
@@ -3684,7 +3684,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     style={{
                       fontFamily: "'JetBrains Mono', monospace",
                       fontSize: 11,
-                      color: "#A89A7D",
+                      color: "#9BA88A",
                       marginLeft: 8,
                       flexShrink: 0,
                     }}
@@ -3703,7 +3703,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           <NumberField label="Original gravity" value={og} onChange={setOg} step="0.001" />
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
         </div>
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D", marginTop: 4 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
           Brew day
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -3711,8 +3711,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           <NumberField label="Pre-boil gravity" value={preBoilGravity} onChange={setPreBoilGravity} step="0.001" />
           <NumberField label="Top-up water" value={topUpWater} onChange={setTopUpWater} step="0.1" suffix="L" />
         </div>
-        <div style={{ background: "#F6EFE2", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 12px" }}>
-          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 8 }}>
+        <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
             Ingredients — swap, adjust, or add extras for this brew day
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -3720,7 +3720,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               const stock = stockFor(ing.name);
               const short = ing.name.trim().length > 0 && stock != null && Number(ing.qty) > stock;
               return (
-                <div key={ing.id} style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "8px 8px" }}>
+                <div key={ing.id} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "8px 8px" }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
                     <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
                       <input
@@ -3733,11 +3733,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                         style={{
                           width: "100%",
                           boxSizing: "border-box",
-                          background: "#F6EFE2",
-                          border: "1px solid #E4D9C2",
+                          background: "#F5F1E4",
+                          border: "1px solid #DDE0C8",
                           borderRadius: 4,
                           padding: "8px 9px",
-                          color: "#2B2420",
+                          color: "#2A3324",
                           fontFamily: "'Inter', sans-serif",
                           fontSize: 13,
                         }}
@@ -3752,8 +3752,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                             marginTop: 4,
                             maxHeight: 200,
                             overflowY: "auto",
-                            background: "#FBF6EC",
-                            border: "1px solid #E4D9C2",
+                            background: "#F8F5EA",
+                            border: "1px solid #DDE0C8",
                             borderRadius: 6,
                             zIndex: 20,
                           }}
@@ -3773,15 +3773,15 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                                 textAlign: "left",
                                 background: "none",
                                 border: "none",
-                                borderBottom: "1px solid #EDE4D0",
+                                borderBottom: "1px solid #EBE8D6",
                                 padding: "8px 9px",
-                                color: "#2B2420",
+                                color: "#2A3324",
                                 fontSize: 12.5,
                                 cursor: "pointer",
                               }}
                             >
                               <span>{it.name}</span>
-                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#A89A7D", marginLeft: 8, flexShrink: 0 }}>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A", marginLeft: 8, flexShrink: 0 }}>
                                 {it.qty} {it.unit}
                               </span>
                             </button>
@@ -3803,7 +3803,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                                   background: "none",
                                   border: "none",
                                   padding: "8px 9px",
-                                  color: "#C17A3D",
+                                  color: "#5C9A3C",
                                   fontSize: 12.5,
                                   cursor: "pointer",
                                 }}
@@ -3823,29 +3823,29 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                         width: 64,
                         flexShrink: 0,
                         boxSizing: "border-box",
-                        background: "#F6EFE2",
-                        border: `1px solid ${short ? "#6B4A2F" : "#E4D9C2"}`,
+                        background: "#F5F1E4",
+                        border: `1px solid ${short ? "#6B4A2F" : "#DDE0C8"}`,
                         borderRadius: 4,
                         padding: "8px 6px",
-                        color: short ? "#C17A3D" : "#2B2420",
+                        color: short ? "#5C9A3C" : "#2A3324",
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 12.5,
                         textAlign: "right",
                       }}
                     />
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", fontSize: 11.5, width: 24, flexShrink: 0, paddingTop: 9 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 11.5, width: 24, flexShrink: 0, paddingTop: 9 }}>
                       {ing.unit}
                     </span>
                     <button
                       onClick={() => removeBatchIngredientRow(ing.id)}
                       aria-label="Remove ingredient"
-                      style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", padding: "6px 0 0", flexShrink: 0 }}
+                      style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: "6px 0 0", flexShrink: 0 }}
                     >
                       <Trash2 size={14} />
                     </button>
                   </div>
                   {short && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, color: "#C17A3D", fontSize: 11.5, marginTop: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, color: "#5C9A3C", fontSize: 11.5, marginTop: 6 }}>
                       <AlertTriangle size={11} /> Only {stock} {ing.unit} in stock — adjust the amount or top up inventory first.
                     </div>
                   )}
@@ -3853,7 +3853,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               );
             })}
             {batchIngredients.length === 0 && (
-              <div style={{ color: "#A89A7D", fontSize: 12.5 }}>No ingredients added yet.</div>
+              <div style={{ color: "#9BA88A", fontSize: 12.5 }}>No ingredients added yet.</div>
             )}
             <button
               onClick={addBatchIngredientRow}
@@ -3863,10 +3863,10 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                 justifyContent: "center",
                 gap: 6,
                 background: "none",
-                border: "1px dashed #D8CAAA",
+                border: "1px dashed #C9D1AC",
                 borderRadius: 5,
                 padding: "8px",
-                color: "#6B5F4D",
+                color: "#5C6B54",
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 12.5,
                 cursor: "pointer",
@@ -3880,7 +3880,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           onClick={submit}
           style={{
             marginTop: 8,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -3921,7 +3921,7 @@ function LogReadingModal({ batch, onClose, onLog }) {
           onClick={submit}
           style={{
             marginTop: 8,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -3964,7 +3964,7 @@ function BrewDayModal({ batch, onClose, onSave }) {
           onClick={submit}
           style={{
             marginTop: 8,
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -4005,11 +4005,11 @@ function PackagingModal({ batch, onClose, onSave }) {
   return (
     <Modal title={`Log packaging — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13 }}>
-          Remaining in tank: <span style={{ color: "#2B2420", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          Remaining in tank: <span style={{ color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span>
           {" "}of {batch.volume} L batch
         </div>
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D" }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
           This packaging run
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -4028,15 +4028,15 @@ function PackagingModal({ batch, onClose, onSave }) {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            background: "#F6EFE2",
-            border: "1px solid #E4D9C2",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
             borderRadius: 6,
             padding: "10px 12px",
             fontSize: 13,
           }}
         >
-          <span style={{ color: "#6B5F4D" }}>This run</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2B2420" }}>{sessionVolume.toFixed(2)} L</span>
+          <span style={{ color: "#5C6B54" }}>This run</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>{sessionVolume.toFixed(2)} L</span>
         </div>
         {diff > 0.01 ? (
           <div
@@ -4044,10 +4044,10 @@ function PackagingModal({ batch, onClose, onSave }) {
               display: "flex",
               alignItems: "center",
               gap: 8,
-              color: "#C17A3D",
+              color: "#5C9A3C",
               fontSize: 12.5,
-              background: "#FCEFDC",
-              border: "1px solid #E8C9A0",
+              background: "#FCF1DC",
+              border: "1px solid #E3D3A0",
               borderRadius: 5,
               padding: "8px 12px",
             }}
@@ -4057,7 +4057,7 @@ function PackagingModal({ batch, onClose, onSave }) {
           </div>
         ) : (
           sessionVolume > 0 && (
-            <div style={{ color: "#A89A7D", fontSize: 12.5 }}>
+            <div style={{ color: "#9BA88A", fontSize: 12.5 }}>
               {leftAfter > 0
                 ? `${leftAfter.toFixed(2)} L will still be left in the tank after this run.`
                 : "This clears out everything left in the tank."}
@@ -4073,11 +4073,11 @@ function PackagingModal({ batch, onClose, onSave }) {
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: sessionVolume > 0 ? "#C17A3D" : "#EDE0D2",
+            background: sessionVolume > 0 ? "#5C9A3C" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: sessionVolume > 0 ? "#16191A" : "#B5A48F",
+            color: sessionVolume > 0 ? "#16191A" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -4103,8 +4103,8 @@ function DiscardRemainingModal({ batch, onClose, onConfirm }) {
   return (
     <Modal title={`Empty tank — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13 }}>
-          There's <span style={{ color: "#2B2420", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span> still sitting in
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          There's <span style={{ color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span> still sitting in
           the tank for this batch. Emptying it logs that remainder as loss (trub, dead space, spillage, etc.) and
           finishes the batch off — it moves fully into your packaged batch history and won't show as outstanding anymore.
         </div>
@@ -4119,7 +4119,7 @@ function DiscardRemainingModal({ batch, onClose, onConfirm }) {
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -4159,10 +4159,10 @@ function DeleteAccountModal({ onClose, onConfirm }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div
           style={{
-            color: "#C17A3D",
+            color: "#5C9A3C",
             fontSize: 13,
-            background: "#FCEFDC",
-            border: "1px solid #E8C9A0",
+            background: "#FCF1DC",
+            border: "1px solid #E3D3A0",
             borderRadius: 5,
             padding: "10px 12px",
             lineHeight: 1.5,
@@ -4174,7 +4174,7 @@ function DeleteAccountModal({ onClose, onConfirm }) {
         </div>
         <TextField label='Type "DELETE" to confirm' value={confirmText} onChange={setConfirmText} />
         {error && (
-          <div style={{ color: "#C17A3D", fontSize: 12.5, background: "#FCEFDC", border: "1px solid #E8C9A0", borderRadius: 5, padding: "8px 12px" }}>
+          <div style={{ color: "#5C9A3C", fontSize: 12.5, background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px" }}>
             {error}
           </div>
         )}
@@ -4182,11 +4182,11 @@ function DeleteAccountModal({ onClose, onConfirm }) {
           onClick={submit}
           disabled={!canDelete || busy}
           style={{
-            background: canDelete ? "#B5502F" : "#EDE0D2",
+            background: canDelete ? "#B5502F" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: canDelete ? "#2B2420" : "#B5A48F",
+            color: canDelete ? "#2A3324" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -4221,7 +4221,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           gap: 6,
           background: "none",
           border: "none",
-          color: "#6B5F4D",
+          color: "#5C6B54",
           cursor: "pointer",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
@@ -4235,20 +4235,20 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 22 }}>
         <Tank batch={batch} />
         <div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", fontSize: 13 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 13 }}>
             Batch #{batch.number}
           </div>
-          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 28, color: "#2B2420", margin: "2px 0 6px", fontWeight: 500 }}>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 28, color: "#2A3324", margin: "2px 0 6px", fontWeight: 500 }}>
             {batch.name}
           </h1>
-          <div style={{ color: "#6B5F4D", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ color: "#5C6B54", fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
             <span>
               {batch.style} · {batch.volume}L{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : " · No tank assigned"}
             </span>
             {!(batch.splitTanks && batch.splitTanks.length > 0) && (
               <button
                 onClick={() => onAssignTank(batch)}
-                style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
               >
                 Change
               </button>
@@ -4264,9 +4264,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           ["Target FG", batch.fg.toFixed(3)],
           ["Attenuation", `${pct.toFixed(0)}%`],
         ].map(([label, val]) => (
-          <div key={label} style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 12px" }}>
-            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>{label}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2B2420", marginTop: 3 }}>{val}</div>
+          <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2A3324", marginTop: 3 }}>{val}</div>
           </div>
         ))}
       </div>
@@ -4281,23 +4281,23 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  background: "#FCEFDC",
-                  border: "1px solid #E8C9A0",
+                  background: "#FCF1DC",
+                  border: "1px solid #E3D3A0",
                   borderRadius: 6,
                   padding: "10px 12px",
                   marginBottom: 12,
                 }}
               >
-                <Droplet size={15} color="#C17A3D" />
+                <Droplet size={15} color="#5C9A3C" />
                 <div>
-                  <div style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#C17A3D" }}>Up next</div>
-                  <div style={{ color: "#2B2420", fontSize: 13.5, marginTop: 1 }}>
-                    {next.label} <span style={{ color: "#6B5F4D", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({next.amount} {next.unit})</span>
+                  <div style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C9A3C" }}>Up next</div>
+                  <div style={{ color: "#2A3324", fontSize: 13.5, marginTop: 1 }}>
+                    {next.label} <span style={{ color: "#5C6B54", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({next.amount} {next.unit})</span>
                   </div>
                 </div>
               </div>
             )}
-            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
               Brew day schedule
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
@@ -4310,8 +4310,8 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     alignItems: "center",
                     gap: 10,
                     padding: "10px 12px",
-                    background: "#FBF6EC",
-                    border: "1px solid #EDE4D0",
+                    background: "#F8F5EA",
+                    border: "1px solid #EBE8D6",
                     borderRadius: 5,
                     fontSize: 13,
                     cursor: "pointer",
@@ -4324,8 +4324,8 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                       width: 18,
                       height: 18,
                       borderRadius: 4,
-                      border: `1.5px solid ${s.done ? "#7FA35C" : "#D8CAAA"}`,
-                      background: s.done ? "#7FA35C" : "none",
+                      border: `1.5px solid ${s.done ? "#D9A441" : "#C9D1AC"}`,
+                      background: s.done ? "#D9A441" : "none",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -4335,11 +4335,11 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     {s.done && <CheckCircle2 size={13} color="#16191A" />}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: "#2B2420", textDecoration: s.done ? "line-through" : "none" }}>
-                      {s.label} <span style={{ color: "#6B5F4D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.amount} {s.unit})</span>
+                    <div style={{ color: "#2A3324", textDecoration: s.done ? "line-through" : "none" }}>
+                      {s.label} <span style={{ color: "#5C6B54", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.amount} {s.unit})</span>
                     </div>
                     {s.done && s.doneAt && (
-                      <div style={{ color: "#A89A7D", fontSize: 11, marginTop: 2 }}>Done {formatHistoryStamp(s.doneAt)}</div>
+                      <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>Done {formatHistoryStamp(s.doneAt)}</div>
                     )}
                   </div>
                 </button>
@@ -4350,10 +4350,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       })()}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>Brew day</div>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Brew day</div>
         <button
           onClick={() => onEditBrewDay(batch)}
-          style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+          style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
         >
           Edit
         </button>
@@ -4364,16 +4364,16 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           ["Pre-boil SG", batch.preBoilGravity != null ? batch.preBoilGravity.toFixed(3) : "—"],
           ["Top-up water", batch.topUpWater != null ? `${batch.topUpWater} L` : "—"],
         ].map(([label, val]) => (
-          <div key={label} style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 12px" }}>
-            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>{label}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2B2420", marginTop: 3 }}>{val}</div>
+          <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2A3324", marginTop: 3 }}>{val}</div>
           </div>
         ))}
       </div>
 
       {batch.ingredients && batch.ingredients.length > 0 && (
         <>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Ingredients{batch.recipeName ? ` — ${batch.recipeName}` : ""}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
@@ -4385,17 +4385,17 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                   gap: 12,
                   alignItems: "center",
                   padding: "9px 12px",
-                  background: "#FBF6EC",
-                  border: "1px solid #EDE4D0",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
                   borderRadius: 5,
                   fontSize: 13,
                 }}
               >
-                <span style={{ flex: 1, color: "#2B2420", fontFamily: "'Inter', sans-serif" }}>{ing.name}</span>
+                <span style={{ flex: 1, color: "#2A3324", fontFamily: "'Inter', sans-serif" }}>{ing.name}</span>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: CATEGORY_COLOR[ing.category], fontSize: 11 }}>
                   {ing.category}
                 </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", width: 64, textAlign: "right", flexShrink: 0 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 64, textAlign: "right", flexShrink: 0 }}>
                   {formatQty(ing.qty, ing.unit)}
                 </span>
               </div>
@@ -4411,17 +4411,17 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               style={{
                 fontSize: 11.5,
                 fontFamily: "'JetBrains Mono', monospace",
-                color: i <= stageIdx ? STAGE_COLOR[batch.stage] : "#D8CAAA",
+                color: i <= stageIdx ? STAGE_COLOR[batch.stage] : "#C9D1AC",
                 letterSpacing: "0.05em",
               }}
             >
               {s.toUpperCase()}
             </span>
-            {i < STAGES.length - 1 && <span style={{ flex: 1, height: 1, background: i < stageIdx ? STAGE_COLOR[batch.stage] : "#E4D9C2" }} />}
+            {i < STAGES.length - 1 && <span style={{ flex: 1, height: 1, background: i < stageIdx ? STAGE_COLOR[batch.stage] : "#DDE0C8" }} />}
           </React.Fragment>
         ))}
       </div>
-      <div style={{ color: "#A89A7D", fontSize: 12.5, marginBottom: 18 }}>{days} days since brew day</div>
+      <div style={{ color: "#9BA88A", fontSize: 12.5, marginBottom: 18 }}>{days} days since brew day</div>
 
       {batch.packaging && (() => {
         const events = packagingEvents(batch);
@@ -4430,14 +4430,14 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         const remaining = remainingVolume(batch);
         return (
           <>
-            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
               Packaging
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
               {CONTAINERS.map((c) => (
-                <div key={c.key} style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 10px" }}>
-                  <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D" }}>{c.shortLabel}</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#2B2420", marginTop: 3 }}>
+                <div key={c.key} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 10px" }}>
+                  <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{c.shortLabel}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#2A3324", marginTop: 3 }}>
                     {totals[c.key] || 0}
                   </div>
                 </div>
@@ -4455,21 +4455,21 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                       alignItems: "center",
                       gap: 8,
                       padding: "8px 12px",
-                      background: "#FBF6EC",
-                      border: "1px solid #EDE4D0",
+                      background: "#F8F5EA",
+                      border: "1px solid #EBE8D6",
                       borderRadius: 5,
                       fontSize: 12.5,
                     }}
                   >
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", flexShrink: 0 }}>{(e.date || "").slice(5)}</span>
-                    <span style={{ color: "#6B5F4D", flex: 1 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", flexShrink: 0 }}>{(e.date || "").slice(5)}</span>
+                    <span style={{ color: "#5C6B54", flex: 1 }}>
                       {CONTAINERS.filter((c) => (e[c.key] || 0) > 0).map((c) => `${e[c.key]}× ${c.shortLabel}`).join(" · ") || "—"}
                     </span>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2B2420", flexShrink: 0 }}>{packagedVolume(e).toFixed(2)} L</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", flexShrink: 0 }}>{packagedVolume(e).toFixed(2)} L</span>
                     <button
                       onClick={() => onDeletePackagingEvent(batch.id, e.id)}
                       aria-label="Delete packaging run"
-                      style={{ background: "none", border: "none", color: "#A89A7D", cursor: "pointer", padding: 0, flexShrink: 0 }}
+                      style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 0, flexShrink: 0 }}
                     >
                       <Trash2 size={13} />
                     </button>
@@ -4478,7 +4478,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               </div>
             )}
 
-            <div style={{ color: "#A89A7D", fontSize: 12.5, marginBottom: 10 }}>
+            <div style={{ color: "#9BA88A", fontSize: 12.5, marginBottom: 10 }}>
               {totalPackagedVolume(batch).toFixed(2)} L packaged
               {discarded > 0 ? ` · ${discarded.toFixed(2)} L discarded` : ""}
               {" "}of {batch.volume} L batch
@@ -4496,10 +4496,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     justifyContent: "center",
                     gap: 6,
                     background: "#242B27",
-                    border: "1px solid #D8CAAA",
+                    border: "1px solid #C9D1AC",
                     borderRadius: 5,
                     padding: "10px",
-                    color: "#2B2420",
+                    color: "#2A3324",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     cursor: "pointer",
@@ -4512,10 +4512,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                   style={{
                     flex: 1,
                     background: "none",
-                    border: "1px solid #E8C9A0",
+                    border: "1px solid #E3D3A0",
                     borderRadius: 5,
                     padding: "10px",
-                    color: "#C17A3D",
+                    color: "#5C9A3C",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     cursor: "pointer",
@@ -4539,10 +4539,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             justifyContent: "center",
             gap: 7,
             background: "#242B27",
-            border: "1px solid #D8CAAA",
+            border: "1px solid #C9D1AC",
             borderRadius: 5,
             padding: "11px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'Inter', sans-serif",
             fontSize: 13.5,
             cursor: "pointer",
@@ -4559,7 +4559,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               alignItems: "center",
               justifyContent: "center",
               gap: 7,
-              background: "#C17A3D",
+              background: "#5C9A3C",
               border: "none",
               borderRadius: 5,
               padding: "11px",
@@ -4583,7 +4583,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           style={{
             background: "none",
             border: "none",
-            color: "#6B5F4D",
+            color: "#5C6B54",
             cursor: "pointer",
             fontSize: 12,
             fontFamily: "'Inter', sans-serif",
@@ -4597,26 +4597,26 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       )}
 
       {chartData.length > 1 && (
-        <div style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
             <TrendingDown size={13} /> Gravity trend
           </div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
-              <CartesianGrid stroke="#E4D9C2" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#A89A7D" fontSize={11} />
-              <YAxis stroke="#A89A7D" fontSize={11} domain={["dataMin - 0.003", "dataMax + 0.003"]} tickFormatter={(v) => v.toFixed(3)} />
+              <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+              <YAxis stroke="#9BA88A" fontSize={11} domain={["dataMin - 0.003", "dataMax + 0.003"]} tickFormatter={(v) => v.toFixed(3)} />
               <Tooltip
-                contentStyle={{ background: "#F6EFE2", border: "1px solid #E4D9C2", borderRadius: 4, fontSize: 12 }}
-                labelStyle={{ color: "#6B5F4D" }}
+                contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }}
+                labelStyle={{ color: "#5C6B54" }}
               />
-              <Line type="monotone" dataKey="gravity" stroke="#C17A3D" strokeWidth={2} dot={{ r: 3, fill: "#C17A3D" }} />
+              <Line type="monotone" dataKey="gravity" stroke="#5C9A3C" strokeWidth={2} dot={{ r: 3, fill: "#5C9A3C" }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Reading log
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -4628,21 +4628,21 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               gap: 14,
               alignItems: "baseline",
               padding: "9px 12px",
-              background: "#FBF6EC",
-              border: "1px solid #EDE4D0",
+              background: "#F8F5EA",
+              border: "1px solid #EBE8D6",
               borderRadius: 5,
               fontSize: 13,
             }}
           >
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2B2420", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
-            {r.note && <span style={{ flex: 1, color: "#6B5F4D", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
+            {r.note && <span style={{ flex: 1, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
             {batch.readings.length > 1 && (
               <button
                 onClick={() => onDeleteReading(batch.id, r.id)}
                 aria-label="Delete reading"
-                style={{ background: "none", border: "none", color: "#A89A7D", cursor: "pointer", padding: 0, marginLeft: "auto", flexShrink: 0 }}
+                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 0, marginLeft: "auto", flexShrink: 0 }}
               >
                 <Trash2 size={13} />
               </button>
@@ -4656,10 +4656,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         style={{
           width: "100%",
           background: "none",
-          border: "1px solid #E8C9A0",
+          border: "1px solid #E3D3A0",
           borderRadius: 5,
           padding: "11px",
-          color: "#C17A3D",
+          color: "#5C9A3C",
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
           cursor: "pointer",
@@ -4683,11 +4683,11 @@ function StaffTrainingRecordModal({ staffName, records, onClose }) {
   return (
     <Modal title={staffName} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 12.5 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5 }}>
           {topicsCovered.length} of {TRAINING_TOPICS.length - 1} core topics covered
         </div>
 
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
           Training received
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -4700,37 +4700,37 @@ function StaffTrainingRecordModal({ staffName, records, onClose }) {
                 alignItems: "center",
                 gap: 10,
                 padding: "9px 12px",
-                background: "#FBF6EC",
-                border: "1px solid #EDE4D0",
+                background: "#F8F5EA",
+                border: "1px solid #EBE8D6",
                 borderRadius: 5,
                 fontSize: 13,
               }}
             >
               <div style={{ minWidth: 0 }}>
-                <div style={{ color: "#2B2420" }}>{r.topic}</div>
-                {r.trainedBy && <div style={{ color: "#A89A7D", fontSize: 11, marginTop: 2 }}>by {r.trainedBy}</div>}
+                <div style={{ color: "#2A3324" }}>{r.topic}</div>
+                {r.trainedBy && <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>by {r.trainedBy}</div>}
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", fontSize: 12 }}>{r.date}</div>
-                <div style={{ fontSize: 10.5, color: r.staffConfirmed ? "#7FA35C" : "#C17A3D", marginTop: 2 }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12 }}>{r.date}</div>
+                <div style={{ fontSize: 10.5, color: r.staffConfirmed ? "#D9A441" : "#5C9A3C", marginTop: 2 }}>
                   {r.staffConfirmed ? "confirmed" : "not confirmed"}
                 </div>
               </div>
             </div>
           ))}
           {trainingRecords.length === 0 && (
-            <div style={{ color: "#A89A7D", fontSize: 13, padding: "8px 2px" }}>No training logged yet.</div>
+            <div style={{ color: "#9BA88A", fontSize: 13, padding: "8px 2px" }}>No training logged yet.</div>
           )}
         </div>
 
         {outstandingTopics.length > 0 && (
           <>
-            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
               Not yet covered
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {outstandingTopics.map((t) => (
-                <div key={t} style={{ padding: "8px 12px", background: "#FCEFDC", border: "1px solid #E8C9A0", borderRadius: 5, fontSize: 12.5, color: "#C17A3D" }}>
+                <div key={t} style={{ padding: "8px 12px", background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, fontSize: 12.5, color: "#5C9A3C" }}>
                   {t}
                 </div>
               ))}
@@ -4773,16 +4773,16 @@ function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
   return (
     <Modal title="Match to Xero items" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ color: "#6B5F4D", fontSize: 13, lineHeight: 1.5 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.5 }}>
           These products haven't been linked to a Xero item yet. Match them below — this only needs doing once per
           product, future packaging runs will sync automatically. Leave any blank to skip syncing that one.
         </div>
         {queue.lines.map((l) => {
           const line = lineData[l.productKey];
           return (
-            <div key={l.productKey} style={{ background: "#F6EFE2", border: "1px solid #E4D9C2", borderRadius: 6, padding: "10px 12px" }}>
-              <div style={{ color: "#2B2420", fontSize: 13.5, marginBottom: 8 }}>
-                {l.productLabel} <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>× {l.qty}</span>
+            <div key={l.productKey} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
+                {l.productLabel} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>× {l.qty}</span>
               </div>
               <div style={{ position: "relative", marginBottom: 8 }}>
                 <input
@@ -4796,10 +4796,10 @@ function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
                     width: "100%",
                     boxSizing: "border-box",
                     background: "#FFFFFF",
-                    border: "1px solid #E4D9C2",
+                    border: "1px solid #DDE0C8",
                     borderRadius: 4,
                     padding: "8px 9px",
-                    color: "#2B2420",
+                    color: "#2A3324",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                   }}
@@ -4814,8 +4814,8 @@ function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
                       marginTop: 4,
                       maxHeight: 160,
                       overflowY: "auto",
-                      background: "#FBF6EC",
-                      border: "1px solid #E4D9C2",
+                      background: "#F8F5EA",
+                      border: "1px solid #DDE0C8",
                       borderRadius: 6,
                       zIndex: 20,
                     }}
@@ -4827,13 +4827,13 @@ function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
                           updateLine(l.productKey, { itemCode: it.code, itemName: it.name, query: "" });
                           setFocusedLine(null);
                         }}
-                        style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 9px", color: "#2B2420", fontSize: 13, cursor: "pointer" }}
+                        style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 9px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
                       >
                         {it.name}
                       </button>
                     ))}
                     {matches(line.query).length === 0 && (
-                      <div style={{ padding: "8px 9px", color: "#A89A7D", fontSize: 12.5 }}>No matching items in Xero.</div>
+                      <div style={{ padding: "8px 9px", color: "#9BA88A", fontSize: 12.5 }}>No matching items in Xero.</div>
                     )}
                   </div>
                 )}
@@ -4845,7 +4845,7 @@ function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
         <button
           onClick={submit}
           style={{
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -4881,8 +4881,8 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
     >
       <div
         style={{
-          background: "#FBF6EC",
-          border: "1px solid #E4D9C2",
+          background: "#F8F5EA",
+          border: "1px solid #DDE0C8",
           borderBottom: "none",
           borderRadius: "10px 10px 0 0",
           width: "100%",
@@ -4892,16 +4892,16 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
           padding: "22px 22px 26px",
         }}
       >
-        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2B2420", margin: "0 0 14px", fontWeight: 500 }}>
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: "0 0 14px", fontWeight: 500 }}>
           Before you use Food Safety
         </h2>
-        <div style={{ color: "#6B5F4D", fontSize: 13.5, lineHeight: 1.6, marginBottom: 16 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13.5, lineHeight: 1.6, marginBottom: 16 }}>
           This section is a record-keeping tool built to reflect MPI's National Programme 3 guidance (Dec 2025) for
           breweries. It's here to help you organise checklists, calibration, and training records — it is not
           food safety advice, and using it does not register your business, satisfy your legal obligations, or
           replace verification by MPI, your local council, or a qualified food safety consultant.
         </div>
-        <div style={{ color: "#6B5F4D", fontSize: 13.5, lineHeight: 1.6, marginBottom: 20 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13.5, lineHeight: 1.6, marginBottom: 20 }}>
           Your business is responsible for meeting the Food Act 2014 and National Programme requirements that apply
           to it. Brewpoint and its creators are not responsible for your food safety compliance, registration, or
           verification outcomes.
@@ -4925,8 +4925,8 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
               width: 20,
               height: 20,
               borderRadius: 4,
-              border: `1.5px solid ${confirmed ? "#7FA35C" : "#D8CAAA"}`,
-              background: confirmed ? "#7FA35C" : "none",
+              border: `1.5px solid ${confirmed ? "#D9A441" : "#C9D1AC"}`,
+              background: confirmed ? "#D9A441" : "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -4936,7 +4936,7 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
           >
             {confirmed && <CheckCircle2 size={14} color="#16191A" />}
           </div>
-          <span style={{ color: "#2B2420", fontSize: 13.5, lineHeight: 1.5 }}>
+          <span style={{ color: "#2A3324", fontSize: 13.5, lineHeight: 1.5 }}>
             I accept responsibility, on behalf of my company, for our food safety compliance and understand
             Brewpoint is not responsible for it.
           </span>
@@ -4946,11 +4946,11 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
           disabled={!confirmed}
           style={{
             width: "100%",
-            background: confirmed ? "#C17A3D" : "#EDE0D2",
+            background: confirmed ? "#5C9A3C" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: confirmed ? "#16191A" : "#B5A48F",
+            color: confirmed ? "#16191A" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
@@ -4978,12 +4978,12 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     incident: "Incident",
   };
   const categoryColor = {
-    checklist: "#7FA35C",
+    checklist: "#D9A441",
     calibration: "#D4A24C",
-    training: "#6B5F4D",
-    water: "#A89A7D",
-    recall: "#C17A3D",
-    incident: "#C17A3D",
+    training: "#5C6B54",
+    water: "#9BA88A",
+    recall: "#5C9A3C",
+    incident: "#5C9A3C",
   };
 
   const recordText = (r) =>
@@ -5010,12 +5010,12 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
 
   return (
     <div>
-      <div style={{ color: "#6B5F4D", fontSize: 12.5, lineHeight: 1.5, marginBottom: 18 }}>
+      <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5, marginBottom: 18 }}>
         Based on MPI's National Programme 3 (Dec 2025) — the food safety framework for breweries under the Food Act
         2014. Records are kept here for at least 4 years, as required.
       </div>
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Checklists
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
@@ -5029,14 +5029,14 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
               alignItems: "center",
               padding: "12px 14px",
               background: "#FFFFFF",
-              border: "1px solid #E4D9C2",
+              border: "1px solid #DDE0C8",
               borderRadius: 6,
               cursor: "pointer",
               textAlign: "left",
             }}
           >
-            <span style={{ color: "#2B2420", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{template.label}</span>
-            <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{template.items.length} items</span>
+            <span style={{ color: "#2A3324", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{template.label}</span>
+            <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{template.items.length} items</span>
           </button>
         ))}
       </div>
@@ -5046,7 +5046,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         if (staffNames.length === 0) return null;
         return (
           <>
-            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
               Staff training
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
@@ -5063,14 +5063,14 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                       alignItems: "center",
                       padding: "10px 14px",
                       background: "#FFFFFF",
-                      border: "1px solid #E4D9C2",
+                      border: "1px solid #DDE0C8",
                       borderRadius: 6,
                       cursor: "pointer",
                       textAlign: "left",
                     }}
                   >
-                    <span style={{ color: "#2B2420", fontSize: 13.5 }}>{name}</span>
-                    <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                    <span style={{ color: "#2A3324", fontSize: 13.5 }}>{name}</span>
+                    <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
                       {topicsCovered}/{TRAINING_TOPICS.length - 1} topics
                     </span>
                   </button>
@@ -5081,7 +5081,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         );
       })()}
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Other records
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 22 }}>
@@ -5094,7 +5094,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         </button>
       </div>
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         History ({filteredRecords.length})
       </div>
       <input
@@ -5105,17 +5105,17 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         style={{
           width: "100%",
           boxSizing: "border-box",
-          background: "#F6EFE2",
-          border: "1px solid #E4D9C2",
+          background: "#F5F1E4",
+          border: "1px solid #DDE0C8",
           borderRadius: 5,
           padding: "10px 12px",
-          color: "#2B2420",
+          color: "#2A3324",
           fontFamily: "'Inter', sans-serif",
           fontSize: 14,
           marginBottom: 8,
         }}
       />
-      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D", display: "block", marginBottom: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", display: "block", marginBottom: 5 }}>
         Search by date
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
@@ -5126,11 +5126,11 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
           style={{
             flex: 1,
             boxSizing: "border-box",
-            background: "#F6EFE2",
-            border: "1px solid #E4D9C2",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
             borderRadius: 5,
             padding: "9px 12px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'Inter', sans-serif",
             fontSize: 13.5,
           }}
@@ -5138,7 +5138,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         {monthFilter && (
           <button
             onClick={() => setMonthFilter("")}
-            style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
+            style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
           >
             Clear
           </button>
@@ -5152,39 +5152,39 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
               key={r.id}
               style={{
                 padding: "10px 12px",
-                background: "#FBF6EC",
-                border: "1px solid #EDE4D0",
+                background: "#F8F5EA",
+                border: "1px solid #EBE8D6",
                 borderRadius: 5,
                 fontSize: 12.5,
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: categoryColor[r.category] || "#6B5F4D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                <span style={{ color: categoryColor[r.category] || "#5C6B54", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                   {categoryLabel[r.category] || r.category}
                 </span>
-                <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{r.date}</span>
+                <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{r.date}</span>
               </div>
-              <div style={{ color: "#2B2420", marginTop: 4 }}>
+              <div style={{ color: "#2A3324", marginTop: 4 }}>
                 {r.category === "checklist" && `${checkedCount}/${r.items.length} items checked${r.notes ? ` — ${r.notes}` : ""}`}
                 {r.category === "calibration" && `${r.equipmentName} — ${r.result || "no result noted"}`}
                 {r.category === "training" && (
                   <>
                     {r.staffName} — {r.topic}{r.trainedBy ? ` (by ${r.trainedBy})` : ""}
                     {r.staffConfirmed ? (
-                      <span style={{ color: "#7FA35C" }}> · confirmed</span>
+                      <span style={{ color: "#D9A441" }}> · confirmed</span>
                     ) : (
-                      <span style={{ color: "#C17A3D" }}> · not confirmed</span>
+                      <span style={{ color: "#5C9A3C" }}> · not confirmed</span>
                     )}
                   </>
                 )}
                 {(r.category === "water" || r.category === "recall" || r.category === "incident") && (r.notes || "—")}
               </div>
-              <div style={{ color: "#A89A7D", fontSize: 11, marginTop: 3 }}>{r.userName}</div>
+              <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 3 }}>{r.userName}</div>
             </div>
           );
         })}
         {filteredRecords.length === 0 && (
-          <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+          <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
             {records.length === 0
               ? "No food safety records yet — complete a checklist above to get started."
               : "Nothing matches your search."}
@@ -5197,10 +5197,10 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
 
 const secondaryBtnStyle = {
   background: "#242B27",
-  border: "1px solid #D8CAAA",
+  border: "1px solid #C9D1AC",
   borderRadius: 5,
   padding: "10px",
-  color: "#2B2420",
+  color: "#2A3324",
   fontFamily: "'Inter', sans-serif",
   fontSize: 12.5,
   cursor: "pointer",
@@ -5233,11 +5233,11 @@ function PackagedView({ batches, onOpenBatch }) {
           style={{
             width: "100%",
             boxSizing: "border-box",
-            background: "#F6EFE2",
-            border: "1px solid #E4D9C2",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
             borderRadius: 5,
             padding: "10px 12px",
-            color: "#2B2420",
+            color: "#2A3324",
             fontFamily: "'Inter', sans-serif",
             fontSize: 14,
           }}
@@ -5246,7 +5246,7 @@ function PackagedView({ batches, onOpenBatch }) {
 
       {query.trim().length === 0 && (
         <div style={{ marginBottom: 24 }}>
-          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B5F4D", display: "block", marginBottom: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", display: "block", marginBottom: 5 }}>
             Search by date
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -5257,11 +5257,11 @@ function PackagedView({ batches, onOpenBatch }) {
               style={{
                 flex: 1,
                 boxSizing: "border-box",
-                background: "#F6EFE2",
-                border: "1px solid #E4D9C2",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
                 borderRadius: 5,
                 padding: "9px 12px",
-                color: "#2B2420",
+                color: "#2A3324",
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 13.5,
               }}
@@ -5269,7 +5269,7 @@ function PackagedView({ batches, onOpenBatch }) {
             {monthFilter && (
               <button
                 onClick={() => setMonthFilter("")}
-                style={{ background: "none", border: "none", color: "#6B5F4D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
+                style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
               >
                 Clear
               </button>
@@ -5294,17 +5294,17 @@ function PackagedView({ batches, onOpenBatch }) {
                   alignItems: "center",
                   padding: "12px 14px",
                   background: "#FFFFFF",
-                  border: "1px solid #E4D9C2",
+                  border: "1px solid #DDE0C8",
                   borderRadius: 6,
                   cursor: "pointer",
                   textAlign: "left",
                 }}
               >
                 <div>
-                  <div style={{ color: "#2B2420", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>
-                    {b.name} <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>#{b.number}</span>
+                  <div style={{ color: "#2A3324", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>
+                    {b.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>#{b.number}</span>
                   </div>
-                  <div style={{ color: "#6B5F4D", fontSize: 12, marginTop: 3 }}>
+                  <div style={{ color: "#5C6B54", fontSize: 12, marginTop: 3 }}>
                     {totalPackagedVolume(b).toFixed(2)}L packaged{parts.length ? ` · ${parts.join(" · ")}` : ""}
                     {rem > 0 ? ` · ${rem}L in tank` : ""}
                   </div>
@@ -5313,7 +5313,7 @@ function PackagedView({ batches, onOpenBatch }) {
             );
           })}
           {matchingBatches.length === 0 && (
-            <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+            <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
               No packaged batches match "{query}".
             </div>
           )}
@@ -5322,15 +5322,15 @@ function PackagedView({ batches, onOpenBatch }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
           {months.map((m) => (
             <div key={m.key}>
-              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, color: "#2B2420", fontWeight: 500, marginBottom: 8 }}>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, color: "#2A3324", fontWeight: 500, marginBottom: 8 }}>
                 {m.label}
               </div>
-              <div style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "12px 14px", marginBottom: 8 }}>
+              <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 14px", marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: "#6B5F4D", fontSize: 12.5 }}>Total packaged</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2B2420", fontSize: 15 }}>{m.volume.toFixed(2)} L</span>
+                  <span style={{ color: "#5C6B54", fontSize: 12.5 }}>Total packaged</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", fontSize: 15 }}>{m.volume.toFixed(2)} L</span>
                 </div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#A89A7D", marginTop: 6 }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#9BA88A", marginTop: 6 }}>
                   {CONTAINERS.filter((c) => m.counts[c.key] > 0)
                     .map((c) => `${m.counts[c.key]}× ${c.shortLabel}`)
                     .join(" · ") || "No containers logged"}
@@ -5348,25 +5348,25 @@ function PackagedView({ batches, onOpenBatch }) {
                         justifyContent: "space-between",
                         alignItems: "center",
                         padding: "9px 12px",
-                        background: "#FBF6EC",
-                        border: "1px solid #EDE4D0",
+                        background: "#F8F5EA",
+                        border: "1px solid #EBE8D6",
                         borderRadius: 5,
                         fontSize: 13,
                         cursor: "pointer",
                         textAlign: "left",
                       }}
                     >
-                      <span style={{ color: "#2B2420" }}>
-                        {b.name} <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>#{b.number}</span>
+                      <span style={{ color: "#2A3324" }}>
+                        {b.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>#{b.number}</span>
                       </span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", fontSize: 12 }}>{b.volume.toFixed(2)} L</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12 }}>{b.volume.toFixed(2)} L</span>
                     </button>
                   ))}
               </div>
             </div>
           ))}
           {months.length === 0 && (
-            <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+            <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
               {monthFilter
                 ? `Nothing packaged in ${monthLabelFromKey(monthFilter)}.`
                 : "Nothing packaged yet — once you log a packaging run on a batch, it'll show up here by month."}
@@ -5427,17 +5427,17 @@ function HomeView({
     ["Fermenting", fermentingBatches.length, STAGE_COLOR.Primary, "batches"],
     ["Conditioning", conditioningBatches.length, STAGE_COLOR.Conditioning, "batches"],
     ["Packaging", inProgressBatches.length, "#D4A24C", "batches"],
-    ["Packaged", packagedBatches.length, "#A89A7D", "batches"],
+    ["Packaged", packagedBatches.length, "#9BA88A", "batches"],
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
-        <div style={{ color: "#6B5F4D", fontSize: 13, marginBottom: 2 }}>Welcome back to</div>
+        <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 2 }}>Welcome back to</div>
         {companyLogo ? (
           <img src={companyLogo} alt={companyName || "Company logo"} style={{ maxWidth: 200, maxHeight: 72, objectFit: "contain" }} />
         ) : (
-          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, color: "#2B2420", margin: 0, fontWeight: 500 }}>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, color: "#2A3324", margin: 0, fontWeight: 500 }}>
             {companyName || "your brewery"}
           </h1>
         )}
@@ -5460,17 +5460,17 @@ function HomeView({
                   gap: 10,
                   padding: "10px 14px",
                   background: "#FFFFFF",
-                  border: "1px solid #E4D9C2",
+                  border: "1px solid #DDE0C8",
                   borderRadius: 6,
                   cursor: "pointer",
                   textAlign: "left",
                 }}
               >
-                <span style={{ color: "#2B2420", fontSize: 13 }}>
-                  <span style={{ color: "#6B5F4D" }}>{batch.name}: </span>
+                <span style={{ color: "#2A3324", fontSize: 13 }}>
+                  <span style={{ color: "#5C6B54" }}>{batch.name}: </span>
                   {next.label}
                 </span>
-                <span style={{ color: "#C17A3D", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>brew</span>
+                <span style={{ color: "#5C9A3C", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>brew</span>
               </button>
             ))}
             {foodSafetyTasks.map((t, i) => (
@@ -5484,14 +5484,14 @@ function HomeView({
                   gap: 10,
                   padding: "10px 14px",
                   background: "#FFFFFF",
-                  border: "1px solid #E4D9C2",
+                  border: "1px solid #DDE0C8",
                   borderRadius: 6,
                   cursor: "pointer",
                   textAlign: "left",
                 }}
               >
-                <span style={{ color: "#2B2420", fontSize: 13 }}>{t.label}</span>
-                <span style={{ color: "#7FA35C", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>food safety</span>
+                <span style={{ color: "#2A3324", fontSize: 13 }}>{t.label}</span>
+                <span style={{ color: "#D9A441", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>food safety</span>
               </button>
             ))}
           </div>
@@ -5505,14 +5505,14 @@ function HomeView({
             onClick={() => onGoTo(goTo)}
             style={{
               background: "#FFFFFF",
-              border: "1px solid #E4D9C2",
+              border: "1px solid #DDE0C8",
               borderRadius: 6,
               padding: "12px 10px",
               cursor: "pointer",
               textAlign: "left",
             }}
           >
-            <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D" }}>{label}</div>
+            <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, color, marginTop: 4 }}>{count}</div>
           </button>
         ))}
@@ -5533,15 +5533,15 @@ function HomeView({
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 14px",
-                  background: "#FBF6EC",
-                  border: "1px solid #EDE4D0",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
                   borderRadius: 5,
                   fontSize: 13.5,
                   cursor: "pointer",
                   textAlign: "left",
                 }}
               >
-                <span style={{ color: "#2B2420" }}>{b.name}</span>
+                <span style={{ color: "#2A3324" }}>{b.name}</span>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#D4A24C", fontSize: 12 }}>
                   {remainingVolume(b)}L left
                 </span>
@@ -5553,7 +5553,7 @@ function HomeView({
 
       {(lowStock.length > 0 || openOrders.length > 0) && (
         <div>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Needs attention
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -5566,18 +5566,18 @@ function HomeView({
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 14px",
-                  background: "#FBF6EC",
-                  border: "1px solid #E8C9A0",
+                  background: "#F8F5EA",
+                  border: "1px solid #E3D3A0",
                   borderRadius: 5,
                   fontSize: 13.5,
                   cursor: "pointer",
                   textAlign: "left",
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#2B2420" }}>
-                  <AlertTriangle size={13} color="#C17A3D" /> {it.name} running low
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#2A3324" }}>
+                  <AlertTriangle size={13} color="#5C9A3C" /> {it.name} running low
                 </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#C17A3D", fontSize: 12 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C9A3C", fontSize: 12 }}>
                   {item_qty(it)} {it.unit}
                 </span>
               </button>
@@ -5591,16 +5591,16 @@ function HomeView({
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 14px",
-                  background: "#FBF6EC",
-                  border: "1px solid #EDE4D0",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
                   borderRadius: 5,
                   fontSize: 13.5,
                   cursor: "pointer",
                   textAlign: "left",
                 }}
               >
-                <span style={{ color: "#2B2420" }}>{po.poNumber} — {po.supplier}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#6B5F4D", fontSize: 12 }}>Awaiting delivery</span>
+                <span style={{ color: "#2A3324" }}>{po.poNumber} — {po.supplier}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12 }}>Awaiting delivery</span>
               </button>
             ))}
           </div>
@@ -5608,7 +5608,7 @@ function HomeView({
       )}
 
       {fermentingBatches.length === 0 && conditioningBatches.length === 0 && inProgressBatches.length === 0 && packagedBatches.length === 0 && (
-        <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+        <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
           Nothing brewing yet — head to Fermentation to start your first batch.
         </div>
       )}
@@ -5623,7 +5623,7 @@ function EmailConfirmedScreen({ onContinue }) {
     <div
       style={{
         minHeight: "100vh",
-        background: "#F6EFE2",
+        background: "#F5F1E4",
         fontFamily: "'Inter', sans-serif",
         display: "flex",
         alignItems: "center",
@@ -5634,7 +5634,7 @@ function EmailConfirmedScreen({ onContinue }) {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
-        button:focus-visible { outline: 2px solid #C17A3D; outline-offset: 2px; }
+        button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
       <div style={{ width: "100%", maxWidth: 360, textAlign: "center" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 22 }}>
@@ -5644,7 +5644,7 @@ function EmailConfirmedScreen({ onContinue }) {
               height: 88,
               borderRadius: "50%",
               background: "#FFFFFF",
-              border: "1px solid #E4D9C2",
+              border: "1px solid #DDE0C8",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -5659,7 +5659,7 @@ function EmailConfirmedScreen({ onContinue }) {
               fontSize: 12,
               letterSpacing: "0.09em",
               textTransform: "uppercase",
-              color: "#C17A3D",
+              color: "#5C9A3C",
               marginBottom: 6,
             }}
           >
@@ -5680,13 +5680,13 @@ function EmailConfirmedScreen({ onContinue }) {
             margin: "0 auto 16px",
           }}
         >
-          <CheckCircle2 size={22} color="#7FA35C" />
+          <CheckCircle2 size={22} color="#D9A441" />
         </div>
 
-        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2B2420", margin: "0 0 8px", fontWeight: 500 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: "0 0 8px", fontWeight: 500 }}>
           Email confirmed
         </h1>
-        <p style={{ color: "#6B5F4D", fontSize: 14, lineHeight: 1.5, margin: "0 0 26px" }}>
+        <p style={{ color: "#5C6B54", fontSize: 14, lineHeight: 1.5, margin: "0 0 26px" }}>
           Thanks for confirming your email. Your account's ready to go — log in below to get into your brewery.
         </p>
 
@@ -5694,7 +5694,7 @@ function EmailConfirmedScreen({ onContinue }) {
           onClick={onContinue}
           style={{
             width: "100%",
-            background: "#C17A3D",
+            background: "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
@@ -5775,7 +5775,7 @@ function AuthScreen() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#F6EFE2",
+        background: "#F5F1E4",
         fontFamily: "'Inter', sans-serif",
         display: "flex",
         alignItems: "center",
@@ -5786,8 +5786,8 @@ function AuthScreen() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
-        input:focus { outline: 1px solid #C17A3D; }
-        button:focus-visible { outline: 2px solid #C17A3D; outline-offset: 2px; }
+        input:focus { outline: 1px solid #5C9A3C; }
+        button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
       <div style={{ width: "100%", maxWidth: 360 }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 30 }}>
@@ -5797,7 +5797,7 @@ function AuthScreen() {
               height: 88,
               borderRadius: "50%",
               background: "#FFFFFF",
-              border: "1px solid #E4D9C2",
+              border: "1px solid #DDE0C8",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -5812,13 +5812,13 @@ function AuthScreen() {
               fontSize: 12,
               letterSpacing: "0.09em",
               textTransform: "uppercase",
-              color: "#C17A3D",
+              color: "#5C9A3C",
               marginBottom: 6,
             }}
           >
             Brewpoint
           </span>
-          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2B2420", margin: 0, fontWeight: 500 }}>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: 0, fontWeight: 500 }}>
             {mode === "signin" ? "Welcome back" : "Start your brewery log"}
           </h1>
         </div>
@@ -5834,12 +5834,12 @@ function AuthScreen() {
           </div>
 
           {error && (
-            <div style={{ color: "#C17A3D", fontSize: 12.5, background: "#FCEFDC", border: "1px solid #E8C9A0", borderRadius: 5, padding: "8px 12px" }}>
+            <div style={{ color: "#5C9A3C", fontSize: 12.5, background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px" }}>
               {error}
             </div>
           )}
           {info && !error && (
-            <div style={{ color: "#7FA35C", fontSize: 12.5, background: "#1A2318", border: "1px solid #33452C", borderRadius: 5, padding: "8px 12px" }}>
+            <div style={{ color: "#D9A441", fontSize: 12.5, background: "#1A2318", border: "1px solid #33452C", borderRadius: 5, padding: "8px 12px" }}>
               {info}
             </div>
           )}
@@ -5849,7 +5849,7 @@ function AuthScreen() {
             disabled={busy}
             style={{
               marginTop: 4,
-              background: "#C17A3D",
+              background: "#5C9A3C",
               border: "none",
               borderRadius: 5,
               padding: "12px",
@@ -5874,7 +5874,7 @@ function AuthScreen() {
             style={{
               background: "none",
               border: "none",
-              color: "#6B5F4D",
+              color: "#5C6B54",
               fontFamily: "'Inter', sans-serif",
               fontSize: 13,
               cursor: "pointer",
@@ -5957,7 +5957,7 @@ export function XeroCallback() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#F6EFE2",
+        background: "#F5F1E4",
         fontFamily: "'Inter', sans-serif",
         display: "flex",
         alignItems: "center",
@@ -5972,18 +5972,18 @@ export function XeroCallback() {
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
           <BreworxMark size={44} />
         </div>
-        <h1 style={{ fontFamily: "'Oswald', sans-serif", color: "#2B2420", fontSize: 20, fontWeight: 500, margin: "0 0 8px" }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", color: "#2A3324", fontSize: 20, fontWeight: 500, margin: "0 0 8px" }}>
           {status === "connecting" && "Connecting to Xero…"}
           {status === "success" && "Connected"}
           {status === "error" && "Couldn't connect"}
         </h1>
-        <p style={{ color: "#6B5F4D", fontSize: 14, lineHeight: 1.5 }}>{message}</p>
+        <p style={{ color: "#5C6B54", fontSize: 14, lineHeight: 1.5 }}>{message}</p>
         {status === "error" && (
           <button
             onClick={() => (window.location.href = "/")}
             style={{
               marginTop: 16,
-              background: "#C17A3D",
+              background: "#5C9A3C",
               border: "none",
               borderRadius: 5,
               padding: "10px 18px",
@@ -6770,8 +6770,8 @@ export default function TankLog() {
 
   if (session === undefined) {
     return (
-      <div style={{ minHeight: "100vh", background: "#F6EFE2", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ color: "#A89A7D", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>Loading…</span>
+      <div style={{ minHeight: "100vh", background: "#F5F1E4", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>Loading…</span>
       </div>
     );
   }
@@ -6784,7 +6784,7 @@ export default function TankLog() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#F6EFE2",
+        background: "#F5F1E4",
         fontFamily: "'Inter', sans-serif",
         padding: "0 0 60px",
       }}
@@ -6792,8 +6792,8 @@ export default function TankLog() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
-        input:focus { outline: 1px solid #C17A3D; }
-        button:focus-visible { outline: 2px solid #C17A3D; outline-offset: 2px; }
+        input:focus { outline: 1px solid #5C9A3C; }
+        button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
 
       <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -6801,14 +6801,14 @@ export default function TankLog() {
           style={{
             width: 210,
             flexShrink: 0,
-            borderRight: "1px solid #E4D9C2",
+            borderRight: "1px solid #DDE0C8",
             padding: "24px 14px",
             display: "flex",
             flexDirection: "column",
             gap: 26,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#C17A3D", padding: "0 6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#5C9A3C", padding: "0 6px" }}>
             <BreworxMark size={26} />
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase" }}>
               Brewpoint
@@ -6842,7 +6842,7 @@ export default function TankLog() {
                     textAlign: "left",
                     background: isCurrent ? "#FFFFFF" : "none",
                     border: "none",
-                    borderLeft: `2px solid ${isCurrent ? "#C17A3D" : "transparent"}`,
+                    borderLeft: `2px solid ${isCurrent ? "#5C9A3C" : "transparent"}`,
                     borderRadius: 4,
                     padding: "10px 12px",
                     cursor: "pointer",
@@ -6852,7 +6852,7 @@ export default function TankLog() {
                     style={{
                       fontFamily: "'Oswald', sans-serif",
                       fontSize: 15,
-                      color: isCurrent ? "#2B2420" : "#6B5F4D",
+                      color: isCurrent ? "#2A3324" : "#5C6B54",
                       fontWeight: 500,
                     }}
                   >
@@ -6864,7 +6864,7 @@ export default function TankLog() {
           </div>
 
           <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "0 6px" }}>
-            <span style={{ color: "#6B5F4D", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>{user.name}</span>
+            <span style={{ color: "#5C6B54", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>{user.name}</span>
             <button
               onClick={() => supabase.auth.signOut()}
               style={{
@@ -6872,9 +6872,9 @@ export default function TankLog() {
                 alignItems: "center",
                 gap: 7,
                 background: "none",
-                border: "1px solid #E4D9C2",
+                border: "1px solid #DDE0C8",
                 borderRadius: 4,
-                color: "#6B5F4D",
+                color: "#5C6B54",
                 cursor: "pointer",
                 padding: "8px 10px",
                 fontFamily: "'Inter', sans-serif",
@@ -6903,7 +6903,7 @@ export default function TankLog() {
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    background: "#C17A3D",
+                    background: "#5C9A3C",
                     border: "none",
                     borderRadius: 5,
                     padding: "9px 14px",
@@ -6922,7 +6922,7 @@ export default function TankLog() {
             </div>
 
             {loadingData && (
-              <div style={{ color: "#A89A7D", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", padding: "20px 4px" }}>
+              <div style={{ color: "#9BA88A", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", padding: "20px 4px" }}>
                 Loading your brewery…
               </div>
             )}
@@ -6976,7 +6976,7 @@ export default function TankLog() {
 
             {!loadingData && view === "batches" && (
               <>
-                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                   Fermenting ({fermentingBatches.length})
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (conditioningBatches.length || inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
@@ -6984,7 +6984,7 @@ export default function TankLog() {
                     <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
                   ))}
                   {fermentingBatches.length === 0 && (
-                    <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                       No batches fermenting right now. Start one to get going.
                     </div>
                   )}
@@ -6992,7 +6992,7 @@ export default function TankLog() {
 
                 {conditioningBatches.length > 0 && (
                   <>
-                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                       Conditioning ({conditioningBatches.length})
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
@@ -7018,7 +7018,7 @@ export default function TankLog() {
 
                 {packagedBatches.length > 0 && (
                   <>
-                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                       Packaged ({packagedBatches.length})
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -7048,10 +7048,10 @@ export default function TankLog() {
                       style={{
                         flex: 1,
                         background: "#242B27",
-                        border: "1px solid #D8CAAA",
+                        border: "1px solid #C9D1AC",
                         borderRadius: 5,
                         padding: "9px",
-                        color: "#2B2420",
+                        color: "#2A3324",
                         fontFamily: "'Inter', sans-serif",
                         fontSize: 12.5,
                         cursor: "pointer",
@@ -7064,10 +7064,10 @@ export default function TankLog() {
                       style={{
                         flex: 1,
                         background: "none",
-                        border: "1px solid #E4D9C2",
+                        border: "1px solid #DDE0C8",
                         borderRadius: 5,
                         padding: "9px",
-                        color: "#6B5F4D",
+                        color: "#5C6B54",
                         fontFamily: "'Inter', sans-serif",
                         fontSize: 12.5,
                         cursor: "pointer",
@@ -7084,11 +7084,11 @@ export default function TankLog() {
                     style={{
                       width: "100%",
                       boxSizing: "border-box",
-                      background: "#F6EFE2",
-                      border: "1px solid #E4D9C2",
+                      background: "#F5F1E4",
+                      border: "1px solid #DDE0C8",
                       borderRadius: 5,
                       padding: "10px 12px",
-                      color: "#2B2420",
+                      color: "#2A3324",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: 14,
                       marginBottom: 16,
@@ -7101,11 +7101,11 @@ export default function TankLog() {
                         display: "flex",
                         alignItems: "center",
                         gap: 8,
-                        color: "#C17A3D",
+                        color: "#5C9A3C",
                         fontSize: 12.5,
                         marginBottom: 14,
-                        background: "#FCEFDC",
-                        border: "1px solid #E8C9A0",
+                        background: "#FCF1DC",
+                        border: "1px solid #E3D3A0",
                         borderRadius: 5,
                         padding: "8px 12px",
                       }}
@@ -7137,7 +7137,7 @@ export default function TankLog() {
                   ))}
 
                   {filtered.length === 0 && (
-                    <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                       {inventory.length === 0
                         ? "No ingredients tracked yet. Add grain, hops, or yeast to get started."
                         : `No ingredients match "${inventoryQuery}".`}
@@ -7153,7 +7153,7 @@ export default function TankLog() {
               const receivedPOs = purchaseOrders.filter((po) => po.status === "Received");
               return (
                 <>
-                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Draft ({draftPOs.length})
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (sentPOs.length || receivedPOs.length) ? 26 : 0 }}>
@@ -7161,7 +7161,7 @@ export default function TankLog() {
                       <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
                     ))}
                     {draftPOs.length === 0 && (
-                      <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+                      <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                         No drafts. Start a new order to build one out before sending it to a supplier.
                       </div>
                     )}
@@ -7169,7 +7169,7 @@ export default function TankLog() {
 
                   {sentPOs.length > 0 && (
                     <>
-                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                         Sent ({sentPOs.length})
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: receivedPOs.length ? 26 : 0 }}>
@@ -7182,7 +7182,7 @@ export default function TankLog() {
 
                   {receivedPOs.length > 0 && (
                     <>
-                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                         Received ({receivedPOs.length})
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -7194,7 +7194,7 @@ export default function TankLog() {
                   )}
 
                   {purchaseOrders.length === 0 && (
-                    <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                       No purchase orders yet. Create one to bring in ingredients with lot tracking.
                     </div>
                   )}
@@ -7219,11 +7219,11 @@ export default function TankLog() {
                     style={{
                       width: "100%",
                       boxSizing: "border-box",
-                      background: "#F6EFE2",
-                      border: "1px solid #E4D9C2",
+                      background: "#F5F1E4",
+                      border: "1px solid #DDE0C8",
                       borderRadius: 5,
                       padding: "10px 12px",
-                      color: "#2B2420",
+                      color: "#2A3324",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: 14,
                       marginBottom: 16,
@@ -7234,7 +7234,7 @@ export default function TankLog() {
                       <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
                     ))}
                     {filtered.length === 0 && (
-                      <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+                      <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                         {activeByFamily.length === 0
                           ? "No recipes yet. Add one so you can assign its ingredients when you start a brew."
                           : `No recipes match "${recipeQuery}".`}
@@ -7258,30 +7258,30 @@ export default function TankLog() {
                         alignItems: "center",
                         gap: 12,
                         background: "#FFFFFF",
-                        border: "1px solid #E4D9C2",
+                        border: "1px solid #DDE0C8",
                         borderRadius: 6,
                         padding: "14px 16px",
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2B2420", margin: 0 }}>
+                        <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2A3324", margin: 0 }}>
                           {t.name}
                         </h3>
-                        <div style={{ color: "#6B5F4D", fontSize: 12.5, marginTop: 3 }}>
+                        <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
                           {t.capacity}L{occupant ? ` · occupied by ${occupant.name}` : " · empty"}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                         <button
                           onClick={() => setEditTankTarget(t)}
-                          style={{ background: "none", border: "1px solid #E4D9C2", borderRadius: 4, color: "#6B5F4D", cursor: "pointer", padding: 6 }}
+                          style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, color: "#5C6B54", cursor: "pointer", padding: 6 }}
                         >
                           <Settings size={14} />
                         </button>
                         {!occupant && (
                           <button
                             onClick={() => setDeleteTankTarget(t)}
-                            style={{ background: "none", border: "1px solid #E8C9A0", borderRadius: 4, color: "#C17A3D", cursor: "pointer", padding: 6 }}
+                            style={{ background: "none", border: "1px solid #E3D3A0", borderRadius: 4, color: "#5C9A3C", cursor: "pointer", padding: 6 }}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -7291,7 +7291,7 @@ export default function TankLog() {
                   );
                 })}
                 {tanks.length === 0 && (
-                  <div style={{ color: "#A89A7D", fontSize: 13.5, padding: "20px 4px" }}>
+                  <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                     No tanks set up yet. Add your fermenters and conditioning vessels so batches can be assigned to them.
                   </div>
                 )}
@@ -7301,47 +7301,47 @@ export default function TankLog() {
             {!loadingData && view === "settings" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
                 <div>
-                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Account
                   </div>
-                  <div style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
-                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D" }}>Name</div>
-                      <div style={{ color: "#2B2420", fontSize: 15, marginTop: 2 }}>{user.name}</div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>Name</div>
+                      <div style={{ color: "#2A3324", fontSize: 15, marginTop: 2 }}>{user.name}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D" }}>Email</div>
-                      <div style={{ color: "#2B2420", fontSize: 15, marginTop: 2 }}>{user.email}</div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>Email</div>
+                      <div style={{ color: "#2A3324", fontSize: 15, marginTop: 2 }}>{user.email}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D" }}>Role</div>
-                      <div style={{ color: "#2B2420", fontSize: 15, marginTop: 2, textTransform: "capitalize" }}>{profile?.role || "—"}</div>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>Role</div>
+                      <div style={{ color: "#2A3324", fontSize: 15, marginTop: 2, textTransform: "capitalize" }}>{profile?.role || "—"}</div>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Company
                   </div>
-                  <div style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "14px 16px" }}>
-                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D" }}>Name</div>
-                    <div style={{ color: "#2B2420", fontSize: 17, fontFamily: "'Oswald', sans-serif", marginTop: 2 }}>{companyName || "—"}</div>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>Name</div>
+                    <div style={{ color: "#2A3324", fontSize: 17, fontFamily: "'Oswald', sans-serif", marginTop: 2 }}>{companyName || "—"}</div>
                   </div>
-                  <div style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "14px 16px", marginTop: 8 }}>
-                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginTop: 8 }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                       Logo (optional)
                     </div>
-                    <div style={{ color: "#6B5F4D", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                    <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
                       Upload a logo to show instead of your company name on the Home page. Leave this blank and
                       your company name stays as plain text.
                     </div>
                     {companyLogo && (
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                        <img src={companyLogo} alt="Company logo" style={{ width: 56, height: 56, objectFit: "contain", background: "#F6EFE2", borderRadius: 6, border: "1px solid #E4D9C2" }} />
+                        <img src={companyLogo} alt="Company logo" style={{ width: 56, height: 56, objectFit: "contain", background: "#F5F1E4", borderRadius: 6, border: "1px solid #DDE0C8" }} />
                         <button
                           onClick={removeCompanyLogo}
-                          style={{ background: "none", border: "none", color: "#C17A3D", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+                          style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
                         >
                           Remove logo
                         </button>
@@ -7354,10 +7354,10 @@ export default function TankLog() {
                         justifyContent: "center",
                         gap: 7,
                         background: "none",
-                        border: "1px dashed #D8CAAA",
+                        border: "1px dashed #C9D1AC",
                         borderRadius: 5,
                         padding: "9px",
-                        color: "#6B5F4D",
+                        color: "#5C6B54",
                         fontFamily: "'Inter', sans-serif",
                         fontSize: 12.5,
                         cursor: "pointer",
@@ -7375,31 +7375,31 @@ export default function TankLog() {
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Xero
                   </div>
-                  <div style={{ background: "#FFFFFF", border: "1px solid #E4D9C2", borderRadius: 6, padding: "14px 16px" }}>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
                     {xeroConnection ? (
                       <>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <CheckCircle2 size={15} color="#7FA35C" />
-                          <span style={{ color: "#2B2420", fontSize: 15, fontFamily: "'Oswald', sans-serif" }}>Connected</span>
+                          <CheckCircle2 size={15} color="#D9A441" />
+                          <span style={{ color: "#2A3324", fontSize: 15, fontFamily: "'Oswald', sans-serif" }}>Connected</span>
                         </div>
-                        <div style={{ color: "#6B5F4D", fontSize: 12.5, marginBottom: 12 }}>
+                        <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 12 }}>
                           {xeroConnection.tenant_name}
                           {xeroConnection.connected_by ? ` · connected by ${xeroConnection.connected_by}` : ""}
                         </div>
 
-                        <div style={{ borderTop: "1px solid #E4D9C2", paddingTop: 12, marginBottom: 12 }}>
-                          <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 8 }}>
+                        <div style={{ borderTop: "1px solid #DDE0C8", paddingTop: 12, marginBottom: 12 }}>
+                          <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
                             Stock sync
                           </div>
-                          <div style={{ color: "#6B5F4D", fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+                          <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
                             Packaging a batch pushes stock into Xero automatically. This needs one account chosen —
                             used only to net the entry to zero, it won't affect your books.
                           </div>
                           {xeroSettings?.adjustment_account_code ? (
-                            <div style={{ color: "#7FA35C", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ color: "#D9A441", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
                               <CheckCircle2 size={13} /> Using "{xeroSettings.adjustment_account_name}"
                             </div>
                           ) : xeroAccounts.length > 0 ? (
@@ -7412,11 +7412,11 @@ export default function TankLog() {
                               style={{
                                 width: "100%",
                                 boxSizing: "border-box",
-                                background: "#F6EFE2",
-                                border: "1px solid #E4D9C2",
+                                background: "#F5F1E4",
+                                border: "1px solid #DDE0C8",
                                 borderRadius: 4,
                                 padding: "9px 10px",
-                                color: "#2B2420",
+                                color: "#2A3324",
                                 fontFamily: "'Inter', sans-serif",
                                 fontSize: 13,
                               }}
@@ -7433,7 +7433,7 @@ export default function TankLog() {
                           ) : (
                             <button
                               onClick={loadXeroAccounts}
-                              style={{ background: "#242B27", border: "1px solid #D8CAAA", borderRadius: 5, padding: "9px", color: "#2B2420", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
+                              style={{ background: "#242B27", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
                             >
                               Load accounts from Xero
                             </button>
@@ -7442,14 +7442,14 @@ export default function TankLog() {
 
                         <button
                           onClick={disconnectXero}
-                          style={{ background: "none", border: "1px solid #E8C9A0", borderRadius: 5, padding: "9px", color: "#C17A3D", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
+                          style={{ background: "none", border: "1px solid #E3D3A0", borderRadius: 5, padding: "9px", color: "#5C9A3C", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
                         >
                           Disconnect
                         </button>
                       </>
                     ) : (
                       <>
-                        <div style={{ color: "#6B5F4D", fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
+                        <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 12, lineHeight: 1.5 }}>
                           Connect Brewpoint to your Xero account. This is step one of the integration — stock
                           syncing comes next once this connection is confirmed working.
                         </div>
@@ -7480,7 +7480,7 @@ export default function TankLog() {
                 </div>
 
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#A89A7D", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     <Users size={13} /> Team ({teammates.length})
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -7492,23 +7492,23 @@ export default function TankLog() {
                           justifyContent: "space-between",
                           alignItems: "center",
                           padding: "10px 14px",
-                          background: "#FBF6EC",
-                          border: "1px solid #EDE4D0",
+                          background: "#F8F5EA",
+                          border: "1px solid #EBE8D6",
                           borderRadius: 5,
                           fontSize: 13.5,
                         }}
                       >
-                        <span style={{ color: "#2B2420" }}>
+                        <span style={{ color: "#2A3324" }}>
                           {t.name}
                           {t.id === user.id ? " (you)" : ""}
                         </span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#A89A7D", fontSize: 11, textTransform: "uppercase" }}>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
                           {t.role}
                         </span>
                       </div>
                     ))}
                   </div>
-                  <div style={{ color: "#A89A7D", fontSize: 12, marginTop: 10 }}>
+                  <div style={{ color: "#9BA88A", fontSize: 12, marginTop: 10 }}>
                     Anyone who signs up using "{companyName}" as their company name joins this team automatically.
                   </div>
                 </div>
@@ -7521,10 +7521,10 @@ export default function TankLog() {
                     justifyContent: "center",
                     gap: 7,
                     background: "none",
-                    border: "1px solid #E8C9A0",
+                    border: "1px solid #E3D3A0",
                     borderRadius: 5,
                     padding: "12px",
-                    color: "#C17A3D",
+                    color: "#5C9A3C",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13.5,
                     cursor: "pointer",
