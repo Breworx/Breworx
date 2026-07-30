@@ -4043,6 +4043,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
 
 function PackagedView({ batches, onOpenBatch }) {
   const [query, setQuery] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
 
   const matchingBatches =
     query.trim().length === 0
@@ -4053,11 +4054,12 @@ function PackagedView({ batches, onOpenBatch }) {
             (b.name.toLowerCase().includes(query.trim().toLowerCase()) || String(b.number).includes(query.trim()))
         );
 
-  const months = packagingByMonth(batches);
+  const allMonths = packagingByMonth(batches);
+  const months = monthFilter ? allMonths.filter((m) => m.key === monthFilter) : allMonths;
 
   return (
     <div>
-      <div style={{ position: "relative", marginBottom: 24 }}>
+      <div style={{ position: "relative", marginBottom: 12 }}>
         <input
           type="text"
           value={query}
@@ -4076,6 +4078,35 @@ function PackagedView({ batches, onOpenBatch }) {
           }}
         />
       </div>
+
+      {query.trim().length === 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
+          <input
+            type="month"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            style={{
+              flex: 1,
+              boxSizing: "border-box",
+              background: "#16191A",
+              border: "1px solid #2C332F",
+              borderRadius: 5,
+              padding: "9px 12px",
+              color: "#EDE7D9",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13.5,
+            }}
+          />
+          {monthFilter && (
+            <button
+              onClick={() => setMonthFilter("")}
+              style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {query.trim().length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -4166,7 +4197,9 @@ function PackagedView({ batches, onOpenBatch }) {
           ))}
           {months.length === 0 && (
             <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-              Nothing packaged yet — once you log a packaging run on a batch, it'll show up here by month.
+              {monthFilter
+                ? `Nothing packaged in ${monthLabelFromKey(monthFilter)}.`
+                : "Nothing packaged yet — once you log a packaging run on a batch, it'll show up here by month."}
             </div>
           )}
         </div>
