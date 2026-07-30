@@ -232,3 +232,55 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     notes: record.notes || null,
   };
 }
+
+export function rowToSupplier(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    contactName: row.contact_name,
+    phone: row.phone,
+    email: row.email,
+    address: row.address,
+    notes: row.notes,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function supplierToRow(supplier, companyId) {
+  return {
+    id: supplier.id,
+    company_id: companyId,
+    name: supplier.name,
+    contact_name: supplier.contactName || null,
+    phone: supplier.phone || null,
+    email: supplier.email || null,
+    address: supplier.address || null,
+    notes: supplier.notes || null,
+  };
+}
+
+export function rowToSupplierDocument(row) {
+  return {
+    id: row.id,
+    supplierId: row.supplier_id,
+    name: row.name,
+    filePath: row.file_path,
+    fileType: row.file_type,
+    expiryDate: row.expiry_date,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at || null,
+  };
+}
+
+export function supplierDocumentToRow(doc, companyId) {
+  return {
+    id: doc.id,
+    company_id: companyId,
+    supplier_id: doc.supplierId,
+    name: doc.name,
+    file_path: doc.filePath,
+    file_type: doc.fileType || null,
+    expiry_date: doc.expiryDate || null,
+    uploaded_by: doc.uploadedBy || null,
+  };
+}
