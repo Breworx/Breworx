@@ -5818,7 +5818,7 @@ export function XeroCallback() {
           setStatus("success");
           setMessage(`Connected to ${data.tenantName}.`);
           setTimeout(() => {
-            window.location.href = "/";
+            window.location.href = "/?view=settings";
           }, 2000);
         }
       } catch {
@@ -5884,7 +5884,16 @@ export default function TankLog() {
     return hash.includes("type=signup") || hash.includes("type=invite") || hash.includes("type=email_change");
   });
   const [loadingData, setLoadingData] = useState(false);
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("view") === "settings" ? "settings" : "home";
+  });
+
+  useEffect(() => {
+    if (window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
   const [batches, setBatches] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
