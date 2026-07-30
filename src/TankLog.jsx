@@ -4621,6 +4621,7 @@ export default function TankLog() {
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
+  const [recipeQuery, setRecipeQuery] = useState("");
   const [adjustTarget, setAdjustTarget] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedPOId, setSelectedPOId] = useState(null);
@@ -5542,17 +5543,44 @@ export default function TankLog() {
 
             {!loadingData && view === "recipes" && (() => {
               const activeByFamily = activeRecipesByFamily(recipes);
+              const filtered = activeByFamily.filter(
+                (r) =>
+                  r.name.toLowerCase().includes(recipeQuery.trim().toLowerCase()) ||
+                  r.style.toLowerCase().includes(recipeQuery.trim().toLowerCase())
+              );
               return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {activeByFamily.map((r) => (
-                    <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
-                  ))}
-                  {activeByFamily.length === 0 && (
-                    <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-                      No recipes yet. Add one so you can assign its ingredients when you start a brew.
-                    </div>
-                  )}
-                </div>
+                <>
+                  <input
+                    type="text"
+                    value={recipeQuery}
+                    onChange={(e) => setRecipeQuery(e.target.value)}
+                    placeholder="Search recipes by name or style…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#16191A",
+                      border: "1px solid #2C332F",
+                      borderRadius: 5,
+                      padding: "10px 12px",
+                      color: "#EDE7D9",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                      marginBottom: 16,
+                    }}
+                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {filtered.map((r) => (
+                      <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
+                    ))}
+                    {filtered.length === 0 && (
+                      <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+                        {activeByFamily.length === 0
+                          ? "No recipes yet. Add one so you can assign its ingredients when you start a brew."
+                          : `No recipes match "${recipeQuery}".`}
+                      </div>
+                    )}
+                  </div>
+                </>
               );
             })()}
 
