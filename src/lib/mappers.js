@@ -206,6 +206,7 @@ export function rowToFoodSafetyRecord(row) {
     staffName: row.staff_name,
     topic: row.topic,
     trainedBy: row.trained_by,
+    staffConfirmed: row.staff_confirmed || false,
     notes: row.notes,
     createdAt: row.created_at || null,
   };
@@ -227,6 +228,7 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     staff_name: record.staffName || null,
     topic: record.topic || null,
     trained_by: record.trainedBy || null,
+    staff_confirmed: record.staffConfirmed || false,
     notes: record.notes || null,
   };
 }
