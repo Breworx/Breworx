@@ -1014,47 +1014,165 @@ function CalibrationModal({ onClose, onSave }) {
   );
 }
 
-function TrainingModal({ onClose, onSave }) {
+function TrainingModal({ onClose, onSave, existingRecords }) {
   const [staffName, setStaffName] = useState("");
-  const [topic, setTopic] = useState(TRAINING_TOPICS[0]);
+  const [staffFocused, setStaffFocused] = useState(false);
   const [trainedBy, setTrainedBy] = useState("");
   const [date, setDate] = useState(today());
+  const [checkedTopics, setCheckedTopics] = useState(() => new Set());
 
-  const submit = () => {
-    if (!staffName.trim()) return;
-    onSave({
-      category: "training",
-      date,
-      staffName: staffName.trim(),
-      topic,
-      trainedBy: trainedBy.trim(),
+  const knownStaff = [...new Set(existingRecords.filter((r) => r.category === "training" && r.staffName).map((r) => r.staffName))];
+  const staffMatches = staffName.trim().length === 0 ? knownStaff : knownStaff.filter((n) => n.toLowerCase().includes(staffName.trim().toLowerCase()));
+
+  const alreadyDoneTopics = new Set(
+    existingRecords.filter((r) => r.category === "training" && r.staffName === staffName.trim()).map((r) => r.topic)
+  );
+
+  const toggleTopic = (topic) =>
+    setCheckedTopics((prev) => {
+      const next = new Set(prev);
+      if (next.has(topic)) next.delete(topic);
+      else next.add(topic);
+      return next;
     });
+
+  const submit = async () => {
+    if (!staffName.trim() || checkedTopics.size === 0) return;
+    for (const topic of checkedTopics) {
+      await onSave({ category: "training", date, staffName: staffName.trim(), topic, trainedBy: trainedBy.trim() });
+    }
     onClose();
   };
 
   return (
     <Modal title="Log staff training" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <TextField label="Staff member" value={staffName} onChange={setStaffName} />
-        <SelectField label="Topic" value={topic} onChange={setTopic} options={TRAINING_TOPICS} />
+        <div style={{ position: "relative" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591" }}>Staff member</span>
+            <input
+              type="text"
+              value={staffName}
+              onChange={(e) => {
+                setStaffName(e.target.value);
+                setCheckedTopics(new Set());
+              }}
+              onFocus={() => setStaffFocused(true)}
+              onBlur={() => setTimeout(() => setStaffFocused(false), 150)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#16191A",
+                border: "1px solid #2C332F",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#EDE7D9",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            />
+          </label>
+          {staffFocused && staffMatches.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                marginTop: 4,
+                maxHeight: 160,
+                overflowY: "auto",
+                background: "#1B1F1D",
+                border: "1px solid #2C332F",
+                borderRadius: 6,
+                zIndex: 20,
+              }}
+            >
+              {staffMatches.map((n) => (
+                <button
+                  key={n}
+                  onMouseDown={() => {
+                    setStaffName(n);
+                    setStaffFocused(false);
+                  }}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 10px", color: "#EDE7D9", fontSize: 13, cursor: "pointer" }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <TextField label="Trained by" value={trainedBy} onChange={setTrainedBy} />
         <TextField label="Date" type="date" value={date} onChange={setDate} />
+
+        <div>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 8 }}>
+            Tick every topic completed today
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {TRAINING_TOPICS.map((topic) => {
+              const done = alreadyDoneTopics.has(topic);
+              const checked = checkedTopics.has(topic);
+              return (
+                <button
+                  key={topic}
+                  onClick={() => toggleTopic(topic)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: "#1B1F1D",
+                    border: "1px solid #262C29",
+                    borderRadius: 5,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      border: `1.5px solid ${checked ? "#7FA35C" : "#3A413D"}`,
+                      background: checked ? "#7FA35C" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {checked && <CheckCircle2 size={13} color="#16191A" />}
+                  </div>
+                  <span style={{ color: "#EDE7D9", flex: 1 }}>{topic}</span>
+                  {done && !checked && (
+                    <span style={{ color: "#5C6B63", fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace" }}>done before</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <button
           onClick={submit}
+          disabled={!staffName.trim() || checkedTopics.size === 0}
           style={{
-            background: "#C17A3D",
+            background: staffName.trim() && checkedTopics.size > 0 ? "#C17A3D" : "#3A2A22",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: staffName.trim() && checkedTopics.size > 0 ? "#16191A" : "#8A6A5A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: staffName.trim() && checkedTopics.size > 0 ? "pointer" : "default",
           }}
         >
-          Save training record
+          Save {checkedTopics.size > 0 ? `${checkedTopics.size} training record${checkedTopics.size !== 1 ? "s" : ""}` : "training record"}
         </button>
       </div>
     </Modal>
@@ -4602,6 +4720,9 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
 }
 
 function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote }) {
+  const [query, setQuery] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
+
   const categoryLabel = {
     checklist: "Checklist",
     calibration: "Calibration",
@@ -4618,6 +4739,28 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     recall: "#C17A3D",
     incident: "#C17A3D",
   };
+
+  const recordText = (r) =>
+    [
+      categoryLabel[r.category],
+      r.staffName,
+      r.topic,
+      r.trainedBy,
+      r.equipmentName,
+      r.result,
+      r.notes,
+      r.userName,
+      ...(r.items ? r.items.map((i) => i.label) : []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+  const filteredRecords = records.filter((r) => {
+    if (monthFilter && !r.date.startsWith(monthFilter)) return false;
+    if (query.trim() && !recordText(r).includes(query.trim().toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div>
@@ -4666,10 +4809,57 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
       </div>
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
-        History ({records.length})
+        History ({filteredRecords.length})
+      </div>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search records (staff name, topic, equipment, notes…)"
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          background: "#16191A",
+          border: "1px solid #2C332F",
+          borderRadius: 5,
+          padding: "10px 12px",
+          color: "#EDE7D9",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 14,
+          marginBottom: 8,
+        }}
+      />
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A9591", display: "block", marginBottom: 5 }}>
+        Search by date
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <input
+          type="month"
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+          style={{
+            flex: 1,
+            boxSizing: "border-box",
+            background: "#16191A",
+            border: "1px solid #2C332F",
+            borderRadius: 5,
+            padding: "9px 12px",
+            color: "#EDE7D9",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13.5,
+          }}
+        />
+        {monthFilter && (
+          <button
+            onClick={() => setMonthFilter("")}
+            style={{ background: "none", border: "none", color: "#8A9591", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: "0 4px" }}
+          >
+            Clear
+          </button>
+        )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {records.map((r) => {
+        {filteredRecords.map((r) => {
           const checkedCount = r.items ? r.items.filter((i) => i.checked).length : 0;
           return (
             <div
@@ -4698,9 +4888,11 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
             </div>
           );
         })}
-        {records.length === 0 && (
+        {filteredRecords.length === 0 && (
           <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
-            No food safety records yet — complete a checklist above to get started.
+            {records.length === 0
+              ? "No food safety records yet — complete a checklist above to get started."
+              : "Nothing matches your search."}
           </div>
         )}
       </div>
@@ -6725,7 +6917,7 @@ export default function TankLog() {
         <CalibrationModal onClose={() => setShowCalibrationModal(false)} onSave={addFoodSafetyRecord} />
       )}
       {showTrainingModal && (
-        <TrainingModal onClose={() => setShowTrainingModal(false)} onSave={addFoodSafetyRecord} />
+        <TrainingModal onClose={() => setShowTrainingModal(false)} onSave={addFoodSafetyRecord} existingRecords={foodSafetyRecords} />
       )}
       {activeNoteModal && (
         <FoodSafetyNoteModal
