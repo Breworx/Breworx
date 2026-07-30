@@ -240,6 +240,16 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 
+// Scrolls a just-focused field into view after a short delay — long enough
+// for the iOS on-screen keyboard to finish sliding up, so the field doesn't
+// end up hidden behind it inside a scrollable modal.
+const scrollFieldIntoView = (e) => {
+  const el = e.target;
+  setTimeout(() => {
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, 300);
+};
+
 // --- Recipe calculation engine ---------------------------------------------
 // Formulas adapted to metric units (kg, L, g) from the standard brewing
 // references: Tinseth (IBU), Morey (SRM), and the common gravity-points model
@@ -2824,7 +2834,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
                   border: "none",
                   color: "#5C6B54",
                   cursor: "pointer",
-                  padding: 4,
+                  padding: 8,
                 }}
               >
                 <Trash2 size={14} />
@@ -3549,7 +3559,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                   border: "none",
                   color: "#5C6B54",
                   cursor: "pointer",
-                  padding: 4,
+                  padding: 8,
                 }}
               >
                 <Trash2 size={14} />
@@ -3877,7 +3887,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                   <button
                     onClick={() => removeScheduleStep(s.id)}
                     aria-label="Remove schedule step"
-                    style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: "0 0 9px" }}
+                    style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: "0 6px 9px" }}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -3994,11 +4004,16 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
     </div>
   );
 
+  const requestClose = () => {
+    if (name.trim().length > 0 && !window.confirm("Discard this recipe? Your entries won't be saved.")) return;
+    onClose();
+  };
+
   if (standalone) {
     return (
       <div style={{ maxWidth: 640 }}>
         <button
-          onClick={onClose}
+          onClick={requestClose}
           style={{
             display: "flex",
             alignItems: "center",
@@ -4024,7 +4039,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
   }
 
   return (
-    <Modal title={editingRecipe ? `Save new version — ${editingRecipe.name}` : "New recipe"} onClose={onClose}>
+    <Modal title={editingRecipe ? `Save new version — ${editingRecipe.name}` : "New recipe"} onClose={requestClose}>
       {content}
     </Modal>
   );
@@ -4399,7 +4414,10 @@ function NumberField({ label, value, onChange, step = "any", suffix }) {
           step={step}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={(e) => e.target.select()}
+          onFocus={(e) => {
+            e.target.select();
+            scrollFieldIntoView(e);
+          }}
           style={{
             width: "100%",
             boxSizing: "border-box",
@@ -4428,6 +4446,7 @@ function TextField({ label, value, onChange, type = "text" }) {
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={scrollFieldIntoView}
         style={{
           width: "100%",
           boxSizing: "border-box",
@@ -4482,7 +4501,7 @@ function Modal({ title, onClose, children }) {
           <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>
             {title}
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 4 }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
             <X size={20} />
           </button>
         </div>
@@ -4621,8 +4640,13 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     onClose();
   };
 
+  const requestClose = () => {
+    if (name.trim().length > 0 && !window.confirm("Discard this batch? Your entries won't be saved.")) return;
+    onClose();
+  };
+
   return (
-    <Modal title="New Batch" onClose={onClose}>
+    <Modal title="New Batch" onClose={requestClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {tanks.length > 0 && (
           <div>
@@ -4785,7 +4809,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                           <button
                             onClick={() => removeSplitRow(row.id)}
                             aria-label="Remove tank"
-                            style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", flexShrink: 0 }}
+                            style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8, flexShrink: 0 }}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -5056,7 +5080,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     <button
                       onClick={() => removeBatchIngredientRow(ing.id)}
                       aria-label="Remove ingredient"
-                      style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: "6px 0 0", flexShrink: 0 }}
+                      style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: "6px 8px 0", flexShrink: 0 }}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -5776,7 +5800,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     <button
                       onClick={() => onDeletePackagingEvent(batch.id, e.id)}
                       aria-label="Delete packaging run"
-                      style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 0, flexShrink: 0 }}
+                      style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 6, flexShrink: 0 }}
                     >
                       <Trash2 size={13} />
                     </button>
@@ -6007,7 +6031,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               <button
                 onClick={() => onDeleteReading(batch.id, r.id)}
                 aria-label="Delete reading"
-                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 0, marginLeft: "auto", flexShrink: 0 }}
+                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 6, marginLeft: "auto", flexShrink: 0 }}
               >
                 <Trash2 size={13} />
               </button>
@@ -7623,6 +7647,32 @@ function EmptyState({ icon: Icon, title, subtitle }) {
   );
 }
 
+function OfflineBanner() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 90,
+        background: "#2A1E16",
+        borderBottom: "1px solid #E3D3A0",
+        padding: "8px 16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+      }}
+    >
+      <AlertTriangle size={14} color="#E3B04A" />
+      <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+        You're offline — changes won't save until you're back online.
+      </span>
+    </div>
+  );
+}
+
 function ToastStack({ toasts, onDismiss }) {
   if (toasts.length === 0) return null;
   return (
@@ -7705,6 +7755,17 @@ export default function TankLog() {
   });
   const [loadingData, setLoadingData] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" && !navigator.onLine);
+  useEffect(() => {
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
   const showToast = (type, message, action) => {
     const id = uid();
     setToasts((prev) => [...prev, { id, type, message, action }]);
@@ -8773,6 +8834,7 @@ export default function TankLog() {
         button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
 
+      {isOffline && <OfflineBanner />}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       <div style={{ display: "flex", minHeight: "100vh" }}>
