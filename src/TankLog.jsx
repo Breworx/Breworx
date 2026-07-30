@@ -722,7 +722,7 @@ function BatchCard({ batch, onOpen }) {
         width: "100%",
         transition: "border-color 0.15s",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
       <Tank batch={batch} />
@@ -758,7 +758,7 @@ function BatchCard({ batch, onOpen }) {
         <div style={{ color: "#5C6B54", fontSize: 13, marginTop: 2 }}>
           {batch.style}{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : ""}
         </div>
-        <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#B8C0BC" }}>
+        <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#5C6B54" }}>
           <span>SG {latest.gravity.toFixed(3)}</span>
           <span>{latest.temp}°C</span>
           <span>{days}d</span>
@@ -804,7 +804,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
         alignItems: "center",
         gap: 14,
         background: "#FFFFFF",
-        border: `1px solid ${low ? "#6B4A2F" : "#DDE0C8"}`,
+        border: `1px solid ${low ? "#E3D3A0" : "#DDE0C8"}`,
         borderRadius: 6,
         padding: "13px 16px",
       }}
@@ -858,7 +858,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             width: 28,
             height: 28,
             borderRadius: 4,
-            background: "#242B27",
+            background: "#EBE8D6",
             border: "1px solid #C9D1AC",
             color: "#2A3324",
             cursor: "pointer",
@@ -887,7 +887,7 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             width: 28,
             height: 28,
             borderRadius: 4,
-            background: "#242B27",
+            background: "#EBE8D6",
             border: "1px solid #C9D1AC",
             color: "#2A3324",
             cursor: "pointer",
@@ -1553,7 +1553,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
         <button
           onClick={() => onAdjust(item.id, -step)}
           aria-label={`Remove ${step} ${item.unit}`}
-          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          style={{ width: 36, height: 36, borderRadius: 6, background: "#EBE8D6", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <Minus size={16} />
         </button>
@@ -1566,7 +1566,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
         <button
           onClick={() => onAdjust(item.id, step)}
           aria-label={`Add ${step} ${item.unit}`}
-          style={{ width: 36, height: 36, borderRadius: 6, background: "#242B27", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          style={{ width: 36, height: 36, borderRadius: 6, background: "#EBE8D6", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <Plus size={16} />
         </button>
@@ -2063,7 +2063,7 @@ function POCard({ po, onOpen }) {
         textAlign: "left",
         width: "100%",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
       <div style={{ minWidth: 0 }}>
@@ -2445,7 +2445,7 @@ function RecipeCard({ recipe, onOpen }) {
         textAlign: "left",
         width: "100%",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4A5650")}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
       <div style={{ minWidth: 0 }}>
@@ -2965,7 +2965,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
               letterSpacing: "0.06em",
               textTransform: "uppercase",
               color: "#D9A441",
-              border: "1px solid #33452C",
+              border: "1px solid #E3D3A0",
               borderRadius: 3,
               padding: "3px 7px",
             }}
@@ -3024,7 +3024,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
                 alignItems: "center",
                 padding: "10px 12px",
                 background: "#F8F5EA",
-                border: `1px solid ${short ? "#6B4A2F" : "#EBE8D6"}`,
+                border: `1px solid ${short ? "#E3D3A0" : "#EBE8D6"}`,
                 borderRadius: 5,
                 fontSize: 13,
               }}
@@ -3472,7 +3472,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                       justifyContent: "center",
                       gap: 7,
                       width: "100%",
-                      background: "#242B27",
+                      background: "#EBE8D6",
                       border: "1px solid #C9D1AC",
                       borderRadius: 5,
                       padding: "9px",
@@ -3548,7 +3548,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                               flexShrink: 0,
                               boxSizing: "border-box",
                               background: "#FFFFFF",
-                              border: `1px solid ${overCapacity ? "#6B4A2F" : "#DDE0C8"}`,
+                              border: `1px solid ${overCapacity ? "#E3D3A0" : "#DDE0C8"}`,
                               borderRadius: 4,
                               padding: "8px 8px",
                               color: overCapacity ? "#5C9A3C" : "#2A3324",
@@ -3824,7 +3824,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                         flexShrink: 0,
                         boxSizing: "border-box",
                         background: "#F5F1E4",
-                        border: `1px solid ${short ? "#6B4A2F" : "#DDE0C8"}`,
+                        border: `1px solid ${short ? "#E3D3A0" : "#DDE0C8"}`,
                         borderRadius: 4,
                         padding: "8px 6px",
                         color: short ? "#5C9A3C" : "#2A3324",
@@ -4495,7 +4495,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     alignItems: "center",
                     justifyContent: "center",
                     gap: 6,
-                    background: "#242B27",
+                    background: "#EBE8D6",
                     border: "1px solid #C9D1AC",
                     borderRadius: 5,
                     padding: "10px",
@@ -4538,7 +4538,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             alignItems: "center",
             justifyContent: "center",
             gap: 7,
-            background: "#242B27",
+            background: "#EBE8D6",
             border: "1px solid #C9D1AC",
             borderRadius: 5,
             padding: "11px",
@@ -5196,7 +5196,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
 }
 
 const secondaryBtnStyle = {
-  background: "#242B27",
+  background: "#EBE8D6",
   border: "1px solid #C9D1AC",
   borderRadius: 5,
   padding: "10px",
@@ -5672,8 +5672,8 @@ function EmailConfirmedScreen({ onContinue }) {
             width: 44,
             height: 44,
             borderRadius: "50%",
-            background: "#1A2318",
-            border: "1px solid #33452C",
+            background: "#F8F5EA",
+            border: "1px solid #E3D3A0",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -5839,7 +5839,7 @@ function AuthScreen() {
             </div>
           )}
           {info && !error && (
-            <div style={{ color: "#D9A441", fontSize: 12.5, background: "#1A2318", border: "1px solid #33452C", borderRadius: 5, padding: "8px 12px" }}>
+            <div style={{ color: "#D9A441", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px" }}>
               {info}
             </div>
           )}
@@ -7047,7 +7047,7 @@ export default function TankLog() {
                       onClick={() => setShowStockTake(true)}
                       style={{
                         flex: 1,
-                        background: "#242B27",
+                        background: "#EBE8D6",
                         border: "1px solid #C9D1AC",
                         borderRadius: 5,
                         padding: "9px",
@@ -7433,7 +7433,7 @@ export default function TankLog() {
                           ) : (
                             <button
                               onClick={loadXeroAccounts}
-                              style={{ background: "#242B27", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
+                              style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
                             >
                               Load accounts from Xero
                             </button>
@@ -7538,7 +7538,7 @@ export default function TankLog() {
                   style={{
                     background: "none",
                     border: "none",
-                    color: "#6B4A2F",
+                    color: "#E3D3A0",
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 12.5,
                     cursor: "pointer",
