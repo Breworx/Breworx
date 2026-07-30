@@ -16,6 +16,8 @@ import {
   tankToRow,
   rowToStockTake,
   stockTakeToRow,
+  rowToFoodSafetyRecord,
+  foodSafetyRecordToRow,
 } from "./lib/mappers";
 
 const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
@@ -420,6 +422,60 @@ function parseBeerXML(xmlText) {
 
   return { name, style, volume, og, fg, ingredients, schedule };
 }
+
+// Checklist items drawn from the actual MPI National Programme 3 (Dec 2025)
+// guidance — the "Do" requirements for the cards relevant to a brewery.
+const FOOD_SAFETY_CHECKLISTS = {
+  daily: {
+    label: "Daily — cleaning & hygiene",
+    frequency: "daily",
+    items: [
+      "Food contact surfaces and equipment cleaned",
+      "Equipment sanitised after cleaning",
+      "Cleaning equipment (brooms, mops, cloths) clean and in good condition",
+      "Rubbish removed and bins/rubbish areas clean",
+      "Handwashing station stocked (soap, paper towels/dryer)",
+      "All staff wearing clean clothing/aprons before handling ingredients or product",
+      "No staff working while sick (vomiting, diarrhoea, jaundice in last 48 hrs)",
+      "Any cuts or sores fully covered",
+    ],
+  },
+  weekly: {
+    label: "Weekly — pests & storage",
+    frequency: "weekly",
+    items: [
+      "Checked for signs of pests (droppings, dead insects, damage, full traps)",
+      "Pest traps checked and reset if needed",
+      "Any pest activity found has been actioned (cleaned, affected stock disposed of)",
+      "Storage areas clean and tidy",
+      "Cleaning chemicals and maintenance compounds stored away from ingredients/product",
+      "Stock rotation checked — nothing past its use-by/best-before date",
+    ],
+  },
+  monthly: {
+    label: "Monthly — maintenance & self-check",
+    frequency: "monthly",
+    items: [
+      "Premises checked for deterioration (cracks, holes, leaks) and fixed as needed",
+      "Equipment serviced and in good working order",
+      "pH meters and thermometers calibrated and up to date",
+      "Staff training records reviewed and up to date",
+      "Reviewed that procedures are being followed and are effective",
+      "Reviewed any incidents ('something went wrong') and confirmed corrective action taken",
+    ],
+  },
+};
+
+const TRAINING_TOPICS = [
+  "Hand washing & personal hygiene",
+  "Cleaning and sanitising",
+  "Sourcing, receiving and tracing food",
+  "Fermentation / pH monitoring to keep product safe",
+  "Allergen awareness",
+  "Taking action when something goes wrong",
+  "Recall procedure",
+  "Other",
+];
 
 const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
 
@@ -827,6 +883,217 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function FoodSafetyChecklistModal({ template, onClose, onSave }) {
+  const [checked, setChecked] = useState(() => template.items.map(() => false));
+  const [notes, setNotes] = useState("");
+
+  const toggle = (i) => setChecked((prev) => prev.map((c, idx) => (idx === i ? !c : c)));
+  const allChecked = checked.every(Boolean);
+
+  const submit = () => {
+    onSave({
+      category: "checklist",
+      frequency: template.frequency,
+      date: today(),
+      items: template.items.map((label, i) => ({ label, checked: checked[i] })),
+      notes: notes.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title={template.label} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {template.items.map((label, i) => (
+            <button
+              key={i}
+              onClick={() => toggle(i)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px",
+                background: "#1B1F1D",
+                border: "1px solid #262C29",
+                borderRadius: 5,
+                fontSize: 13,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 4,
+                  border: `1.5px solid ${checked[i] ? "#7FA35C" : "#3A413D"}`,
+                  background: checked[i] ? "#7FA35C" : "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {checked[i] && <CheckCircle2 size={13} color="#16191A" />}
+              </div>
+              <span style={{ color: "#EDE7D9" }}>{label}</span>
+            </button>
+          ))}
+        </div>
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
+        <button
+          onClick={submit}
+          style={{
+            background: allChecked ? "#C17A3D" : "#3A2A22",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: allChecked ? "#16191A" : "#C17A3D",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          {allChecked ? "Complete checklist" : "Save (some items unchecked)"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function CalibrationModal({ onClose, onSave }) {
+  const [equipmentName, setEquipmentName] = useState("");
+  const [date, setDate] = useState(today());
+  const [result, setResult] = useState("");
+  const [dueDate, setDueDate] = useState("");
+
+  const submit = () => {
+    if (!equipmentName.trim()) return;
+    onSave({
+      category: "calibration",
+      date,
+      equipmentName: equipmentName.trim(),
+      result: result.trim(),
+      dueDate: dueDate || null,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log calibration" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Equipment (e.g. pH meter, probe thermometer)" value={equipmentName} onChange={setEquipmentName} />
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <TextField label="Result (e.g. Pass — reads 7.01 in pH7 buffer)" value={result} onChange={setResult} />
+        <TextField label="Next calibration due (optional)" type="date" value={dueDate} onChange={setDueDate} />
+        <button
+          onClick={submit}
+          style={{
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save calibration record
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function TrainingModal({ onClose, onSave }) {
+  const [staffName, setStaffName] = useState("");
+  const [topic, setTopic] = useState(TRAINING_TOPICS[0]);
+  const [trainedBy, setTrainedBy] = useState("");
+  const [date, setDate] = useState(today());
+
+  const submit = () => {
+    if (!staffName.trim()) return;
+    onSave({
+      category: "training",
+      date,
+      staffName: staffName.trim(),
+      topic,
+      trainedBy: trainedBy.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log staff training" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Staff member" value={staffName} onChange={setStaffName} />
+        <SelectField label="Topic" value={topic} onChange={setTopic} options={TRAINING_TOPICS} />
+        <TextField label="Trained by" value={trainedBy} onChange={setTrainedBy} />
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <button
+          onClick={submit}
+          style={{
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save training record
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function FoodSafetyNoteModal({ category, title, onClose, onSave }) {
+  const [date, setDate] = useState(today());
+  const [notes, setNotes] = useState("");
+
+  const submit = () => {
+    onSave({ category, date, notes: notes.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <TextField label="Notes" value={notes} onChange={setNotes} />
+        <button
+          onClick={submit}
+          style={{
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save record
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -4233,6 +4500,124 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
   );
 }
 
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote }) {
+  const categoryLabel = {
+    checklist: "Checklist",
+    calibration: "Calibration",
+    training: "Training",
+    water: "Water test",
+    recall: "Mock recall",
+    incident: "Incident",
+  };
+  const categoryColor = {
+    checklist: "#7FA35C",
+    calibration: "#D4A24C",
+    training: "#8A9591",
+    water: "#5C6B63",
+    recall: "#C17A3D",
+    incident: "#C17A3D",
+  };
+
+  return (
+    <div>
+      <div style={{ color: "#8A9591", fontSize: 12.5, lineHeight: 1.5, marginBottom: 18 }}>
+        Based on MPI's National Programme 3 (Dec 2025) — the food safety framework for breweries under the Food Act
+        2014. Records are kept here for at least 4 years, as required.
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        Checklists
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
+        {Object.entries(FOOD_SAFETY_CHECKLISTS).map(([key, template]) => (
+          <button
+            key={key}
+            onClick={() => onStartChecklist(template)}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "12px 14px",
+              background: "#1F2422",
+              border: "1px solid #2C332F",
+              borderRadius: 6,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <span style={{ color: "#EDE7D9", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{template.label}</span>
+            <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{template.items.length} items</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        Other records
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 22 }}>
+        <button onClick={onStartCalibration} style={secondaryBtnStyle}>Log calibration</button>
+        <button onClick={onStartTraining} style={secondaryBtnStyle}>Log training</button>
+        <button onClick={() => onStartNote("water", "Log water test")} style={secondaryBtnStyle}>Water test</button>
+        <button onClick={() => onStartNote("recall", "Log mock recall")} style={secondaryBtnStyle}>Mock recall</button>
+        <button onClick={() => onStartNote("incident", "Something went wrong")} style={{ ...secondaryBtnStyle, gridColumn: "1 / -1" }}>
+          Something went wrong
+        </button>
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+        History ({records.length})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {records.map((r) => {
+          const checkedCount = r.items ? r.items.filter((i) => i.checked).length : 0;
+          return (
+            <div
+              key={r.id}
+              style={{
+                padding: "10px 12px",
+                background: "#1B1F1D",
+                border: "1px solid #262C29",
+                borderRadius: 5,
+                fontSize: 12.5,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: categoryColor[r.category] || "#8A9591", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {categoryLabel[r.category] || r.category}
+                </span>
+                <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{r.date}</span>
+              </div>
+              <div style={{ color: "#EDE7D9", marginTop: 4 }}>
+                {r.category === "checklist" && `${checkedCount}/${r.items.length} items checked${r.notes ? ` — ${r.notes}` : ""}`}
+                {r.category === "calibration" && `${r.equipmentName} — ${r.result || "no result noted"}`}
+                {r.category === "training" && `${r.staffName} — ${r.topic}${r.trainedBy ? ` (by ${r.trainedBy})` : ""}`}
+                {(r.category === "water" || r.category === "recall" || r.category === "incident") && (r.notes || "—")}
+              </div>
+              <div style={{ color: "#5C6B63", fontSize: 11, marginTop: 3 }}>{r.userName}</div>
+            </div>
+          );
+        })}
+        {records.length === 0 && (
+          <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+            No food safety records yet — complete a checklist above to get started.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const secondaryBtnStyle = {
+  background: "#242B27",
+  border: "1px solid #3A413D",
+  borderRadius: 5,
+  padding: "10px",
+  color: "#EDE7D9",
+  fontFamily: "'Inter', sans-serif",
+  fontSize: 12.5,
+  cursor: "pointer",
+};
+
 function PackagedView({ batches, onOpenBatch }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
@@ -4868,6 +5253,11 @@ export default function TankLog() {
   const [tanks, setTanks] = useState([]);
   const [showAddTank, setShowAddTank] = useState(false);
   const [stockTakes, setStockTakes] = useState([]);
+  const [foodSafetyRecords, setFoodSafetyRecords] = useState([]);
+  const [activeChecklistTemplate, setActiveChecklistTemplate] = useState(null);
+  const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+  const [showTrainingModal, setShowTrainingModal] = useState(false);
+  const [activeNoteModal, setActiveNoteModal] = useState(null);
   const [showStockTake, setShowStockTake] = useState(false);
   const [showStockTakeHistory, setShowStockTakeHistory] = useState(false);
   const [viewingStockTake, setViewingStockTake] = useState(null);
@@ -4914,6 +5304,7 @@ export default function TankLog() {
       setTeammates([]);
       setTanks([]);
       setStockTakes([]);
+      setFoodSafetyRecords([]);
       return;
     }
     let cancelled = false;
@@ -4941,7 +5332,7 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -4950,6 +5341,7 @@ export default function TankLog() {
         supabase.from("recipes").select("*").order("created_at", { ascending: false }),
         supabase.from("tanks").select("*").order("created_at", { ascending: false }),
         supabase.from("stock_takes").select("*").order("created_at", { ascending: false }),
+        supabase.from("food_safety_records").select("*").order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -4971,6 +5363,8 @@ export default function TankLog() {
       else setTanks(tanksRes.data.map(rowToTank));
       if (stockTakesRes.error) console.error(stockTakesRes.error);
       else setStockTakes(stockTakesRes.data.map(rowToStockTake));
+      if (foodSafetyRes.error) console.error(foodSafetyRes.error);
+      else setFoodSafetyRecords(foodSafetyRes.data.map(rowToFoodSafetyRecord));
       setLoadingData(false);
     })();
     return () => {
@@ -5191,6 +5585,17 @@ export default function TankLog() {
       .single();
     if (stError) return console.error(stError);
     setStockTakes((prev) => [rowToStockTake(data), ...prev]);
+  };
+
+  const addFoodSafetyRecord = async (record) => {
+    const payload = { id: uid(), userName: user.name, ...record };
+    const { data, error } = await supabase
+      .from("food_safety_records")
+      .insert(foodSafetyRecordToRow(payload, user.id, profile.companyId))
+      .select()
+      .single();
+    if (error) return console.error(error);
+    setFoodSafetyRecords((prev) => [rowToFoodSafetyRecord(data), ...prev]);
   };
 
   const addTank = async (t) => {
@@ -5488,6 +5893,7 @@ export default function TankLog() {
               ["orders", "Purchase Orders"],
               ["recipes", "Recipes"],
               ["brewery", "Brewery"],
+              ["foodsafety", "Food Safety"],
               ["settings", "Settings"],
             ].map(([key, label]) => {
               const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem;
@@ -5553,7 +5959,7 @@ export default function TankLog() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && (
                 <button
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
@@ -5619,6 +6025,16 @@ export default function TankLog() {
                   setSelectedId(id);
                   setView("batches");
                 }}
+              />
+            )}
+
+            {!loadingData && view === "foodsafety" && (
+              <FoodSafetyView
+                records={foodSafetyRecords}
+                onStartChecklist={setActiveChecklistTemplate}
+                onStartCalibration={() => setShowCalibrationModal(true)}
+                onStartTraining={() => setShowTrainingModal(true)}
+                onStartNote={(category, title) => setActiveNoteModal({ category, title })}
               />
             )}
 
@@ -6180,6 +6596,27 @@ export default function TankLog() {
       )}
       {viewingStockTake && (
         <StockTakeReportModal stockTake={viewingStockTake} onClose={() => setViewingStockTake(null)} />
+      )}
+      {activeChecklistTemplate && (
+        <FoodSafetyChecklistModal
+          template={activeChecklistTemplate}
+          onClose={() => setActiveChecklistTemplate(null)}
+          onSave={addFoodSafetyRecord}
+        />
+      )}
+      {showCalibrationModal && (
+        <CalibrationModal onClose={() => setShowCalibrationModal(false)} onSave={addFoodSafetyRecord} />
+      )}
+      {showTrainingModal && (
+        <TrainingModal onClose={() => setShowTrainingModal(false)} onSave={addFoodSafetyRecord} />
+      )}
+      {activeNoteModal && (
+        <FoodSafetyNoteModal
+          category={activeNoteModal.category}
+          title={activeNoteModal.title}
+          onClose={() => setActiveNoteModal(null)}
+          onSave={addFoodSafetyRecord}
+        />
       )}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
       {showAddRecipe && (
