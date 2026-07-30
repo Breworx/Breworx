@@ -5937,7 +5937,8 @@ export function XeroCallback() {
           setStatus("error");
           const baseMsg = typeof data.error === "string" ? data.error : "Something went wrong connecting to Xero.";
           const detailStr = data.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : "";
-          setMessage(detailStr ? `${baseMsg} — ${detailStr}` : baseMsg);
+          const debugStr = data.debug ? JSON.stringify(data.debug) : "";
+          setMessage([baseMsg, detailStr, debugStr].filter(Boolean).join(" — "));
         } else {
           setStatus("success");
           setMessage(`Connected to ${data.tenantName}.`);
