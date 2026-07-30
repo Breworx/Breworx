@@ -136,6 +136,9 @@ export function rowToRecipe(row) {
     version: row.version || 1,
     createdAt: row.created_at || null,
     isActive: row.is_active !== false,
+    efficiency: row.efficiency ?? 72,
+    boilTime: row.boil_time ?? 60,
+    waterChemistry: row.water_chemistry || null,
   };
 }
 
@@ -154,6 +157,9 @@ export function recipeToRow(recipe, userId, companyId) {
     is_active: recipe.isActive !== false,
     family_id: recipe.familyId,
     version: recipe.version || 1,
+    efficiency: recipe.efficiency ?? 72,
+    boil_time: recipe.boilTime ?? 60,
+    water_chemistry: recipe.waterChemistry || null,
   };
 }
 
