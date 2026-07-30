@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText } from "lucide-react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -199,6 +199,38 @@ function BreworxMark({ size = 24 }) {
       <circle cx="35" cy="10" r="3" fill="#D4A24C" />
       <circle cx="35" cy="10" r="6" stroke="#D4A24C" strokeWidth="1.1" opacity="0.5" />
     </svg>
+  );
+}
+
+function BrewpointLoadingMark({ size = 52, label }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 0", gap: 14 }}>
+      <style>{`
+        @keyframes bp-mark-spin { to { transform: rotate(360deg); } }
+        @keyframes bp-mark-pulse { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.55; } }
+      `}</style>
+      <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <defs>
+          <clipPath id="bp-loading-clip">
+            <path d="M9 5 H29 V23 L19 34 L9 23 Z" />
+          </clipPath>
+        </defs>
+        <path d="M9 5 H29 V23 L19 34 L9 23 Z" stroke="#5C9A3C" strokeWidth="2.2" strokeLinejoin="round" />
+        <g clipPath="url(#bp-loading-clip)">
+          <rect x="7" y="16" width="24" height="20" fill="#5C9A3C" style={{ animation: "bp-mark-pulse 1.6s ease-in-out infinite" }} />
+        </g>
+        <g style={{ transformOrigin: "19px 19px", animation: "bp-mark-spin 1.3s linear infinite" }}>
+          <line x1="29" y1="16" x2="35" y2="10" stroke="#D4A24C" strokeWidth="1.8" strokeLinecap="round" />
+          <circle cx="35" cy="10" r="3" fill="#D4A24C" />
+          <circle cx="35" cy="10" r="6" stroke="#D4A24C" strokeWidth="1.1" opacity="0.5" />
+        </g>
+      </svg>
+      {label && (
+        <span style={{ color: "#9BA88A", fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.04em" }}>
+          {label}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -1687,10 +1719,13 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
   const [email, setEmail] = useState(supplier ? supplier.email || "" : "");
   const [address, setAddress] = useState(supplier ? supplier.address || "" : "");
   const [notes, setNotes] = useState(supplier ? supplier.notes || "" : "");
+  const [saving, setSaving] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim()) return;
-    onSave({ name: name.trim(), contactName: contactName.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), notes: notes.trim() });
+    setSaving(true);
+    await onSave({ name: name.trim(), contactName: contactName.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), notes: notes.trim() });
+    setSaving(false);
     onClose();
   };
 
@@ -1705,20 +1740,21 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
         <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
         <button
           onClick={submit}
+          disabled={saving}
           style={{
-            background: "#5C9A3C",
+            background: saving ? "#E8E4D4" : "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: saving ? "#A3AC94" : "#16191A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: saving ? "default" : "pointer",
           }}
         >
-          {supplier ? "Save changes" : "Add supplier"}
+          {saving ? "Saving…" : supplier ? "Save changes" : "Add supplier"}
         </button>
       </div>
     </Modal>
@@ -2216,6 +2252,7 @@ function SelectField({ label, value, onChange, options }) {
 function AddTankModal({ onClose, onAdd }) {
   const [countInput, setCountInput] = useState("1");
   const [rows, setRows] = useState([{ id: uid(), name: "Tank 1", capacity: 20, type: "Fermenter" }]);
+  const [saving, setSaving] = useState(false);
 
   const applyCount = (raw) => {
     setCountInput(raw);
@@ -2236,10 +2273,12 @@ function AddTankModal({ onClose, onAdd }) {
 
   const updateRow = (id, patch) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
-  const submit = () => {
+  const submit = async () => {
     const clean = rows.filter((r) => r.name.trim());
     if (clean.length === 0) return;
-    clean.forEach((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0, type: r.type || "Fermenter" }));
+    setSaving(true);
+    await Promise.all(clean.map((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0, type: r.type || "Fermenter" })));
+    setSaving(false);
     onClose();
   };
 
@@ -2283,21 +2322,22 @@ function AddTankModal({ onClose, onAdd }) {
 
         <button
           onClick={submit}
+          disabled={saving}
           style={{
             marginTop: 8,
-            background: "#5C9A3C",
+            background: saving ? "#E8E4D4" : "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: saving ? "#A3AC94" : "#16191A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: saving ? "default" : "pointer",
           }}
         >
-          Add {rows.length} tank{rows.length !== 1 ? "s" : ""}
+          {saving ? "Saving…" : `Add ${rows.length} tank${rows.length !== 1 ? "s" : ""}`}
         </button>
       </div>
     </Modal>
@@ -2565,10 +2605,12 @@ function AddInventoryModal({ onClose, onAdd, suppliers }) {
   const [unit, setUnit] = useState("kg");
   const [threshold, setThreshold] = useState(5);
   const [supplierId, setSupplierId] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim()) return;
-    onAdd({
+    setSaving(true);
+    await onAdd({
       id: uid(),
       name: name.trim(),
       category,
@@ -2577,6 +2619,7 @@ function AddInventoryModal({ onClose, onAdd, suppliers }) {
       threshold: Number(threshold) || 0,
       supplierId: supplierId || null,
     });
+    setSaving(false);
     onClose();
   };
 
@@ -2619,21 +2662,22 @@ function AddInventoryModal({ onClose, onAdd, suppliers }) {
         </label>
         <button
           onClick={submit}
+          disabled={saving}
           style={{
             marginTop: 8,
-            background: "#5C9A3C",
+            background: saving ? "#E8E4D4" : "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: saving ? "#A3AC94" : "#16191A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: saving ? "default" : "pointer",
           }}
         >
-          Add to inventory
+          {saving ? "Saving…" : "Add to inventory"}
         </button>
       </div>
     </Modal>
@@ -2723,11 +2767,13 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
     setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
 
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+  const [saving, setSaving] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const cleanLines = lines.filter((l) => l.name.trim());
     if (!supplier.trim() || cleanLines.length === 0) return;
-    onAdd({
+    setSaving(true);
+    await onAdd({
       id: uid(),
       poNumber: nextPONumber,
       supplier: supplier.trim(),
@@ -2742,6 +2788,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
       }),
       deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
     });
+    setSaving(false);
     onClose();
   };
 
@@ -2841,21 +2888,22 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
 
         <button
           onClick={submit}
+          disabled={saving}
           style={{
             marginTop: 4,
-            background: "#5C9A3C",
+            background: saving ? "#E8E4D4" : "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: saving ? "#A3AC94" : "#16191A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: saving ? "default" : "pointer",
           }}
         >
-          Create {nextPONumber}
+          {saving ? "Saving…" : `Create ${nextPONumber}`}
         </button>
       </div>
     </Modal>
@@ -3146,6 +3194,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
     editingRecipe?.waterChemistry?.saltGrams || { gypsum: "", calciumChloride: "", epsomSalt: "", tableSalt: "", bakingSoda: "", chalk: "" }
   );
   const [showWaterChemistry, setShowWaterChemistry] = useState(!!editingRecipe?.waterChemistry);
+  const [saving, setSaving] = useState(null);
 
   const addScheduleStep = () =>
     setSchedule((prev) => [...prev, { id: uid(), use: "Boil", time: 60, name: "", amount: 0, unit: "g" }]);
@@ -3217,13 +3266,14 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
   const targetProfile = WATER_PROFILE_PRESETS[targetWaterPreset];
   const sulfateChlorideRatio = resultingWater.cl > 0 ? (resultingWater.so4 / resultingWater.cl).toFixed(1) : "—";
 
-  const submit = () => {
+  const submit = async () => {
     const clean = ingredients.filter((l) => l.name.trim());
     if (!name.trim() || clean.length === 0) return;
     const cleanSchedule = schedule
       .filter((s) => s.name.trim())
       .map((s) => ({ ...s, name: s.name.trim(), amount: Number(s.amount) || 0, label: buildScheduleLabel(s.use, s.time, s.name.trim()) }));
-    onAdd({
+    setSaving("save");
+    await onAdd({
       id: uid(),
       name: name.trim(),
       style: style.trim() || "Unspecified",
@@ -3237,6 +3287,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       boilTime: Number(boilTime) || 60,
       waterChemistry: showWaterChemistry ? { sourceWater, targetPreset: targetWaterPreset, saltGrams } : null,
     });
+    setSaving(null);
     onClose();
   };
 
@@ -3881,31 +3932,33 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
 
         <button
           onClick={submit}
+          disabled={!!saving}
           style={{
             marginTop: 4,
-            background: "#5C9A3C",
+            background: saving ? "#E8E4D4" : "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: saving ? "#A3AC94" : "#16191A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: saving ? "default" : "pointer",
           }}
         >
-          {editingRecipe ? "Save as new version" : "Save recipe"}
+          {saving === "save" ? "Saving…" : editingRecipe ? "Save as new version" : "Save recipe"}
         </button>
         {onSaveAndBrew && (
           <button
-            onClick={() => {
+            onClick={async () => {
               const clean = ingredients.filter((l) => l.name.trim());
               if (!name.trim() || clean.length === 0) return;
               const cleanSchedule = schedule
                 .filter((s) => s.name.trim())
                 .map((s) => ({ ...s, name: s.name.trim(), amount: Number(s.amount) || 0, label: buildScheduleLabel(s.use, s.time, s.name.trim()) }));
-              onSaveAndBrew({
+              setSaving("brew");
+              await onSaveAndBrew({
                 id: uid(),
                 name: name.trim(),
                 style: style.trim() || "Unspecified",
@@ -3919,21 +3972,23 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                 boilTime: Number(boilTime) || 60,
                 waterChemistry: showWaterChemistry ? { sourceWater, targetPreset: targetWaterPreset, saltGrams } : null,
               });
+              setSaving(null);
             }}
+            disabled={!!saving}
             style={{
               background: "none",
               border: "1px solid #5C9A3C",
               borderRadius: 5,
               padding: "12px",
-              color: "#5C9A3C",
+              color: saving ? "#A3AC94" : "#5C9A3C",
               fontFamily: "'Oswald', sans-serif",
               fontWeight: 500,
               fontSize: 15,
               letterSpacing: "0.03em",
-              cursor: "pointer",
+              cursor: saving ? "default" : "pointer",
             }}
           >
-            Save & brew this recipe
+            {saving === "brew" ? "Saving…" : "Save & brew this recipe"}
           </button>
         )}
     </div>
@@ -4340,6 +4395,7 @@ function NumberField({ label, value, onChange, step = "any", suffix }) {
       <div style={{ position: "relative" }}>
         <input
           type="number"
+          inputMode="decimal"
           step={step}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -4400,9 +4456,14 @@ function Modal({ title, onClose, children }) {
         justifyContent: "center",
         zIndex: 50,
         padding: "24px 18px",
+        animation: "bp-modal-overlay-in 160ms ease-out",
       }}
       onClick={onClose}
     >
+      <style>{`
+        @keyframes bp-modal-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes bp-modal-panel-in { from { opacity: 0; transform: scale(0.96) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -4414,6 +4475,7 @@ function Modal({ title, onClose, children }) {
           maxHeight: "88vh",
           overflowY: "auto",
           padding: "20px 22px 26px",
+          animation: "bp-modal-panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
@@ -4500,7 +4562,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       ? searchableRecipes
       : searchableRecipes.filter((r) => r.name.toLowerCase().includes(name.trim().toLowerCase()));
 
-  const submit = () => {
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
     if (!name.trim()) return;
     const tank = tanks.find((t) => t.id === tankId) || null;
     if (!splitMode && tank && tankIsOccupied(batches, tank.id)) return;
@@ -4528,7 +4592,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         done: false,
         doneAt: null,
       }));
-    onAdd({
+    setSaving(true);
+    await onAdd({
       id: uid(),
       number: nextNumber,
       name: name.trim(),
@@ -4552,6 +4617,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       schedule: [...mashSteps, ...batchSchedule],
       readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
     });
+    setSaving(false);
     onClose();
   };
 
@@ -5029,21 +5095,22 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         </div>
         <button
           onClick={submit}
+          disabled={saving}
           style={{
             marginTop: 8,
-            background: "#5C9A3C",
+            background: saving ? "#E8E4D4" : "#5C9A3C",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: saving ? "#A3AC94" : "#16191A",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: saving ? "default" : "pointer",
           }}
         >
-          Start batch #{nextNumber}
+          {saving ? "Saving…" : `Start batch #${nextNumber}`}
         </button>
       </div>
     </Modal>
@@ -7591,14 +7658,39 @@ function ToastStack({ toasts, onDismiss }) {
             padding: "11px 14px",
             boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
             cursor: "pointer",
+            animation: "bp-toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
+          <style>{`@keyframes bp-toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
           {t.type === "error" ? (
             <AlertTriangle size={16} color="#E3B04A" style={{ flexShrink: 0 }} />
           ) : (
             <CheckCircle2 size={16} color="#8FCB6C" style={{ flexShrink: 0 }} />
           )}
-          <span style={{ color: "#F5F1E4", fontSize: 13, fontFamily: "'Inter', sans-serif", lineHeight: 1.4 }}>{t.message}</span>
+          <span style={{ color: "#F5F1E4", fontSize: 13, fontFamily: "'Inter', sans-serif", lineHeight: 1.4, flex: 1 }}>{t.message}</span>
+          {t.action && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                t.action.onClick();
+                onDismiss(t.id);
+              }}
+              style={{
+                background: "none",
+                border: "1px solid #C9D1AC",
+                borderRadius: 5,
+                padding: "5px 10px",
+                color: "#F5F1E4",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 12.5,
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -7613,12 +7705,14 @@ export default function TankLog() {
   });
   const [loadingData, setLoadingData] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const showToast = (type, message) => {
+  const showToast = (type, message, action) => {
     const id = uid();
-    setToasts((prev) => [...prev, { id, type, message }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
+    setToasts((prev) => [...prev, { id, type, message, action }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), action ? 6000 : 4500);
+    return id;
   };
   const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
+  const pendingDeletesRef = useRef({});
   const [view, setView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("view") === "settings" ? "settings" : "home";
@@ -7895,52 +7989,69 @@ export default function TankLog() {
   const deleteBatch = async (id) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const batchTag = `${batch.name} (#${batch.number})`;
 
-    let nextInventory = [...inventory];
-    for (let i = 0; i < nextInventory.length; i++) {
-      const item = nextInventory[i];
-      const usageEntries = (item.history || []).filter((h) => h.type === "batch" && h.note === batchTag);
-      if (usageEntries.length === 0) continue;
-
-      let qty = item.qty;
-      let lots = [...(item.lots || [])];
-      const restoreHistory = [];
-
-      usageEntries.forEach((entry) => {
-        const restoreQty = Math.round(-entry.delta * 100) / 100;
-        qty = Math.round((qty + restoreQty) * 100) / 100;
-        (entry.lots || []).forEach((used) => {
-          lots = lots.map((lot) =>
-            lot.lotNumber === used.lotNumber
-              ? { ...lot, remainingQty: Math.min(lot.qty, Math.round(((lot.remainingQty ?? lot.qty) + used.qty) * 100) / 100) }
-              : lot
-          );
-        });
-        restoreHistory.push({
-          id: uid(),
-          date: new Date().toISOString(),
-          user: user.name,
-          type: "restored",
-          delta: restoreQty,
-          note: `Batch deleted — ${batchTag}`,
-        });
-      });
-
-      const newHistory = [...(item.history || []), ...restoreHistory];
-      const { error: invError } = await supabase.from("inventory_items").update({ qty, lots, history: newHistory }).eq("id", item.id);
-      if (invError) {
-        showToast("error", "Something didn't save — check your connection and try again.");
-        continue;
-      }
-      nextInventory[i] = { ...item, qty, lots, history: newHistory };
-    }
-    setInventory(nextInventory);
-
-    const { error } = await supabase.from("batches").delete().eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    // Remove from view immediately; the real inventory rollback + DB delete
+    // are delayed so Undo can cancel them before anything actually happens.
     setBatches((prev) => prev.filter((b) => b.id !== id));
     setSelectedId(null);
+
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[id];
+      const batchTag = `${batch.name} (#${batch.number})`;
+
+      let nextInventory = [...inventory];
+      for (let i = 0; i < nextInventory.length; i++) {
+        const item = nextInventory[i];
+        const usageEntries = (item.history || []).filter((h) => h.type === "batch" && h.note === batchTag);
+        if (usageEntries.length === 0) continue;
+
+        let qty = item.qty;
+        let lots = [...(item.lots || [])];
+        const restoreHistory = [];
+
+        usageEntries.forEach((entry) => {
+          const restoreQty = Math.round(-entry.delta * 100) / 100;
+          qty = Math.round((qty + restoreQty) * 100) / 100;
+          (entry.lots || []).forEach((used) => {
+            lots = lots.map((lot) =>
+              lot.lotNumber === used.lotNumber
+                ? { ...lot, remainingQty: Math.min(lot.qty, Math.round(((lot.remainingQty ?? lot.qty) + used.qty) * 100) / 100) }
+                : lot
+            );
+          });
+          restoreHistory.push({
+            id: uid(),
+            date: new Date().toISOString(),
+            user: user.name,
+            type: "restored",
+            delta: restoreQty,
+            note: `Batch deleted — ${batchTag}`,
+          });
+        });
+
+        const newHistory = [...(item.history || []), ...restoreHistory];
+        const { error: invError } = await supabase.from("inventory_items").update({ qty, lots, history: newHistory }).eq("id", item.id);
+        if (invError) {
+          showToast("error", "Something didn't save — check your connection and try again.");
+          continue;
+        }
+        nextInventory[i] = { ...item, qty, lots, history: newHistory };
+      }
+      setInventory(nextInventory);
+
+      const { error } = await supabase.from("batches").delete().eq("id", id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+
+    pendingDeletesRef.current[id] = timeoutId;
+    showToast("success", `${batch.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[id]);
+        delete pendingDeletesRef.current[id];
+        setBatches((prev) => [batch, ...prev]);
+      },
+    });
   };
 
   const addRecipe = async (r) => {
@@ -8015,10 +8126,24 @@ export default function TankLog() {
   };
 
   const deleteRecipe = async (id) => {
-    const { error } = await supabase.from("recipes").delete().eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
     setRecipes((prev) => prev.filter((r) => r.id !== id));
     setSelectedRecipeId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[id];
+      const { error } = await supabase.from("recipes").delete().eq("id", id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[id] = timeoutId;
+    showToast("success", `${recipe.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[id]);
+        delete pendingDeletesRef.current[id];
+        setRecipes((prev) => [recipe, ...prev]);
+      },
+    });
   };
 
   const uploadCompanyLogo = (file) => {
@@ -8240,10 +8365,26 @@ export default function TankLog() {
   };
 
   const deleteSupplier = async (id) => {
-    const { error } = await supabase.from("suppliers").delete().eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    const supplier = suppliers.find((s) => s.id === id);
+    if (!supplier) return;
+    const relatedDocs = supplierDocuments.filter((d) => d.supplierId === id);
     setSuppliers((prev) => prev.filter((s) => s.id !== id));
     setSupplierDocuments((prev) => prev.filter((d) => d.supplierId !== id));
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[id];
+      const { error } = await supabase.from("suppliers").delete().eq("id", id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[id] = timeoutId;
+    showToast("success", `${supplier.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[id]);
+        delete pendingDeletesRef.current[id];
+        setSuppliers((prev) => [...prev, supplier].sort((a, b) => a.name.localeCompare(b.name)));
+        setSupplierDocuments((prev) => [...prev, ...relatedDocs]);
+      },
+    });
   };
 
   const uploadSupplierDocument = async (supplierId, file, name, expiryDate) => {
@@ -8306,9 +8447,23 @@ export default function TankLog() {
   };
 
   const deleteTank = async (id) => {
-    const { error } = await supabase.from("tanks").delete().eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    const tank = tanks.find((t) => t.id === id);
+    if (!tank) return;
     setTanks((prev) => prev.filter((t) => t.id !== id));
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[id];
+      const { error } = await supabase.from("tanks").delete().eq("id", id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[id] = timeoutId;
+    showToast("success", `${tank.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[id]);
+        delete pendingDeletesRef.current[id];
+        setTanks((prev) => [tank, ...prev]);
+      },
+    });
   };
 
   const assignBatchTank = async (batchId, tank) => {
@@ -8593,7 +8748,7 @@ export default function TankLog() {
   if (session === undefined) {
     return (
       <div style={{ minHeight: "100vh", background: "#F5F1E4", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>Loading…</span>
+        <BrewpointLoadingMark />
       </div>
     );
   }
@@ -8641,17 +8796,17 @@ export default function TankLog() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {[
-              ["home", "Home"],
-              ["batches", "Fermentation"],
-              ["packaged", "Packaged"],
-              ["inventory", "Inventory"],
-              ["orders", "Purchase Orders"],
-              ["recipes", "Recipes"],
-              ["recipeBuilder", "Recipe Builder"],
-              ["brewery", "Brewery"],
-              ["foodsafety", "Food Safety"],
-              ["settings", "Settings"],
-            ].map(([key, label]) => {
+              ["home", "Home", Home],
+              ["batches", "Fermentation", Droplet],
+              ["packaged", "Packaged", Package],
+              ["inventory", "Inventory", LayoutGrid],
+              ["orders", "Purchase Orders", Truck],
+              ["recipes", "Recipes", Beaker],
+              ["recipeBuilder", "Recipe Builder", FlaskConical],
+              ["brewery", "Brewery", Warehouse],
+              ["foodsafety", "Food Safety", CheckCircle2],
+              ["settings", "Settings", Settings],
+            ].map(([key, label, Icon]) => {
               const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem;
               return (
                 <button
@@ -8664,6 +8819,9 @@ export default function TankLog() {
                     setSelectedInventoryId(null);
                   }}
                   style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
                     textAlign: "left",
                     background: isCurrent ? "#FFFFFF" : "none",
                     border: "none",
@@ -8673,6 +8831,7 @@ export default function TankLog() {
                     cursor: "pointer",
                   }}
                 >
+                  <Icon size={16} color={isCurrent ? "#5C9A3C" : "#9BA88A"} style={{ flexShrink: 0 }} />
                   <span
                     style={{
                       fontFamily: "'Oswald', sans-serif",
@@ -8746,11 +8905,7 @@ export default function TankLog() {
               )}
             </div>
 
-            {loadingData && (
-              <div style={{ color: "#9BA88A", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", padding: "20px 4px" }}>
-                Loading your brewery…
-              </div>
-            )}
+            {loadingData && <BrewpointLoadingMark label="Loading your brewery…" />}
 
             {!loadingData && view === "home" && (
               <HomeView
