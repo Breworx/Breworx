@@ -28,6 +28,7 @@ export function rowToBatch(row) {
     packaging: row.packaging || null,
     schedule: row.schedule || [],
     diacetylTests: row.diacetyl_tests || [],
+    ingredientCost: row.ingredient_cost ?? 0,
   };
 }
 
@@ -59,6 +60,7 @@ export function batchToRow(batch, userId, companyId) {
     packaging: batch.packaging ?? null,
     schedule: batch.schedule || [],
     diacetyl_tests: batch.diacetylTests || [],
+    ingredient_cost: batch.ingredientCost ?? 0,
   };
 }
 
@@ -101,6 +103,7 @@ export function rowToPO(row) {
     receivedDate: row.received_date,
     status: row.status,
     lines: row.lines || [],
+    deliveryCost: row.delivery_cost ?? null,
   };
 }
 
@@ -115,6 +118,7 @@ export function poToRow(po, userId, companyId) {
     received_date: po.receivedDate ?? null,
     status: po.status,
     lines: po.lines || [],
+    delivery_cost: po.deliveryCost ?? null,
   };
 }
 
