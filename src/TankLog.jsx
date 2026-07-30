@@ -14,6 +14,8 @@ import {
   rowToProfile,
   rowToTank,
   tankToRow,
+  rowToStockTake,
+  stockTakeToRow,
 } from "./lib/mappers";
 
 const STAGES = ["Brewing", "Primary", "Secondary", "Conditioning", "Packaged"];
@@ -828,6 +830,196 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
   );
 }
 
+function StockTakeModal({ inventory, onClose, onComplete }) {
+  const [counts, setCounts] = useState(() => {
+    const init = {};
+    inventory.forEach((it) => (init[it.id] = String(it.qty)));
+    return init;
+  });
+
+  const updateCount = (id, val) => setCounts((prev) => ({ ...prev, [id]: val }));
+
+  const discrepancyCount = inventory.filter((it) => {
+    const counted = counts[it.id];
+    return counted !== "" && Math.round((Number(counted) - it.qty) * 100) / 100 !== 0;
+  }).length;
+
+  const submit = () => {
+    const lines = inventory.map((it) => {
+      const counted = counts[it.id] === "" ? it.qty : Number(counts[it.id]);
+      return {
+        itemId: it.id,
+        itemName: it.name,
+        unit: it.unit,
+        systemQty: it.qty,
+        countedQty: counted,
+        discrepancy: Math.round((counted - it.qty) * 100) / 100,
+      };
+    });
+    onComplete(lines);
+    onClose();
+  };
+
+  return (
+    <Modal title="Stock take" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 13, lineHeight: 1.5 }}>
+          Walk the brewery and enter what you actually count for each ingredient. Anything left unchanged is
+          assumed correct as-is.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {inventory.map((it) => {
+            const counted = counts[it.id];
+            const diff = counted === "" ? 0 : Math.round((Number(counted) - it.qty) * 100) / 100;
+            return (
+              <div key={it.id} style={{ background: "#16191A", border: `1px solid ${diff !== 0 ? "#4A3420" : "#2C332F"}`, borderRadius: 6, padding: "10px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ color: "#EDE7D9", fontSize: 13.5 }}>{it.name}</span>
+                  <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>
+                    system: {formatQty(it.qty, it.unit)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={counted}
+                    onChange={(e) => updateCount(it.id, e.target.value)}
+                    style={{
+                      flex: 1,
+                      boxSizing: "border-box",
+                      background: "#1F2422",
+                      border: "1px solid #2C332F",
+                      borderRadius: 4,
+                      padding: "8px 9px",
+                      color: "#EDE7D9",
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 13,
+                    }}
+                  />
+                  <span style={{ color: "#8A9591", fontSize: 12, width: 30, flexShrink: 0 }}>{it.unit}</span>
+                  {diff !== 0 && (
+                    <span style={{ color: diff > 0 ? "#7FA35C" : "#C17A3D", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, flexShrink: 0 }}>
+                      {diff > 0 ? "+" : ""}
+                      {diff}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {inventory.length === 0 && <div style={{ color: "#5C6B63", fontSize: 13 }}>No ingredients to count yet.</div>}
+        </div>
+        <button
+          onClick={submit}
+          style={{
+            background: "#C17A3D",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Complete stock take{discrepancyCount > 0 ? ` (${discrepancyCount} discrepanc${discrepancyCount !== 1 ? "ies" : "y"})` : ""}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function StockTakeHistoryModal({ stockTakes, onClose, onOpenReport }) {
+  return (
+    <Modal title="Stock take reports" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {stockTakes.map((st) => {
+          const discrepancies = st.lines.filter((l) => l.discrepancy !== 0).length;
+          return (
+            <button
+              key={st.id}
+              onClick={() => onOpenReport(st)}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "12px 14px",
+                background: "#1F2422",
+                border: "1px solid #2C332F",
+                borderRadius: 6,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div>
+                <div style={{ color: "#EDE7D9", fontSize: 14, fontFamily: "'Oswald', sans-serif", fontWeight: 500 }}>{st.date}</div>
+                <div style={{ color: "#8A9591", fontSize: 12, marginTop: 2 }}>
+                  {st.userName || "Unknown"} · {st.lines.length} item{st.lines.length !== 1 ? "s" : ""} checked
+                </div>
+              </div>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: discrepancies > 0 ? "#C17A3D" : "#7FA35C" }}>
+                {discrepancies > 0 ? `${discrepancies} off` : "all matched"}
+              </span>
+            </button>
+          );
+        })}
+        {stockTakes.length === 0 && (
+          <div style={{ color: "#5C6B63", fontSize: 13.5, padding: "20px 4px" }}>
+            No stock takes recorded yet.
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function StockTakeReportModal({ stockTake, onClose }) {
+  return (
+    <Modal title={`Stock take — ${stockTake.date}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 12.5 }}>Done by {stockTake.userName || "Unknown"}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {stockTake.lines.map((l) => (
+            <div
+              key={l.itemId}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "9px 12px",
+                background: "#1B1F1D",
+                border: `1px solid ${l.discrepancy !== 0 ? "#4A3420" : "#262C29"}`,
+                borderRadius: 5,
+                fontSize: 13,
+              }}
+            >
+              <span style={{ color: "#EDE7D9" }}>{l.itemName}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", fontSize: 12 }}>
+                {formatQty(l.systemQty, l.unit)} → {formatQty(l.countedQty, l.unit)}
+              </span>
+              <span
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 12,
+                  color: l.discrepancy === 0 ? "#5C6B63" : l.discrepancy > 0 ? "#7FA35C" : "#C17A3D",
+                  width: 50,
+                  textAlign: "right",
+                  flexShrink: 0,
+                }}
+              >
+                {l.discrepancy === 0 ? "match" : `${l.discrepancy > 0 ? "+" : ""}${l.discrepancy}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function AdjustInventoryModal({ item, onClose, onSave }) {
   const [delta, setDelta] = useState("");
   const [batchRef, setBatchRef] = useState("");
@@ -875,8 +1067,8 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
 
-  const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)" };
-  const typeColor = { batch: "#C17A3D", manual: "#8A9591", received: "#7FA35C", restored: "#7FA35C" };
+  const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)", stocktake: "Stock take correction" };
+  const typeColor = { batch: "#C17A3D", manual: "#8A9591", received: "#7FA35C", restored: "#7FA35C", stocktake: "#D4A24C" };
 
   return (
     <div>
@@ -4675,6 +4867,10 @@ export default function TankLog() {
   const [teammates, setTeammates] = useState([]);
   const [tanks, setTanks] = useState([]);
   const [showAddTank, setShowAddTank] = useState(false);
+  const [stockTakes, setStockTakes] = useState([]);
+  const [showStockTake, setShowStockTake] = useState(false);
+  const [showStockTakeHistory, setShowStockTakeHistory] = useState(false);
+  const [viewingStockTake, setViewingStockTake] = useState(null);
   const [editTankTarget, setEditTankTarget] = useState(null);
   const [deleteTankTarget, setDeleteTankTarget] = useState(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState(null);
@@ -4717,6 +4913,7 @@ export default function TankLog() {
       setCompanyLogo("");
       setTeammates([]);
       setTanks([]);
+      setStockTakes([]);
       return;
     }
     let cancelled = false;
@@ -4744,7 +4941,7 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, poRes, recipesRes, tanksRes, stockTakesRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -4752,6 +4949,7 @@ export default function TankLog() {
         supabase.from("purchase_orders").select("*").order("created_at", { ascending: false }),
         supabase.from("recipes").select("*").order("created_at", { ascending: false }),
         supabase.from("tanks").select("*").order("created_at", { ascending: false }),
+        supabase.from("stock_takes").select("*").order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -4771,6 +4969,8 @@ export default function TankLog() {
       else setRecipes(recipesRes.data.map(rowToRecipe));
       if (tanksRes.error) console.error(tanksRes.error);
       else setTanks(tanksRes.data.map(rowToTank));
+      if (stockTakesRes.error) console.error(stockTakesRes.error);
+      else setStockTakes(stockTakesRes.data.map(rowToStockTake));
       setLoadingData(false);
     })();
     return () => {
@@ -4954,6 +5154,43 @@ export default function TankLog() {
     const { error } = await supabase.from("companies").update({ logo_url: null }).eq("id", profile.companyId);
     if (error) return console.error(error);
     setCompanyLogo("");
+  };
+
+  const completeStockTake = async (lines) => {
+    const date = today();
+    let nextInventory = [...inventory];
+
+    for (const line of lines) {
+      if (line.discrepancy === 0) continue;
+      const idx = nextInventory.findIndex((it) => it.id === line.itemId);
+      if (idx < 0) continue;
+      const item = nextInventory[idx];
+      const historyEntry = {
+        id: uid(),
+        date: new Date().toISOString(),
+        user: user.name,
+        type: "stocktake",
+        delta: line.discrepancy,
+        note: `Stock take ${date}`,
+      };
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error } = await supabase.from("inventory_items").update({ qty: line.countedQty, history: newHistory }).eq("id", item.id);
+      if (error) {
+        console.error(error);
+        continue;
+      }
+      nextInventory[idx] = { ...item, qty: line.countedQty, history: newHistory };
+    }
+    setInventory(nextInventory);
+
+    const record = { id: uid(), date, userName: user.name, lines };
+    const { data, error: stError } = await supabase
+      .from("stock_takes")
+      .insert(stockTakeToRow(record, user.id, profile.companyId))
+      .select()
+      .single();
+    if (stError) return console.error(stError);
+    setStockTakes((prev) => [rowToStockTake(data), ...prev]);
   };
 
   const addTank = async (t) => {
@@ -5453,6 +5690,40 @@ export default function TankLog() {
 
               return (
                 <>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button
+                      onClick={() => setShowStockTake(true)}
+                      style={{
+                        flex: 1,
+                        background: "#242B27",
+                        border: "1px solid #3A413D",
+                        borderRadius: 5,
+                        padding: "9px",
+                        color: "#EDE7D9",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Start stock take
+                    </button>
+                    <button
+                      onClick={() => setShowStockTakeHistory(true)}
+                      style={{
+                        flex: 1,
+                        background: "none",
+                        border: "1px solid #2C332F",
+                        borderRadius: 5,
+                        padding: "9px",
+                        color: "#8A9591",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Past reports ({stockTakes.length})
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={inventoryQuery}
@@ -5894,6 +6165,22 @@ export default function TankLog() {
         />
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
+      {showStockTake && (
+        <StockTakeModal inventory={inventory} onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
+      )}
+      {showStockTakeHistory && (
+        <StockTakeHistoryModal
+          stockTakes={stockTakes}
+          onClose={() => setShowStockTakeHistory(false)}
+          onOpenReport={(st) => {
+            setViewingStockTake(st);
+            setShowStockTakeHistory(false);
+          }}
+        />
+      )}
+      {viewingStockTake && (
+        <StockTakeReportModal stockTake={viewingStockTake} onClose={() => setViewingStockTake(null)} />
+      )}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
       {showAddRecipe && (
         <AddRecipeModal
