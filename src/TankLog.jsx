@@ -215,14 +215,21 @@ const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a))
 // efficiency and hop utilization vary batch to batch.
 
 // OG from the grain bill. Each grain ingredient may carry a `potential`
-// field — gravity points per kg per litre at 100% efficiency (roughly 37
-// for a standard base malt, lower for specialty/crystal malts).
+// field — the standard points-per-pound-per-gallon (PPG) figure every
+// maltster publishes (roughly 37-38 for a standard base malt, lower for
+// specialty/crystal malts). Converted internally to metric.
 function calcOG(ingredients, batchVolumeL, efficiencyPct) {
   const grains = (ingredients || []).filter((i) => i.category === "Grain" && i.potential);
   if (grains.length === 0 || !batchVolumeL) return null;
-  const totalPoints = grains.reduce((sum, g) => sum + (Number(g.qty) || 0) * (Number(g.potential) || 0), 0);
+  // `potential` is entered as the standard points-per-pound-per-gallon (PPG)
+  // figure every maltster publishes (e.g. ~37-38 for a base malt) — convert
+  // grain weight to pounds and batch volume to gallons to use it correctly.
+  const kgToLb = 2.20462;
+  const lToGal = 0.264172;
+  const volumeGal = batchVolumeL * lToGal;
+  const totalPointsGal = grains.reduce((sum, g) => sum + (Number(g.qty) || 0) * kgToLb * (Number(g.potential) || 0), 0);
   const eff = (Number(efficiencyPct) || 100) / 100;
-  return 1 + (totalPoints * eff) / batchVolumeL / 1000;
+  return 1 + (totalPointsGal * eff) / volumeGal / 1000;
 }
 
 // SRM (colour) via the Morey equation, converted from kg/L to the
@@ -3646,7 +3653,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               {line.category === "Grain" && (
                 <>
                   <NumberField
-                    label="Potential (pts/kg/L, optional)"
+                    label="Potential (PPG, optional)"
                     value={line.potential ?? ""}
                     onChange={(v) => updateLine(line.id, { potential: v })}
                     step="1"
