@@ -304,3 +304,51 @@ export function supplierDocumentToRow(doc, companyId) {
     uploaded_by: doc.uploadedBy || null,
   };
 }
+
+export function rowToConsumable(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    qty: row.qty,
+    unit: row.unit,
+    threshold: row.threshold,
+    lots: row.lots || [],
+    history: row.history || [],
+    supplierId: row.supplier_id || null,
+  };
+}
+
+export function consumableToRow(item, userId, companyId) {
+  return {
+    id: item.id,
+    user_id: userId,
+    company_id: companyId,
+    name: item.name,
+    category: item.category,
+    qty: item.qty,
+    unit: item.unit,
+    threshold: item.threshold,
+    supplier_id: item.supplierId || null,
+    lots: item.lots || [],
+    history: item.history || [],
+  };
+}
+
+export function rowToPackageType(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    items: row.items || [],
+  };
+}
+
+export function packageTypeToRow(packageType, userId, companyId) {
+  return {
+    id: packageType.id,
+    user_id: userId,
+    company_id: companyId,
+    name: packageType.name,
+    items: packageType.items || [],
+  };
+}
