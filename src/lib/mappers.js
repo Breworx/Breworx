@@ -25,6 +25,7 @@ export function rowToBatch(row) {
     ingredients: row.ingredients || [],
     packaging: row.packaging || null,
     schedule: row.schedule || [],
+    diacetylTests: row.diacetyl_tests || [],
   };
 }
 
@@ -53,6 +54,7 @@ export function batchToRow(batch, userId, companyId) {
     ingredients: batch.ingredients || [],
     packaging: batch.packaging ?? null,
     schedule: batch.schedule || [],
+    diacetyl_tests: batch.diacetylTests || [],
   };
 }
 
@@ -161,6 +163,7 @@ export function rowToTank(row) {
     id: row.id,
     name: row.name,
     capacity: row.capacity,
+    type: row.type || "Fermenter",
   };
 }
 
@@ -170,6 +173,7 @@ export function tankToRow(tank, companyId) {
     company_id: companyId,
     name: tank.name,
     capacity: tank.capacity,
+    type: tank.type || "Fermenter",
   };
 }
 
