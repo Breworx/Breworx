@@ -2322,13 +2322,13 @@ function POCard({ po, onOpen }) {
 function AddPOModal({ onClose, onAdd, nextPONumber }) {
   const [supplier, setSupplier] = useState("");
   const [deliveryCost, setDeliveryCost] = useState("");
-  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costPerUnit: "" }]);
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
 
   const updateLine = (id, patch) =>
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
   const addLine = () =>
-    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costPerUnit: "" }]);
+    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
 
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
 
@@ -2342,7 +2342,12 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
       orderDate: today(),
       receivedDate: null,
       status: "Draft",
-      lines: cleanLines.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0, costPerUnit: l.costPerUnit === "" ? null : Number(l.costPerUnit) })),
+      lines: cleanLines.map((l) => {
+        const qty = Number(l.qty) || 0;
+        const raw = l.costInput === "" ? null : Number(l.costInput);
+        const costPerUnit = raw == null ? null : l.costMode === "total" ? (qty > 0 ? raw / qty : null) : raw;
+        return { id: l.id, name: l.name.trim(), category: l.category, qty, unit: l.unit, costPerUnit };
+      }),
       deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
     });
     onClose();
@@ -2389,7 +2394,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
             <div style={{ marginBottom: 10 }}>
               <TextField label={`Item ${i + 1}`} value={line.name} onChange={(v) => updateLine(line.id, { name: v })} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
               <SelectField
                 label="Category"
                 value={line.category}
@@ -2398,7 +2403,27 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
               />
               <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
               <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.1" suffix={line.unit} />
-              <NumberField label="Cost per unit (optional)" value={line.costPerUnit} onChange={(v) => updateLine(line.id, { costPerUnit: v })} step="0.01" />
+              <NumberField
+                label={line.costMode === "total" ? "Total cost for this line" : "Cost per unit (optional)"}
+                value={line.costInput}
+                onChange={(v) => updateLine(line.id, { costInput: v })}
+                step="0.01"
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <button
+                onClick={() => updateLine(line.id, { costMode: line.costMode === "total" ? "perUnit" : "total" })}
+                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+              >
+                {line.costMode === "total" ? "Switch to cost per unit instead" : "Know the total cost instead? Tap here"}
+              </button>
+              {line.costInput !== "" && Number(line.qty) > 0 && (
+                <span style={{ fontSize: 12, color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>
+                  {line.costMode === "total"
+                    ? `= $${(Number(line.costInput) / Number(line.qty)).toFixed(2)}/${line.unit}`
+                    : `= $${(Number(line.costInput) * Number(line.qty)).toFixed(2)} total`}
+                </span>
+              )}
             </div>
           </div>
         ))}
