@@ -4655,6 +4655,76 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
   );
 }
 
+function StaffTrainingRecordModal({ staffName, records, onClose }) {
+  const trainingRecords = records
+    .filter((r) => r.category === "training" && r.staffName === staffName)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const topicsCovered = [...new Set(trainingRecords.map((r) => r.topic))];
+  const outstandingTopics = TRAINING_TOPICS.filter((t) => t !== "Other" && !topicsCovered.includes(t));
+
+  return (
+    <Modal title={staffName} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#8A9591", fontSize: 12.5 }}>
+          {topicsCovered.length} of {TRAINING_TOPICS.length - 1} core topics covered
+        </div>
+
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>
+          Training received
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {trainingRecords.map((r) => (
+            <div
+              key={r.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+                padding: "9px 12px",
+                background: "#1B1F1D",
+                border: "1px solid #262C29",
+                borderRadius: 5,
+                fontSize: 13,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "#EDE7D9" }}>{r.topic}</div>
+                {r.trainedBy && <div style={{ color: "#5C6B63", fontSize: 11, marginTop: 2 }}>by {r.trainedBy}</div>}
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#8A9591", fontSize: 12 }}>{r.date}</div>
+                <div style={{ fontSize: 10.5, color: r.staffConfirmed ? "#7FA35C" : "#C17A3D", marginTop: 2 }}>
+                  {r.staffConfirmed ? "confirmed" : "not confirmed"}
+                </div>
+              </div>
+            </div>
+          ))}
+          {trainingRecords.length === 0 && (
+            <div style={{ color: "#5C6B63", fontSize: 13, padding: "8px 2px" }}>No training logged yet.</div>
+          )}
+        </div>
+
+        {outstandingTopics.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63" }}>
+              Not yet covered
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {outstandingTopics.map((t) => (
+                <div key={t} style={{ padding: "8px 12px", background: "#241D14", border: "1px solid #4A3420", borderRadius: 5, fontSize: 12.5, color: "#C17A3D" }}>
+                  {t}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function FoodSafetyDisclaimerModal({ onAccept }) {
   const [confirmed, setConfirmed] = useState(false);
 
@@ -4756,7 +4826,7 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote, onOpenStaff }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
 
@@ -4831,6 +4901,46 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
           </button>
         ))}
       </div>
+
+      {(() => {
+        const staffNames = [...new Set(records.filter((r) => r.category === "training" && r.staffName).map((r) => r.staffName))].sort();
+        if (staffNames.length === 0) return null;
+        return (
+          <>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
+              Staff training
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+              {staffNames.map((name) => {
+                const staffRecords = records.filter((r) => r.category === "training" && r.staffName === name);
+                const topicsCovered = new Set(staffRecords.map((r) => r.topic)).size;
+                return (
+                  <button
+                    key={name}
+                    onClick={() => onOpenStaff(name)}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "10px 14px",
+                      background: "#1F2422",
+                      border: "1px solid #2C332F",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span style={{ color: "#EDE7D9", fontSize: 13.5 }}>{name}</span>
+                    <span style={{ color: "#5C6B63", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                      {topicsCovered}/{TRAINING_TOPICS.length - 1} topics
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B63", marginBottom: 10 }}>
         Other records
@@ -5598,6 +5708,7 @@ export default function TankLog() {
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
+  const [viewingStaffTraining, setViewingStaffTraining] = useState(null);
   const [showStockTake, setShowStockTake] = useState(false);
   const [showStockTakeHistory, setShowStockTakeHistory] = useState(false);
   const [viewingStockTake, setViewingStockTake] = useState(null);
@@ -6387,6 +6498,7 @@ export default function TankLog() {
                 onStartCalibration={() => setShowCalibrationModal(true)}
                 onStartTraining={() => setShowTrainingModal(true)}
                 onStartNote={(category, title) => setActiveNoteModal({ category, title })}
+                onOpenStaff={setViewingStaffTraining}
               />
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
@@ -6971,6 +7083,13 @@ export default function TankLog() {
           title={activeNoteModal.title}
           onClose={() => setActiveNoteModal(null)}
           onSave={addFoodSafetyRecord}
+        />
+      )}
+      {viewingStaffTraining && (
+        <StaffTrainingRecordModal
+          staffName={viewingStaffTraining}
+          records={foodSafetyRecords}
+          onClose={() => setViewingStaffTraining(null)}
         />
       )}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
