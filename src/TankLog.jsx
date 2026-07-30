@@ -798,9 +798,10 @@ function BatchCard({ batch, onOpen }) {
   );
 }
 
-function InventoryItemCard({ item, onAdjust, onOpen }) {
+function InventoryItemCard({ item, onAdjust, onOpen, suppliers }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
+  const supplierName = item.supplierId ? suppliers.find((s) => s.id === item.supplierId)?.name : null;
     return (
     <div
       style={{
@@ -850,6 +851,11 @@ function InventoryItemCard({ item, onAdjust, onOpen }) {
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A" }}>
               · lot {item.lots[item.lots.length - 1].lotNumber}
               {item.lots.length > 1 ? ` (+${item.lots.length - 1})` : ""}
+            </span>
+          )}
+          {supplierName && (
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A" }}>
+              · {supplierName}
             </span>
           )}
         </div>
@@ -1613,7 +1619,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -1701,6 +1707,34 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment }) {
       >
         Log adjustment with a batch ID
       </button>
+
+      <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 22 }}>
+        <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+          Supplier
+        </span>
+        <select
+          value={item.supplierId || ""}
+          onChange={(e) => onChangeSupplier(item.id, e.target.value || null)}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#FFFFFF",
+            border: "1px solid #DDE0C8",
+            borderRadius: 4,
+            padding: "9px 10px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+          }}
+        >
+          <option value="">No supplier</option>
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         History
@@ -2113,12 +2147,13 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   );
 }
 
-function AddInventoryModal({ onClose, onAdd }) {
+function AddInventoryModal({ onClose, onAdd, suppliers }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Grain");
   const [qty, setQty] = useState(10);
   const [unit, setUnit] = useState("kg");
   const [threshold, setThreshold] = useState(5);
+  const [supplierId, setSupplierId] = useState("");
 
   const submit = () => {
     if (!name.trim()) return;
@@ -2129,6 +2164,7 @@ function AddInventoryModal({ onClose, onAdd }) {
       qty: Number(qty) || 0,
       unit,
       threshold: Number(threshold) || 0,
+      supplierId: supplierId || null,
     });
     onClose();
   };
@@ -2143,6 +2179,33 @@ function AddInventoryModal({ onClose, onAdd }) {
           <NumberField label="Quantity on hand" value={qty} onChange={setQty} step="0.1" suffix={unit} />
           <NumberField label="Low-stock alert at" value={threshold} onChange={setThreshold} step="0.1" suffix={unit} />
         </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+            Supplier (optional)
+          </span>
+          <select
+            value={supplierId}
+            onChange={(e) => setSupplierId(e.target.value)}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 4,
+              padding: "9px 10px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 14,
+            }}
+          >
+            <option value="">No supplier</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           onClick={submit}
           style={{
@@ -6954,6 +7017,12 @@ export default function TankLog() {
     setInventory((prev) => [rowToInventoryItem(data), ...prev]);
   };
 
+  const updateInventorySupplier = async (id, supplierId) => {
+    const { error } = await supabase.from("inventory_items").update({ supplier_id: supplierId }).eq("id", id);
+    if (error) return console.error(error);
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, supplierId } : it)));
+  };
+
   const adjustInventory = async (id, delta) => {
     const item = inventory.find((it) => it.id === id);
     if (!item) return;
@@ -7539,7 +7608,7 @@ export default function TankLog() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {g.items.map((it) => (
-                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} />
+                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} suppliers={suppliers} />
                         ))}
                       </div>
                     </div>
@@ -8009,6 +8078,8 @@ export default function TankLog() {
             onBack={() => setSelectedInventoryId(null)}
             onAdjust={adjustInventory}
             onLogAdjustment={setAdjustTarget}
+            suppliers={suppliers}
+            onChangeSupplier={updateInventorySupplier}
           />
         )}
         </div>
@@ -8030,7 +8101,7 @@ export default function TankLog() {
           onAddInventoryItem={addInventoryItem}
         />
       )}
-      {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} />}
+      {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} suppliers={suppliers} />}
       {showStockTake && (
         <StockTakeModal inventory={inventory} onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
       )}
