@@ -2321,13 +2321,14 @@ function POCard({ po, onOpen }) {
 
 function AddPOModal({ onClose, onAdd, nextPONumber }) {
   const [supplier, setSupplier] = useState("");
-  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
+  const [deliveryCost, setDeliveryCost] = useState("");
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costPerUnit: "" }]);
 
   const updateLine = (id, patch) =>
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
   const addLine = () =>
-    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]);
+    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costPerUnit: "" }]);
 
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
 
@@ -2341,7 +2342,8 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
       orderDate: today(),
       receivedDate: null,
       status: "Draft",
-      lines: cleanLines.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
+      lines: cleanLines.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0, costPerUnit: l.costPerUnit === "" ? null : Number(l.costPerUnit) })),
+      deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
     });
     onClose();
   };
@@ -2350,6 +2352,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
     <Modal title="New purchase order" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Supplier" value={supplier} onChange={setSupplier} />
+        <NumberField label="Delivery cost (optional)" value={deliveryCost} onChange={setDeliveryCost} step="0.01" />
 
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
           Line items
@@ -2395,6 +2398,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
               />
               <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
               <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.1" suffix={line.unit} />
+              <NumberField label="Cost per unit (optional)" value={line.costPerUnit} onChange={(v) => updateLine(line.id, { costPerUnit: v })} step="0.01" />
             </div>
           </div>
         ))}
@@ -4730,6 +4734,26 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               ))}
             </div>
 
+            {batch.ingredientCost > 0 && (() => {
+              const totalVolumePackaged = CONTAINERS.reduce((sum, c) => sum + (totals[c.key] || 0) * c.volumeL, 0);
+              if (totalVolumePackaged <= 0) return null;
+              const costPerLitre = batch.ingredientCost / totalVolumePackaged;
+              return (
+                <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "10px 12px", marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>
+                    Ingredient cost — ${batch.ingredientCost.toFixed(2)} total
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                    {CONTAINERS.filter((c) => (totals[c.key] || 0) > 0).map((c) => (
+                      <div key={c.key} style={{ fontSize: 12.5, color: "#5C6B54" }}>
+                        {c.shortLabel}: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>${(costPerLitre * c.volumeL).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {events.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
                 {events.map((e) => (
@@ -6720,17 +6744,16 @@ export default function TankLog() {
   );
 
   const addBatch = async (b) => {
-    const { data, error } = await supabase.from("batches").insert(batchToRow(b, user.id, profile.companyId)).select().single();
-    if (error) return console.error(error);
-    setBatches((prev) => [rowToBatch(data), ...prev]);
-
+    // Work out which lots each ingredient will draw from — and their cost —
+    // before creating the batch, so the batch record itself carries the
+    // real ingredient cost from the moment it exists.
+    let totalIngredientCost = 0;
+    const plannedUpdates = [];
     if (b.ingredients && b.ingredients.length > 0) {
       for (const ing of b.ingredients) {
         const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
         if (!item) continue;
 
-        // Draw down lots oldest-first so we know exactly which lot(s) this
-        // batch actually consumed from, not just the ingredient in general.
         let remainingToDeduct = ing.qty;
         const lotsUsed = [];
         const updatedLots = (item.lots || []).map((lot) => {
@@ -6740,29 +6763,45 @@ export default function TankLog() {
           }
           const take = Math.round(Math.min(currentRemaining, remainingToDeduct) * 100) / 100;
           remainingToDeduct = Math.round((remainingToDeduct - take) * 100) / 100;
-          if (take > 0) lotsUsed.push({ lotNumber: lot.lotNumber, qty: take });
+          if (take > 0) {
+            lotsUsed.push({ lotNumber: lot.lotNumber, qty: take });
+            if (lot.unitCost != null) totalIngredientCost += take * lot.unitCost;
+          }
           return { ...lot, remainingQty: Math.round((currentRemaining - take) * 100) / 100 };
         });
 
-        const newQty = Math.max(0, Math.round((item.qty - ing.qty) * 100) / 100);
-        const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
-        const historyEntry = {
-          id: uid(),
-          date: new Date().toISOString(),
-          user: user.name,
-          type: "batch",
-          delta: actualDelta,
-          note: `${b.name} (#${b.number})`,
-          lots: lotsUsed,
-        };
-        const newHistory = [...(item.history || []), historyEntry];
-        const { error: invError } = await supabase
-          .from("inventory_items")
-          .update({ qty: newQty, lots: updatedLots, history: newHistory })
-          .eq("id", item.id);
-        if (invError) console.error(invError);
-        else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
+        plannedUpdates.push({ item, updatedLots, lotsUsed });
       }
+    }
+    totalIngredientCost = Math.round(totalIngredientCost * 100) / 100;
+
+    const { data, error } = await supabase
+      .from("batches")
+      .insert(batchToRow({ ...b, ingredientCost: totalIngredientCost }, user.id, profile.companyId))
+      .select()
+      .single();
+    if (error) return console.error(error);
+    setBatches((prev) => [rowToBatch(data), ...prev]);
+
+    for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
+      const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => i.name.toLowerCase() === item.name.toLowerCase())?.qty || 0)) * 100) / 100);
+      const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+      const historyEntry = {
+        id: uid(),
+        date: new Date().toISOString(),
+        user: user.name,
+        type: "batch",
+        delta: actualDelta,
+        note: `${b.name} (#${b.number})`,
+        lots: lotsUsed,
+      };
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error: invError } = await supabase
+        .from("inventory_items")
+        .update({ qty: newQty, lots: updatedLots, history: newHistory })
+        .eq("id", item.id);
+      if (invError) console.error(invError);
+      else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
     }
   };
 
@@ -7208,13 +7247,22 @@ export default function TankLog() {
     const po = purchaseOrders.find((p) => p.id === id);
     if (!po) return;
 
+    // Delivery cost is spread across lines in proportion to each line's own
+    // value — a line that's a bigger share of the order's cost carries a
+    // bigger share of the delivery cost too.
+    const totalValue = po.lines.reduce((sum, l) => sum + (l.qty || 0) * (l.costPerUnit || 0), 0);
+    const deliveryCost = po.deliveryCost || 0;
+
     let nextInventory = [...inventory];
     const finalizedLines = [];
     for (const line of po.lines) {
       const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
       finalizedLines.push({ ...line, lotNumber });
       const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
-      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: po.poNumber };
+      const lineValue = (line.qty || 0) * (line.costPerUnit || 0);
+      const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
+      const unitCost = line.costPerUnit != null ? line.costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
+      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: po.poNumber, unitCost };
       const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
 
       if (idx >= 0) {
