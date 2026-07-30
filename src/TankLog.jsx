@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
   rowToBatch,
@@ -1362,7 +1362,7 @@ function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
               key={s.id}
               style={{
                 padding: "10px 12px",
-                background: "#FBF6EC",
+                background: "#F8F5EA",
                 border: "1px solid #EBE8D6",
                 borderRadius: 5,
               }}
@@ -1388,7 +1388,7 @@ function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
             </div>
           ))}
           {suppliers.length === 0 && (
-            <div style={{ color: "#9BA88A", fontSize: 13, padding: "10px 2px" }}>No suppliers added yet.</div>
+            <EmptyState icon={Users} title="No suppliers added yet" subtitle="Add one to track contact details, and to attach documents like food safety certificates." />
           )}
         </div>
       </div>
@@ -4965,7 +4965,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "9px 12px",
-                  background: "#FBF6EC",
+                  background: "#F8F5EA",
                   border: `1px solid ${t.result === "pass" ? "#DDE0C8" : "#E3D3A0"}`,
                   borderRadius: 5,
                   fontSize: 13,
@@ -5103,7 +5103,7 @@ function SupplierDocumentsModal({ supplier, documents, onClose, onUpload, onDele
                 alignItems: "center",
                 gap: 10,
                 padding: "10px 12px",
-                background: "#FBF6EC",
+                background: "#F8F5EA",
                 border: `1px solid ${isExpired(doc.expiryDate) ? "#E3D3A0" : "#EBE8D6"}`,
                 borderRadius: 5,
                 fontSize: 13,
@@ -5132,7 +5132,7 @@ function SupplierDocumentsModal({ supplier, documents, onClose, onUpload, onDele
             </div>
           ))}
           {documents.length === 0 && (
-            <div style={{ color: "#9BA88A", fontSize: 13, padding: "10px 2px" }}>No documents uploaded yet.</div>
+            <EmptyState icon={FileText} title="No documents uploaded yet" subtitle="Add a food safety certificate or other paperwork below." />
           )}
         </div>
 
@@ -5734,11 +5734,11 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
           );
         })}
         {filteredRecords.length === 0 && (
-          <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-            {records.length === 0
-              ? "No food safety records yet — complete a checklist above to get started."
-              : "Nothing matches your search."}
-          </div>
+          records.length === 0 ? (
+            <EmptyState icon={CheckCircle2} title="No food safety records yet" subtitle="Complete a checklist above to start building your record." />
+          ) : (
+            <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>Nothing matches your search.</div>
+          )
         )}
       </div>
     </div>
@@ -5793,6 +5793,26 @@ function PackagedView({ batches, onOpenBatch }) {
           }}
         />
       </div>
+
+      {query.trim().length === 0 && !monthFilter && allMonths.length > 1 && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8 }}>
+            Volume packaged by month (L)
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={[...allMonths].reverse()} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+              <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="label" stroke="#9BA88A" fontSize={11} />
+              <YAxis stroke="#9BA88A" fontSize={11} />
+              <Tooltip
+                contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }}
+                labelStyle={{ color: "#5C6B54" }}
+              />
+              <Bar dataKey="volume" fill="#5C9A3C" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {query.trim().length === 0 && (
         <div style={{ marginBottom: 24 }}>
@@ -5941,6 +5961,9 @@ function HomeView({
   onOpenBatch,
   onOpenPO,
   onGoTo,
+  tanks,
+  recipes,
+  totalBatches,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -5973,6 +5996,26 @@ function HomeView({
 
   const totalTasks = brewTasks.length + foodSafetyTasks.length;
 
+  const setupSteps = [
+    { done: tanks.length > 0, label: "Set up your tanks", sub: "So batches can be assigned to them", goTo: "brewery" },
+    { done: recipes.length > 0, label: "Add a recipe", sub: "Pulls ingredients in automatically on brew day", goTo: "recipes" },
+    { done: totalBatches > 0, label: "Brew your first batch", sub: "Start tracking a batch from grain to glass", goTo: "batches" },
+  ];
+  const setupComplete = setupSteps.every((s) => s.done);
+  const [setupDismissed, setSetupDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("brewpoint-setup-dismissed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const dismissSetup = () => {
+    setSetupDismissed(true);
+    try {
+      localStorage.setItem("brewpoint-setup-dismissed", "true");
+    } catch {}
+  };
+
   const stats = [
     ["Fermenting", fermentingBatches.length, STAGE_COLOR.Primary, "batches"],
     ["Conditioning", conditioningBatches.length, STAGE_COLOR.Conditioning, "batches"],
@@ -5992,6 +6035,50 @@ function HomeView({
           </h1>
         )}
       </div>
+
+      {!setupComplete && !setupDismissed && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 8, padding: "16px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 15, fontWeight: 500, color: "#2A3324" }}>
+                Getting set up
+              </div>
+              <div style={{ fontSize: 12, color: "#9BA88A", marginTop: 2 }}>A few things to do before you're brewing day-to-day</div>
+            </div>
+            <button onClick={dismissSetup} style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 12, padding: 0, flexShrink: 0 }}>
+              Hide this
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {setupSteps.map((s) => (
+              <button
+                key={s.label}
+                onClick={() => onGoTo(s.goTo)}
+                disabled={s.done}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  background: s.done ? "#F8F5EA" : "none",
+                  border: `1px solid ${s.done ? "#EBE8D6" : "#DDE0C8"}`,
+                  borderRadius: 6,
+                  padding: "10px 12px",
+                  cursor: s.done ? "default" : "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <CheckCircle2 size={16} color={s.done ? "#5C9A3C" : "#DDE0C8"} style={{ flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, color: s.done ? "#9BA88A" : "#2A3324", textDecoration: s.done ? "line-through" : "none" }}>
+                    {s.label}
+                  </div>
+                  {!s.done && <div style={{ fontSize: 11.5, color: "#9BA88A" }}>{s.sub}</div>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {totalTasks > 0 && (
         <div>
@@ -6552,6 +6639,67 @@ export function XeroCallback() {
   );
 }
 
+function EmptyState({ icon: Icon, title, subtitle }) {
+  return (
+    <div style={{ textAlign: "center", padding: "40px 20px" }}>
+      {Icon && <Icon size={26} color="#C9D1AC" style={{ marginBottom: 12 }} />}
+      <div style={{ fontSize: 14, color: "#5C6B54", fontFamily: "'Oswald', sans-serif", fontWeight: 500, marginBottom: subtitle ? 4 : 0 }}>
+        {title}
+      </div>
+      {subtitle && <div style={{ fontSize: 12.5, color: "#9BA88A", maxWidth: 300, margin: "0 auto", lineHeight: 1.5 }}>{subtitle}</div>}
+    </div>
+  );
+}
+
+function ToastStack({ toasts, onDismiss }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 16,
+        left: 0,
+        right: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 8,
+        zIndex: 100,
+        pointerEvents: "none",
+        padding: "0 16px",
+      }}
+    >
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          onClick={() => onDismiss(t.id)}
+          style={{
+            pointerEvents: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            maxWidth: 420,
+            width: "100%",
+            background: t.type === "error" ? "#2A1E16" : "#1F2E18",
+            border: `1px solid ${t.type === "error" ? "#E3D3A0" : "#C9D1AC"}`,
+            borderRadius: 8,
+            padding: "11px 14px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+            cursor: "pointer",
+          }}
+        >
+          {t.type === "error" ? (
+            <AlertTriangle size={16} color="#E3B04A" style={{ flexShrink: 0 }} />
+          ) : (
+            <CheckCircle2 size={16} color="#8FCB6C" style={{ flexShrink: 0 }} />
+          )}
+          <span style={{ color: "#F5F1E4", fontSize: 13, fontFamily: "'Inter', sans-serif", lineHeight: 1.4 }}>{t.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TankLog() {
   const [session, setSession] = useState(undefined); // undefined = not checked yet, null = signed out
   const [justConfirmedEmail, setJustConfirmedEmail] = useState(() => {
@@ -6559,6 +6707,13 @@ export default function TankLog() {
     return hash.includes("type=signup") || hash.includes("type=invite") || hash.includes("type=email_change");
   });
   const [loadingData, setLoadingData] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const showToast = (type, message) => {
+    const id = uid();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4500);
+  };
+  const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
   const [view, setView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("view") === "settings" ? "settings" : "home";
@@ -6688,7 +6843,7 @@ export default function TankLog() {
           company_name: meta.company || "My Brewery",
           member_name: meta.name || user.email.split("@")[0],
         });
-        if (joinError) console.error(joinError);
+        if (joinError) { showToast("error", "Something didn't save — check your connection and try again."); }
         profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
       }
       if (cancelled) return;
@@ -6805,8 +6960,9 @@ export default function TankLog() {
       .insert(batchToRow({ ...b, ingredientCost: totalIngredientCost }, user.id, profile.companyId))
       .select()
       .single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => [rowToBatch(data), ...prev]);
+    showToast("success", `${b.name} created.`);
 
     for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
       const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => i.name.toLowerCase() === item.name.toLowerCase())?.qty || 0)) * 100) / 100);
@@ -6825,7 +6981,7 @@ export default function TankLog() {
         .from("inventory_items")
         .update({ qty: newQty, lots: updatedLots, history: newHistory })
         .eq("id", item.id);
-      if (invError) console.error(invError);
+      if (invError) { showToast("error", "Something didn't save — check your connection and try again."); }
       else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
     }
   };
@@ -6868,7 +7024,7 @@ export default function TankLog() {
       const newHistory = [...(item.history || []), ...restoreHistory];
       const { error: invError } = await supabase.from("inventory_items").update({ qty, lots, history: newHistory }).eq("id", item.id);
       if (invError) {
-        console.error(invError);
+        showToast("error", "Something didn't save — check your connection and try again.");
         continue;
       }
       nextInventory[i] = { ...item, qty, lots, history: newHistory };
@@ -6876,7 +7032,7 @@ export default function TankLog() {
     setInventory(nextInventory);
 
     const { error } = await supabase.from("batches").delete().eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.filter((b) => b.id !== id));
     setSelectedId(null);
   };
@@ -6887,13 +7043,13 @@ export default function TankLog() {
     const version = versionsInFamily.length > 0 ? Math.max(...versionsInFamily.map((v) => v.version || 1)) + 1 : 1;
     const payload = { ...r, familyId, version, isActive: true };
     const { data, error } = await supabase.from("recipes").insert(recipeToRow(payload, user.id, profile.companyId)).select().single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     const newRecipe = rowToRecipe(data);
 
     if (versionsInFamily.length > 0) {
       const siblingIds = versionsInFamily.map((v) => v.id);
       const { error: deactivateError } = await supabase.from("recipes").update({ is_active: false }).in("id", siblingIds);
-      if (deactivateError) console.error(deactivateError);
+      if (deactivateError) { showToast("error", "Something didn't save — check your connection and try again."); }
     }
 
     setRecipes((prev) => [newRecipe, ...prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: false } : rec))]);
@@ -6904,17 +7060,17 @@ export default function TankLog() {
     const versionsInFamily = recipes.filter((rec) => rec.familyId === familyId);
     const otherIds = versionsInFamily.map((v) => v.id).filter((id) => id !== recipeId);
     const { error: activateError } = await supabase.from("recipes").update({ is_active: true }).eq("id", recipeId);
-    if (activateError) return console.error(activateError);
+    if (activateError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     if (otherIds.length > 0) {
       const { error: deactivateError } = await supabase.from("recipes").update({ is_active: false }).in("id", otherIds);
-      if (deactivateError) console.error(deactivateError);
+      if (deactivateError) { showToast("error", "Something didn't save — check your connection and try again."); }
     }
     setRecipes((prev) => prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: rec.id === recipeId } : rec)));
   };
 
   const deleteRecipe = async (id) => {
     const { error } = await supabase.from("recipes").delete().eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setRecipes((prev) => prev.filter((r) => r.id !== id));
     setSelectedRecipeId(null);
   };
@@ -6934,7 +7090,7 @@ export default function TankLog() {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL("image/png");
         const { error } = await supabase.from("companies").update({ logo_url: dataUrl }).eq("id", profile.companyId);
-        if (error) return console.error(error);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
         setCompanyLogo(dataUrl);
       };
       img.src = String(reader.result);
@@ -6944,7 +7100,7 @@ export default function TankLog() {
 
   const removeCompanyLogo = async () => {
     const { error } = await supabase.from("companies").update({ logo_url: null }).eq("id", profile.companyId);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setCompanyLogo("");
   };
 
@@ -6954,13 +7110,13 @@ export default function TankLog() {
       .from("companies")
       .update({ food_safety_disclaimer_accepted_at: acceptedAt, food_safety_disclaimer_accepted_by: user.name })
       .eq("id", profile.companyId);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setFoodSafetyDisclaimerAcceptedAt(acceptedAt);
   };
 
   const disconnectXero = async () => {
     const { error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setXeroConnection(null);
   };
 
@@ -6977,7 +7133,10 @@ export default function TankLog() {
 
   const loadXeroAccounts = async () => {
     const data = await callXeroApi("listAccounts");
-    if (data.error) return console.error(data.error);
+    if (data.error) {
+      showToast("error", "Something didn't save — check your connection and try again.");
+      return;
+    }
     setXeroAccounts(data.accounts || []);
   };
 
@@ -6985,7 +7144,7 @@ export default function TankLog() {
     const { error } = await supabase
       .from("xero_settings")
       .upsert({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setXeroSettings({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
   };
 
@@ -7045,7 +7204,7 @@ export default function TankLog() {
       };
       const { error } = await supabase.from("xero_item_mappings").upsert(record, { onConflict: "company_id,product_key" });
       if (error) {
-        console.error(error);
+        showToast("error", "Something didn't save — check your connection and try again.");
         continue;
       }
       newMappings.push(record);
@@ -7081,7 +7240,7 @@ export default function TankLog() {
       const newHistory = [...(item.history || []), historyEntry];
       const { error } = await supabase.from("inventory_items").update({ qty: line.countedQty, history: newHistory }).eq("id", item.id);
       if (error) {
-        console.error(error);
+        showToast("error", "Something didn't save — check your connection and try again.");
         continue;
       }
       nextInventory[idx] = { ...item, qty: line.countedQty, history: newHistory };
@@ -7094,7 +7253,7 @@ export default function TankLog() {
       .insert(stockTakeToRow(record, user.id, profile.companyId))
       .select()
       .single();
-    if (stError) return console.error(stError);
+    if (stError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setStockTakes((prev) => [rowToStockTake(data), ...prev]);
   };
 
@@ -7105,8 +7264,9 @@ export default function TankLog() {
       .insert(foodSafetyRecordToRow(payload, user.id, profile.companyId))
       .select()
       .single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setFoodSafetyRecords((prev) => [rowToFoodSafetyRecord(data), ...prev]);
+    showToast("success", "Logged.");
   };
 
   const addSupplier = async (supplier) => {
@@ -7116,8 +7276,9 @@ export default function TankLog() {
       .insert(supplierToRow(payload, profile.companyId))
       .select()
       .single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSuppliers((prev) => [...prev, rowToSupplier(data)].sort((a, b) => a.name.localeCompare(b.name)));
+    showToast("success", `${payload.name} added.`);
   };
 
   const updateSupplier = async (id, patch) => {
@@ -7128,13 +7289,13 @@ export default function TankLog() {
       .from("suppliers")
       .update(supplierToRow(updated, profile.companyId))
       .eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSuppliers((prev) => prev.map((s) => (s.id === id ? updated : s)).sort((a, b) => a.name.localeCompare(b.name)));
   };
 
   const deleteSupplier = async (id) => {
     const { error } = await supabase.from("suppliers").delete().eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSuppliers((prev) => prev.filter((s) => s.id !== id));
     setSupplierDocuments((prev) => prev.filter((d) => d.supplierId !== id));
   };
@@ -7165,20 +7326,21 @@ export default function TankLog() {
       return { error: error.message };
     }
     setSupplierDocuments((prev) => [rowToSupplierDocument(data), ...prev]);
+    showToast("success", "Document uploaded.");
     return { success: true };
   };
 
   const deleteSupplierDocument = async (doc) => {
     await supabase.storage.from("supplier-documents").remove([doc.filePath]);
     const { error } = await supabase.from("supplier_documents").delete().eq("id", doc.id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSupplierDocuments((prev) => prev.filter((d) => d.id !== doc.id));
   };
 
   const openSupplierDocument = async (doc) => {
     const { data, error } = await supabase.storage.from("supplier-documents").createSignedUrl(doc.filePath, 60);
     if (error) {
-      console.error(error);
+      showToast("error", "Something didn't save — check your connection and try again.");
       return;
     }
     window.open(data.signedUrl, "_blank");
@@ -7186,19 +7348,20 @@ export default function TankLog() {
 
   const addTank = async (t) => {
     const { data, error } = await supabase.from("tanks").insert(tankToRow(t, profile.companyId)).select().single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setTanks((prev) => [rowToTank(data), ...prev]);
+    showToast("success", `${t.name} added.`);
   };
 
   const updateTank = async (id, patch) => {
     const { error } = await supabase.from("tanks").update({ name: patch.name, capacity: patch.capacity, type: patch.type }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   };
 
   const deleteTank = async (id) => {
     const { error } = await supabase.from("tanks").delete().eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setTanks((prev) => prev.filter((t) => t.id !== id));
   };
 
@@ -7207,7 +7370,7 @@ export default function TankLog() {
       .from("batches")
       .update({ tank_id: tank ? tank.id : null, tank_name: tank ? tank.name : null })
       .eq("id", batchId);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) =>
       prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null } : b))
     );
@@ -7215,13 +7378,14 @@ export default function TankLog() {
 
   const addInventoryItem = async (item) => {
     const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(item, user.id, profile.companyId)).select().single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => [rowToInventoryItem(data), ...prev]);
+    showToast("success", `${item.name} added to inventory.`);
   };
 
   const updateInventorySupplier = async (id, supplierId) => {
     const { error } = await supabase.from("inventory_items").update({ supplier_id: supplierId }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, supplierId } : it)));
   };
 
@@ -7233,7 +7397,7 @@ export default function TankLog() {
     const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "manual", delta: actualDelta, note: "Manual adjustment" };
     const newHistory = [...(item.history || []), historyEntry];
     const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
   };
 
@@ -7252,19 +7416,20 @@ export default function TankLog() {
     };
     const newHistory = [...(item.history || []), historyEntry];
     const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
   };
 
   const addPO = async (po) => {
     const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
+    showToast("success", `${po.poNumber} created.`);
   };
 
   const markPOSent = async (id) => {
     const { error } = await supabase.from("purchase_orders").update({ status: "Sent" }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
   };
 
@@ -7297,7 +7462,7 @@ export default function TankLog() {
         const newHistory = [...(item.history || []), historyEntry];
         const { error } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots, history: newHistory }).eq("id", item.id);
         if (error) {
-          console.error(error);
+          showToast("error", "Something didn't save — check your connection and try again.");
           continue;
         }
         nextInventory[idx] = { ...item, qty: newQty, lots: newLots, history: newHistory };
@@ -7305,7 +7470,7 @@ export default function TankLog() {
         const newItem = { id: uid(), name: line.name, category: line.category, qty: line.qty, unit: line.unit, threshold: 0, lots: [lotEntry], history: [historyEntry] };
         const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItem, user.id, profile.companyId)).select().single();
         if (error) {
-          console.error(error);
+          showToast("error", "Something didn't save — check your connection and try again.");
           continue;
         }
         nextInventory = [rowToInventoryItem(data), ...nextInventory];
@@ -7317,8 +7482,9 @@ export default function TankLog() {
       .from("purchase_orders")
       .update({ status: "Received", received_date: today(), lines: finalizedLines })
       .eq("id", id);
-    if (poError) return console.error(poError);
+    if (poError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today(), lines: finalizedLines } : p)));
+    showToast("success", `${po.poNumber} received — inventory updated.`);
   };
 
   const advance = async (id) => {
@@ -7333,7 +7499,7 @@ export default function TankLog() {
       if (!hasPass) return;
     }
     const { error } = await supabase.from("batches").update({ stage: nextStage }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage } : b)));
   };
 
@@ -7345,7 +7511,7 @@ export default function TankLog() {
     if (idx <= 0) return;
     const prevStage = stages[idx - 1];
     const { error } = await supabase.from("batches").update({ stage: prevStage }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: prevStage } : b)));
   };
 
@@ -7354,8 +7520,9 @@ export default function TankLog() {
     if (!batch) return;
     const diacetylTests = [...(batch.diacetylTests || []), test];
     const { error } = await supabase.from("batches").update({ diacetyl_tests: diacetylTests }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, diacetylTests } : b)));
+    showToast("success", `Diacetyl test logged: ${test.result}.`);
   };
 
   const logReading = async (id, reading) => {
@@ -7363,7 +7530,7 @@ export default function TankLog() {
     if (!batch) return;
     const readings = [...batch.readings, reading];
     const { error } = await supabase.from("batches").update({ readings }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, readings } : b)));
   };
 
@@ -7372,7 +7539,7 @@ export default function TankLog() {
     if (!batch || batch.readings.length <= 1) return;
     const readings = batch.readings.filter((r) => r.id !== readingId);
     const { error } = await supabase.from("batches").update({ readings }).eq("id", batchId);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, readings } : b)));
   };
 
@@ -7400,7 +7567,7 @@ export default function TankLog() {
 
     const patch = readings && readings !== batch.readings ? { [column]: value, readings } : { [column]: value };
     const { error } = await supabase.from("batches").update(patch).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) =>
       prev.map((b) => (b.id === id ? { ...b, [field]: value, ...(readings && readings !== batch.readings ? { readings } : {}) } : b))
     );
@@ -7413,7 +7580,7 @@ export default function TankLog() {
       s.id === stepId ? { ...s, done: !s.done, doneAt: !s.done ? new Date().toISOString() : null } : s
     );
     const { error } = await supabase.from("batches").update({ schedule: newSchedule }).eq("id", batchId);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, schedule: newSchedule } : b)));
   };
 
@@ -7424,7 +7591,7 @@ export default function TankLog() {
     const newEvent = { id: uid(), date: today(), ...sessionCounts };
     const newPackaging = { events: [...events, newEvent], discarded: packagingDiscarded(batch) };
     const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
     syncPackagingToXero(batch, sessionCounts);
   };
@@ -7435,7 +7602,7 @@ export default function TankLog() {
     const events = packagingEvents(batch).filter((e) => e.id !== eventId);
     const newPackaging = { events, discarded: packagingDiscarded(batch) };
     const { error } = await supabase.from("batches").update({ packaging: newPackaging }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging } : b)));
   };
 
@@ -7446,7 +7613,7 @@ export default function TankLog() {
     const newDiscarded = packagingDiscarded(batch) + remainingVolume(batch);
     const newPackaging = { events, discarded: newDiscarded };
     const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
-    if (error) return console.error(error);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
   };
 
@@ -7504,6 +7671,8 @@ export default function TankLog() {
         input:focus { outline: 1px solid #5C9A3C; }
         button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       <div style={{ display: "flex", minHeight: "100vh" }}>
         <div
@@ -7656,6 +7825,9 @@ export default function TankLog() {
                   setView("orders");
                 }}
                 onGoTo={setView}
+                tanks={tanks}
+                recipes={recipes}
+                totalBatches={batches.length}
               />
             )}
 
@@ -7864,11 +8036,11 @@ export default function TankLog() {
                   ))}
 
                   {filtered.length === 0 && (
-                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-                      {inventory.length === 0
-                        ? "No ingredients tracked yet. Add grain, hops, or yeast to get started."
-                        : `No ingredients match "${inventoryQuery}".`}
-                    </div>
+                    inventory.length === 0 ? (
+                      <EmptyState icon={Package} title="No ingredients tracked yet" subtitle="Add grain, hops, or yeast to get started, or bring some in via a purchase order." />
+                    ) : (
+                      <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No ingredients match "{inventoryQuery}".</div>
+                    )
                   )}
                 </>
               );
@@ -7921,9 +8093,7 @@ export default function TankLog() {
                   )}
 
                   {purchaseOrders.length === 0 && (
-                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-                      No purchase orders yet. Create one to bring in ingredients with lot tracking.
-                    </div>
+                    <EmptyState icon={Truck} title="No purchase orders yet" subtitle="Create one to bring in ingredients with proper lot tracking from day one." />
                   )}
                 </>
               );
@@ -7961,11 +8131,11 @@ export default function TankLog() {
                       <RecipeCard key={r.id} recipe={r} onOpen={setSelectedRecipeId} />
                     ))}
                     {filtered.length === 0 && (
-                      <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-                        {activeByFamily.length === 0
-                          ? "No recipes yet. Add one so you can assign its ingredients when you start a brew."
-                          : `No recipes match "${recipeQuery}".`}
-                      </div>
+                      activeByFamily.length === 0 ? (
+                        <EmptyState icon={Beaker} title="No recipes yet" subtitle="Add one so you can pull its ingredients in automatically when you start a brew." />
+                      ) : (
+                        <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No recipes match "{recipeQuery}".</div>
+                      )
                     )}
                   </div>
                 </>
@@ -8036,9 +8206,7 @@ export default function TankLog() {
                   );
                 })}
                 {tanks.length === 0 && (
-                  <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-                    No tanks set up yet. Add your fermenters and conditioning vessels so batches can be assigned to them.
-                  </div>
+                  <EmptyState icon={Droplet} title="No tanks set up yet" subtitle="Add your fermenters and any Brite Tanks so batches can be assigned to them." />
                 )}
               </div>
             )}
