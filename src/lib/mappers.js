@@ -170,3 +170,24 @@ export function tankToRow(tank, companyId) {
     capacity: tank.capacity,
   };
 }
+
+export function rowToStockTake(row) {
+  return {
+    id: row.id,
+    date: row.date,
+    userName: row.user_name,
+    lines: row.lines || [],
+    createdAt: row.created_at || null,
+  };
+}
+
+export function stockTakeToRow(stockTake, userId, companyId) {
+  return {
+    id: stockTake.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: stockTake.userName,
+    date: stockTake.date,
+    lines: stockTake.lines || [],
+  };
+}
