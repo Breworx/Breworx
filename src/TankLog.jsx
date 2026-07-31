@@ -345,6 +345,111 @@ function SkeletonList({ count = 5 }) {
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+const CHANGELOG = [
+  {
+    id: 1,
+    title: "Production Manager & scheduling",
+    items: [
+      "Visual tank schedule — see every tank's timeline at a glance",
+      "Schedule a batch ahead of time, with estimated days in tank",
+      "Edit or delete a scheduled brew before it actually starts",
+    ],
+  },
+  {
+    id: 2,
+    title: "Consumables & Package Types",
+    items: [
+      "Track cans, lids, boxes, and labels separately from ingredients",
+      "Package Types automatically deduct the right consumables when you log packaging",
+      "Undo a packaging run — reverts to Cooling and returns consumables to stock",
+    ],
+  },
+  {
+    id: 3,
+    title: "Recipe Analytics & quality tracking",
+    items: [
+      "Compare batches of the same recipe side by side",
+      "Quality fault checklist (diacetyl, oxidation, and more) with Low/Medium/High severity, tracked day by day",
+      "Fault-free rate and trend charts per recipe",
+    ],
+  },
+  {
+    id: 4,
+    title: "Navigation & mobile",
+    items: [
+      "Sidebar grouped into Production, Recipes, Stock, and Compliance",
+      "Proper slide-out menu on phones and narrow screens",
+    ],
+  },
+  {
+    id: 5,
+    title: "Export & display",
+    items: [
+      "CSV export for Inventory, Purchase Orders, and Batches",
+      "Adjustable text size in Settings",
+      "This changelog, so you don't have to go digging for what's changed",
+    ],
+  },
+];
+const LATEST_CHANGELOG_ID = CHANGELOG[CHANGELOG.length - 1].id;
+
+function WhatsNewModal({ onClose, entries }) {
+  return (
+    <Modal title="What's new" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {entries.map((entry) => (
+          <div key={entry.id}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, color: "#2A3324", marginBottom: 8 }}>
+              {entry.title}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 5 }}>
+              {entry.items.map((item, i) => (
+                <li key={i} style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.5 }}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <button
+          onClick={onClose}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Got it
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function downloadCSV(filename, headers, rows) {
+  const escape = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
@@ -10074,7 +10179,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-36";
+const APP_VERSION = "2026-07-31-37";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10304,6 +10409,32 @@ export default function TankLog() {
   const [editScheduledBatchId, setEditScheduledBatchId] = useState(null);
   const [showQuickJump, setShowQuickJump] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  useEffect(() => {
+    try {
+      const lastSeen = Number(localStorage.getItem("brewpoint-changelog-seen") || "0");
+      if (lastSeen < LATEST_CHANGELOG_ID) setShowWhatsNew(true);
+    } catch {}
+  }, []);
+  const dismissWhatsNew = () => {
+    setShowWhatsNew(false);
+    try {
+      localStorage.setItem("brewpoint-changelog-seen", String(LATEST_CHANGELOG_ID));
+    } catch {}
+  };
+  const [textScale, setTextScale] = useState(() => {
+    try {
+      return localStorage.getItem("brewpoint-text-scale") || "1";
+    } catch {
+      return "1";
+    }
+  });
+  const setTextScalePersist = (v) => {
+    setTextScale(v);
+    try {
+      localStorage.setItem("brewpoint-text-scale", v);
+    } catch {}
+  };
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
@@ -11880,7 +12011,7 @@ export default function TankLog() {
           </div>
         </div>
 
-        <div className="bp-main-content" style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
+        <div className="bp-main-content" style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px", zoom: textScale }}>
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
           <div key={view} className="bp-view-fade">
             <style>{`
@@ -12020,9 +12151,35 @@ export default function TankLog() {
                       color: "#2A3324",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: 14,
-                      marginBottom: 16,
+                      marginBottom: 8,
                     }}
                   />
+                  {batches.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const all = [...fFerm, ...fCond, ...fProg, ...fPack];
+                        downloadCSV(
+                          `batches-${today()}.csv`,
+                          ["Number", "Name", "Style", "Stage", "Brew date", "Volume (L)", "OG", "FG (latest reading)", "Ingredient cost", "Tank"],
+                          all.map((b) => [
+                            b.number,
+                            b.name,
+                            b.style,
+                            b.stage,
+                            b.startDate,
+                            b.volume,
+                            b.og.toFixed(3),
+                            latestReading(b).gravity.toFixed(3),
+                            b.ingredientCost ?? "",
+                            b.tankName || "",
+                          ])
+                        );
+                      }}
+                      style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 16, display: "block" }}
+                    >
+                      Export CSV
+                    </button>
+                  )}
                   <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Fermenting ({fFerm.length})
                   </div>
@@ -12162,9 +12319,31 @@ export default function TankLog() {
                       color: "#2A3324",
                       fontFamily: "'Inter', sans-serif",
                       fontSize: 14,
-                      marginBottom: 16,
+                      marginBottom: 8,
                     }}
                   />
+                  {inventory.length > 0 && (
+                    <button
+                      onClick={() =>
+                        downloadCSV(
+                          `inventory-${today()}.csv`,
+                          ["Name", "Category", "Qty", "Unit", "Threshold", "Cost per unit", "Supplier"],
+                          filtered.map((it) => [
+                            it.name,
+                            it.category,
+                            it.qty,
+                            it.unit,
+                            it.threshold,
+                            it.costPerUnit ?? "",
+                            suppliers.find((s) => s.id === it.supplierId)?.name || "",
+                          ])
+                        )
+                      }
+                      style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 16, display: "block" }}
+                    >
+                      Export CSV
+                    </button>
+                  )}
 
                   {inventory.some((it) => it.qty <= it.threshold) && (
                     <div
@@ -12347,9 +12526,32 @@ export default function TankLog() {
                         color: "#2A3324",
                         fontFamily: "'Inter', sans-serif",
                         fontSize: 14,
-                        marginBottom: 16,
+                        marginBottom: 8,
                       }}
                     />
+                  )}
+                  {purchaseOrders.length > 0 && (
+                    <button
+                      onClick={() =>
+                        downloadCSV(
+                          `purchase-orders-${today()}.csv`,
+                          ["PO Number", "Supplier", "Status", "Order date", "Received date", "Delivery cost", "Line count", "Total value"],
+                          purchaseOrders.map((po) => [
+                            po.poNumber,
+                            po.supplier,
+                            po.status,
+                            po.orderDate,
+                            po.receivedDate || "",
+                            po.deliveryCost ?? "",
+                            po.lines.length,
+                            po.lines.reduce((sum, l) => sum + (Number(l.costPerUnit) || 0) * (Number(l.qty) || 0), 0).toFixed(2),
+                          ])
+                        )
+                      }
+                      style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 16, display: "block" }}
+                    >
+                      Export CSV
+                    </button>
                   )}
                   <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Draft ({draftPOs.length})
@@ -12587,6 +12789,45 @@ export default function TankLog() {
                       <div style={{ color: "#2A3324", fontSize: 15, marginTop: 2, textTransform: "capitalize" }}>{profile?.role || "—"}</div>
                     </div>
                   </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                    Display
+                  </div>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                      Text size
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {[["1", "Normal"], ["1.15", "Large"], ["1.3", "Extra large"]].map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => setTextScalePersist(val)}
+                          style={{
+                            flex: 1,
+                            background: textScale === val ? "#5C9A3C" : "#F5F1E4",
+                            border: `1px solid ${textScale === val ? "#5C9A3C" : "#DDE0C8"}`,
+                            borderRadius: 5,
+                            padding: "9px 10px",
+                            color: textScale === val ? "#16191A" : "#5C6B54",
+                            fontFamily: "'Inter', sans-serif",
+                            fontWeight: textScale === val ? 600 : 400,
+                            fontSize: 13,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowWhatsNew(true)}
+                    style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0, marginTop: 10 }}
+                  >
+                    What's new in Brewpoint
+                  </button>
                 </div>
 
                 <div>
@@ -12953,6 +13194,7 @@ export default function TankLog() {
           />
         );
       })()}
+      {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
         <QuickJumpModal
           onClose={() => setShowQuickJump(false)}
