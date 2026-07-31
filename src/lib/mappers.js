@@ -30,6 +30,7 @@ export function rowToBatch(row) {
     schedule: row.schedule || [],
     diacetylTests: row.diacetyl_tests || [],
     faults: row.faults || [],
+    photos: row.photos || [],
     ingredientCost: row.ingredient_cost ?? 0,
     plannedDays: row.planned_days ?? null,
   };
@@ -65,6 +66,7 @@ export function batchToRow(batch, userId, companyId) {
     schedule: batch.schedule || [],
     diacetyl_tests: batch.diacetylTests || [],
     faults: batch.faults || [],
+    photos: batch.photos || [],
     ingredient_cost: batch.ingredientCost ?? 0,
     planned_days: batch.plannedDays ?? null,
   };
