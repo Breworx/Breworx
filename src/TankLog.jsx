@@ -10074,7 +10074,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-32";
+const APP_VERSION = "2026-07-31-33";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11693,9 +11693,9 @@ export default function TankLog() {
         style={{
           display: "none",
           position: "fixed",
-          top: 14,
+          top: 14 + (updateAvailable ? 42 : 0) + (isOffline ? 42 : 0),
           left: 14,
-          zIndex: 94,
+          zIndex: 97,
           alignItems: "center",
           justifyContent: "center",
           width: 40,
