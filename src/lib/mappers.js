@@ -270,6 +270,7 @@ export function rowToSupplier(row) {
     phone: row.phone,
     email: row.email,
     address: row.address,
+    leadTimeDays: row.lead_time_days ?? null,
     notes: row.notes,
     createdAt: row.created_at || null,
   };
@@ -284,6 +285,7 @@ export function supplierToRow(supplier, companyId) {
     phone: supplier.phone || null,
     email: supplier.email || null,
     address: supplier.address || null,
+    lead_time_days: supplier.leadTimeDays ?? null,
     notes: supplier.notes || null,
   };
 }
