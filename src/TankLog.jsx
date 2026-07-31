@@ -343,6 +343,15 @@ function SkeletonList({ count = 5 }) {
   );
 }
 
+const SCHEDULE_USE_PRIORITY = { Mash: 0, Boil: 1, Aroma: 2, "Dry Hop": 3 };
+function compareScheduleItems(a, b) {
+  const pa = SCHEDULE_USE_PRIORITY[a.use] ?? 4;
+  const pb = SCHEDULE_USE_PRIORITY[b.use] ?? 4;
+  if (pa !== pb) return pa - pb;
+  if (a.use === "Dry Hop") return (a.time ?? 0) - (b.time ?? 0);
+  return (b.time ?? 0) - (a.time ?? 0);
+}
+
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 const CHANGELOG = [
@@ -5082,7 +5091,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
             Brew day schedule
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {recipe.schedule.map((s) => (
+            {[...recipe.schedule].sort(compareScheduleItems).map((s) => (
               <div
                 key={s.id}
                 style={{
@@ -6820,8 +6829,11 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
               Brew day schedule
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
-              {batch.schedule.map((s) => (
+            {(() => {
+              const sorted = [...batch.schedule].sort(compareScheduleItems);
+              const pending = sorted.filter((s) => !s.done);
+              const completed = sorted.filter((s) => s.done);
+              const stepButton = (s) => (
                 <button
                   key={s.id}
                   onClick={() => onToggleScheduleStep(batch.id, s.id)}
@@ -6863,8 +6875,28 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     )}
                   </div>
                 </button>
-              ))}
-            </div>
+              );
+              return (
+                <>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: completed.length > 0 ? 10 : 22 }}>
+                    {pending.map(stepButton)}
+                    {pending.length === 0 && (
+                      <div style={{ color: "#9BA88A", fontSize: 12.5, padding: "8px 4px" }}>All steps done.</div>
+                    )}
+                  </div>
+                  {completed.length > 0 && (
+                    <details style={{ marginBottom: 22 }}>
+                      <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 12, fontFamily: "'Inter', sans-serif" }}>
+                        {completed.length} completed step{completed.length !== 1 ? "s" : ""}
+                      </summary>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                        {completed.map(stepButton)}
+                      </div>
+                    </details>
+                  )}
+                </>
+              );
+            })()}
           </>
         );
       })()}
@@ -10179,7 +10211,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-37";
+const APP_VERSION = "2026-07-31-38";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
