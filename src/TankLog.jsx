@@ -1808,6 +1808,199 @@ function TrainingModal({ onClose, onSave, existingRecords }) {
   );
 }
 
+const ILLNESS_SYMPTOMS = [
+  "Vomiting",
+  "Diarrhoea",
+  "Jaundice (yellowing of skin/eyes)",
+  "Fever",
+  "Sore throat with fever",
+  "Infected wound, boil, or cut with pus",
+];
+const ILLNESS_STATUS_OPTIONS = ["Excluded from food handling", "Restricted duties", "Monitoring", "Cleared to return"];
+
+function StaffIllnessModal({ onClose, onSave, existingRecords }) {
+  const [staffName, setStaffName] = useState("");
+  const [staffFocused, setStaffFocused] = useState(false);
+  const [date, setDate] = useState(today());
+  const [checkedSymptoms, setCheckedSymptoms] = useState(() => new Set());
+  const [status, setStatus] = useState(ILLNESS_STATUS_OPTIONS[0]);
+  const [returnDate, setReturnDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const knownStaff = [...new Set(existingRecords.filter((r) => r.staffName).map((r) => r.staffName))];
+  const staffMatches = staffName.trim().length === 0 ? knownStaff : knownStaff.filter((n) => n.toLowerCase().includes(staffName.trim().toLowerCase()));
+
+  const toggleSymptom = (symptom) =>
+    setCheckedSymptoms((prev) => {
+      const next = new Set(prev);
+      if (next.has(symptom)) next.delete(symptom);
+      else next.add(symptom);
+      return next;
+    });
+
+  const submit = () => {
+    if (!staffName.trim() || checkedSymptoms.size === 0) return;
+    onSave({
+      category: "illness",
+      date,
+      staffName: staffName.trim(),
+      items: ILLNESS_SYMPTOMS.map((label) => ({ label, checked: checkedSymptoms.has(label) })),
+      result: status,
+      dueDate: returnDate || null,
+      notes: notes.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log staff sickness" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px", lineHeight: 1.5 }}>
+          Standard food-safety exclusion symptoms are vomiting, diarrhoea, jaundice, fever, sore throat with fever, and infected wounds. General guidance is to keep staff off food handling duties for at least 48 hours symptom-free, or until a medical clearance is given — check current MPI/NP3 guidance for specifics.
+        </div>
+
+        <div style={{ position: "relative" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Staff member</span>
+            <input
+              type="text"
+              value={staffName}
+              onChange={(e) => setStaffName(e.target.value)}
+              onFocus={() => setStaffFocused(true)}
+              onBlur={() => setTimeout(() => setStaffFocused(false), 150)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            />
+          </label>
+          {staffFocused && staffMatches.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                background: "#FFFFFF",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                marginTop: 2,
+                zIndex: 5,
+                maxHeight: 140,
+                overflowY: "auto",
+              }}
+            >
+              {staffMatches.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setStaffName(n)}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 10px", fontSize: 13, color: "#2A3324", cursor: "pointer" }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Date symptoms started / reported</span>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+        </label>
+
+        <div>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", display: "block", marginBottom: 8 }}>Symptoms</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {ILLNESS_SYMPTOMS.map((symptom) => {
+              const checked = checkedSymptoms.has(symptom);
+              return (
+                <button
+                  key={symptom}
+                  onClick={() => toggleSymptom(symptom)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: checked ? "#FBE5DC" : "#F8F5EA",
+                    border: `1px solid ${checked ? "#E3B3A0" : "#EBE8D6"}`,
+                    borderRadius: 5,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 4,
+                      border: `1.5px solid ${checked ? "#B5502F" : "#C9D1AC"}`,
+                      background: checked ? "#B5502F" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {checked && <CheckCircle2 size={13} color="#FFFFFF" />}
+                  </div>
+                  <span style={{ color: "#2A3324" }}>{symptom}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <SelectField label="Status / action taken" value={status} onChange={setStatus} options={ILLNESS_STATUS_OPTIONS} />
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Cleared to return (optional)</span>
+          <input
+            type="date"
+            value={returnDate}
+            onChange={(e) => setReturnDate(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+        </label>
+
+        <TextField label="Notes (e.g. medical clearance details)" value={notes} onChange={setNotes} />
+
+        <button
+          onClick={submit}
+          disabled={!staffName.trim() || checkedSymptoms.size === 0}
+          style={{
+            background: staffName.trim() && checkedSymptoms.size > 0 ? "#B5502F" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: staffName.trim() && checkedSymptoms.size > 0 ? "#FFFFFF" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: staffName.trim() && checkedSymptoms.size > 0 ? "pointer" : "default",
+          }}
+        >
+          Save sickness record
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function FoodSafetyNoteModal({ category, title, onClose, onSave }) {
   const [date, setDate] = useState(today());
   const [notes, setNotes] = useState("");
@@ -7537,7 +7730,7 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartNote, onOpenStaff, suppliers, onOpenSupplier }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
 
@@ -7548,6 +7741,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     water: "Water test",
     recall: "Mock recall",
     incident: "Incident",
+    illness: "Staff sickness",
   };
   const categoryColor = {
     checklist: "#D9A441",
@@ -7556,6 +7750,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     water: "#9BA88A",
     recall: "#5C9A3C",
     incident: "#5C9A3C",
+    illness: "#B5502F",
   };
 
   const recordText = (r) =>
@@ -7658,10 +7853,11 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 22 }}>
         <button onClick={onStartCalibration} style={secondaryBtnStyle}>Log calibration</button>
-        <button onClick={onStartTraining} style={secondaryBtnStyle}>Log training</button>
+        <button onClick={onStartTraining} style={secondaryBtnStyle}>Staff training</button>
         <button onClick={() => onStartNote("water", "Log water test")} style={secondaryBtnStyle}>Water test</button>
         <button onClick={() => onStartNote("recall", "Log mock recall")} style={secondaryBtnStyle}>Mock recall</button>
-        <button onClick={() => onStartNote("incident", "Something went wrong")} style={{ ...secondaryBtnStyle, gridColumn: "1 / -1" }}>
+        <button onClick={onStartIllness} style={{ ...secondaryBtnStyle, background: "#FBE5DC", borderColor: "#E3B3A0", color: "#B5502F" }}>Staff sickness</button>
+        <button onClick={() => onStartNote("incident", "Something went wrong")} style={secondaryBtnStyle}>
           Something went wrong
         </button>
       </div>
@@ -7780,6 +7976,17 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                   </>
                 )}
                 {(r.category === "water" || r.category === "recall" || r.category === "incident") && (r.notes || "—")}
+                {r.category === "illness" && (() => {
+                  const symptoms = (r.items || []).filter((i) => i.checked).map((i) => i.label);
+                  return (
+                    <>
+                      {r.staffName}
+                      {symptoms.length > 0 ? ` — ${symptoms.join(", ")}` : ""}
+                      {r.result ? <span style={{ color: "#B5502F" }}> · {r.result}</span> : ""}
+                      {r.dueDate ? ` · cleared to return ${r.dueDate}` : ""}
+                    </>
+                  );
+                })()}
               </div>
               <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 3 }}>{r.userName}</div>
             </div>
@@ -9840,7 +10047,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-29";
+const APP_VERSION = "2026-07-31-30";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10096,6 +10303,7 @@ export default function TankLog() {
   const [activeChecklistTemplate, setActiveChecklistTemplate] = useState(null);
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
+  const [showIllnessModal, setShowIllnessModal] = useState(false);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
   const [viewingStaffTraining, setViewingStaffTraining] = useState(null);
   const [showStockTake, setShowStockTake] = useState(false);
@@ -11644,6 +11852,7 @@ export default function TankLog() {
                   onStartChecklist={setActiveChecklistTemplate}
                   onStartCalibration={() => setShowCalibrationModal(true)}
                   onStartTraining={() => setShowTrainingModal(true)}
+                  onStartIllness={() => setShowIllnessModal(true)}
                   onStartNote={(category, title) => setActiveNoteModal({ category, title })}
                   onOpenStaff={setViewingStaffTraining}
                   suppliers={suppliers}
@@ -12699,6 +12908,9 @@ export default function TankLog() {
       )}
       {showTrainingModal && (
         <TrainingModal onClose={() => setShowTrainingModal(false)} onSave={addFoodSafetyRecord} existingRecords={foodSafetyRecords} />
+      )}
+      {showIllnessModal && (
+        <StaffIllnessModal onClose={() => setShowIllnessModal(false)} onSave={addFoodSafetyRecord} existingRecords={foodSafetyRecords} />
       )}
       {activeNoteModal && (
         <FoodSafetyNoteModal
