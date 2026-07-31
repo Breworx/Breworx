@@ -10545,7 +10545,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-46";
+const APP_VERSION = "2026-07-31-47";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11062,7 +11062,7 @@ export default function TankLog() {
     setCreatingInvite(true);
     const { data, error } = await supabase.rpc("create_company_invite");
     setCreatingInvite(false);
-    if (error) { showToast("error", "Couldn't create an invite link — check your connection and try again."); return; }
+    if (error) { console.error(error); showToast("error", `Couldn't create an invite link: ${error.message || "unknown error"}`); return; }
     setInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data}`);
   };
 
