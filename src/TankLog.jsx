@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -243,6 +243,11 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const today = () => new Date().toISOString().slice(0, 10);
 
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+const addDays = (dateStr, n) => {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
 // Scrolls a just-focused field into view after a short delay — long enough
 // for the iOS on-screen keyboard to finish sliding up, so the field doesn't
@@ -4846,7 +4851,7 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem }) {
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate }) {
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
@@ -4854,7 +4859,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [og, setOg] = useState(presetRecipe ? presetRecipe.og : 1.05);
   const [fg, setFg] = useState(presetRecipe ? presetRecipe.fg : 1.01);
   const [temp, setTemp] = useState(20);
-  const [tankId, setTankId] = useState("");
+  const [tankId, setTankId] = useState(presetTankId || "");
+  const [startDate, setStartDate] = useState(presetStartDate || today());
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState([{ id: uid(), tankId: "", volume: "" }]);
   const [nameFocused, setNameFocused] = useState(false);
@@ -4961,7 +4967,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       phIntoTank: null,
       sgIntoTank: null,
       stage: "Brewing",
-      startDate: today(),
+      startDate: startDate || today(),
       recipeId: activeRecipe ? activeRecipe.id : null,
       recipeName: activeRecipe ? activeRecipe.name : null,
       tankId: splitMode ? null : tank ? tank.id : null,
@@ -4969,7 +4975,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       splitTanks: splitMode ? finalSplitTanks : [],
       ingredients: cleanBatchIngredients,
       schedule: [...mashSteps, ...batchSchedule],
-      readings: [{ id: uid(), date: today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
+      readings: [{ id: uid(), date: startDate || today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
     });
     setSaving(false);
     onClose();
@@ -4983,6 +4989,32 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   return (
     <Modal title="New Batch" onClose={requestClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+            Brew date
+          </span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 4,
+              padding: "9px 10px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 14,
+            }}
+          />
+          {startDate > today() && (
+            <span style={{ color: "#9BA88A", fontSize: 11.5 }}>
+              This is in the future — the batch is created now to reserve the tank and hold a spot on the schedule.
+            </span>
+          )}
+        </label>
         {tanks.length > 0 && (
           <div>
             {!splitMode ? (
@@ -7486,6 +7518,161 @@ function TankWallCard({ tank, batch, onOpen }) {
   );
 }
 
+// A Gantt-style schedule: every tank as a row, a scrolling day-by-day
+// timeline as columns, and each batch drawn as a bar spanning the days it
+// occupies that tank. Tapping empty space schedules a new batch there;
+// tapping an existing bar opens that batch.
+function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank }) {
+  const daysBack = 7;
+  const daysForward = 35;
+  const rangeStart = addDays(today(), -daysBack);
+  const totalDays = daysBack + daysForward + 1;
+  const dayList = Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i));
+  const dayWidth = 34;
+  const dayIndex = (d) => Math.round((new Date(d + "T00:00:00") - new Date(rangeStart + "T00:00:00")) / 86400000);
+
+  const occupancyForTank = (tankId) =>
+    batches
+      .filter((b) => batchTankIds(b).includes(tankId))
+      .map((b) => {
+        const events = packagingEvents(b);
+        const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
+        const end = fullyDone
+          ? (events.length > 0 ? events[events.length - 1].date : b.startDate)
+          : addDays(today(), 1);
+        return { batch: b, start: b.startDate, end };
+      })
+      .filter((o) => o.end >= rangeStart && o.start <= dayList[dayList.length - 1]);
+
+  return (
+    <div>
+      {tanks.length === 0 ? (
+        <EmptyState icon={Calendar} title="No tanks yet" subtitle="Set up tanks in Brewery first, then you can schedule batches against them here." />
+      ) : (
+        <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+          <div style={{ minWidth: totalDays * dayWidth + 120, width: "fit-content" }}>
+            <div style={{ display: "flex" }}>
+              <div style={{ width: 120, flexShrink: 0 }} />
+              {dayList.map((d) => {
+                const isToday = d === today();
+                const dt = new Date(d + "T00:00:00");
+                return (
+                  <div
+                    key={d}
+                    style={{
+                      width: dayWidth,
+                      flexShrink: 0,
+                      textAlign: "center",
+                      padding: "4px 0",
+                      background: isToday ? "#5C9A3C" : "transparent",
+                      borderRadius: isToday ? 4 : 0,
+                    }}
+                  >
+                    <div style={{ fontSize: 8.5, color: isToday ? "#FFFFFF" : "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {dt.toLocaleDateString(undefined, { month: "short" }).toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: 12, color: isToday ? "#FFFFFF" : "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {dt.getDate()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {tanks.map((tank) => {
+              const occ = occupancyForTank(tank.id);
+              return (
+                <div key={tank.id} style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", minHeight: 48 }}>
+                  <div style={{ width: 120, flexShrink: 0, paddingRight: 10 }}>
+                    <div
+                      style={{
+                        fontFamily: "'Oswald', sans-serif",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: "#2A3324",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {tank.name}
+                    </div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, color: "#9BA88A" }}>{tank.type}</div>
+                  </div>
+                  <div style={{ position: "relative", display: "flex" }}>
+                    {dayList.map((d) => (
+                      <div
+                        key={d}
+                        onClick={() => {
+                          const covered = occ.some((o) => d >= o.start && d <= o.end);
+                          if (!covered) onScheduleTank(tank.id, d);
+                        }}
+                        style={{ width: dayWidth, height: 48, flexShrink: 0, borderLeft: "1px solid #F5F1E4", cursor: "pointer" }}
+                      />
+                    ))}
+                    {occ.map(({ batch, start, end }) => {
+                      const startIdx = Math.max(0, dayIndex(start));
+                      const endIdx = Math.min(totalDays - 1, dayIndex(end));
+                      return (
+                        <button
+                          key={batch.id}
+                          onClick={() => onOpenBatch(batch.id)}
+                          style={{
+                            position: "absolute",
+                            left: startIdx * dayWidth + 2,
+                            width: (endIdx - startIdx + 1) * dayWidth - 4,
+                            top: 7,
+                            height: 34,
+                            background: STAGE_COLOR[batch.stage] || "#5C9A3C",
+                            border: "none",
+                            borderRadius: 5,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "0 8px",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "#16191A",
+                              fontSize: 11.5,
+                              fontFamily: "'Inter', sans-serif",
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {batch.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
+        {Object.entries(STAGE_COLOR)
+          .filter(([stage]) => !["Secondary", "Conditioning"].includes(stage))
+          .map(([stage, color]) => (
+            <div key={stage} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 9, height: 9, borderRadius: 2, background: color }} />
+              <span style={{ fontSize: 11, color: "#9BA88A" }}>{stage}</span>
+            </div>
+          ))}
+      </div>
+      <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 10 }}>
+        Tap an empty day on a tank's row to schedule a batch there. Tap an existing bar to open that batch.
+      </div>
+    </div>
+  );
+}
+
 function HomeView({
   companyName,
   companyLogo,
@@ -8294,7 +8481,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-3";
+const APP_VERSION = "2026-07-31-4";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -8506,6 +8693,7 @@ export default function TankLog() {
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showDeleteCompany, setShowDeleteCompany] = useState(false);
   const [brewRecipe, setBrewRecipe] = useState(null);
+  const [batchPreset, setBatchPreset] = useState(null);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
@@ -9680,6 +9868,13 @@ export default function TankLog() {
         button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
 
+      <style>{`
+        button:not(:disabled):active { transform: scale(0.97); }
+        button { transition: transform 90ms ease, border-color 0.15s, background 0.15s; }
+        @media (prefers-reduced-motion: reduce) {
+          button:not(:disabled):active { transform: none; }
+        }
+      `}</style>
       {updateAvailable && <UpdateBanner onRefresh={() => window.location.reload()} />}
       {isOffline && <OfflineBanner />}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
@@ -9715,6 +9910,7 @@ export default function TankLog() {
               ["recipes", "Recipes", Beaker],
               ["recipeBuilder", "Recipe Builder", FlaskConical],
               ["brewery", "Brewery", Warehouse],
+              ["production", "Production", Calendar],
               ["foodsafety", "Food Safety", CheckCircle2],
               ["settings", "Settings", Settings],
             ].map(([key, label, Icon]) => {
@@ -9787,7 +9983,7 @@ export default function TankLog() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && (
                 <button
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
@@ -10363,6 +10559,26 @@ export default function TankLog() {
               </div>
             )}
 
+            {!loadingData && view === "production" && (
+              <>
+                <FirstVisitTip tipKey="production">
+                  See every tank's schedule at a glance. Tap an empty day on a tank's row to schedule a batch ahead of time, or tap an existing bar to open that batch.
+                </FirstVisitTip>
+                <ProductionManagerView
+                  tanks={tanks}
+                  batches={batches}
+                  onOpenBatch={(id) => {
+                    setSelectedId(id);
+                    setView("batches");
+                  }}
+                  onScheduleTank={(tankId, startDate) => {
+                    setBatchPreset({ tankId, startDate });
+                    setShowAdd(true);
+                  }}
+                />
+              </>
+            )}
+
             {!loadingData && view === "settings" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
                 <div>
@@ -10717,6 +10933,7 @@ export default function TankLog() {
           onClose={() => {
             setShowAdd(false);
             setBrewRecipe(null);
+            setBatchPreset(null);
           }}
           onAdd={addBatch}
           nextNumber={nextNumber}
@@ -10726,6 +10943,8 @@ export default function TankLog() {
           batches={batches}
           inventory={inventory}
           onAddInventoryItem={addInventoryItem}
+          presetTankId={batchPreset ? batchPreset.tankId : null}
+          presetStartDate={batchPreset ? batchPreset.startDate : null}
         />
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} suppliers={suppliers} />}
