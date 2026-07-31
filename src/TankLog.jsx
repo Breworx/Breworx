@@ -6894,22 +6894,23 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
         inset: 0,
         background: "rgba(10,12,11,0.85)",
         display: "flex",
-        alignItems: "flex-end",
+        alignItems: "center",
         justifyContent: "center",
         zIndex: 60,
+        padding: "24px 16px",
       }}
     >
       <div
         style={{
           background: "#F8F5EA",
           border: "1px solid #DDE0C8",
-          borderBottom: "none",
-          borderRadius: "10px 10px 0 0",
+          borderRadius: 10,
           width: "100%",
           maxWidth: 480,
           maxHeight: "88vh",
           overflowY: "auto",
           padding: "22px 22px 26px",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
         }}
       >
         <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: "0 0 14px", fontWeight: 500 }}>
@@ -8678,7 +8679,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-7";
+const APP_VERSION = "2026-07-31-8";
 
 function UpdateBanner({ onRefresh }) {
   return (
