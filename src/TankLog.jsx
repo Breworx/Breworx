@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -952,7 +952,15 @@ const CATEGORY_COLOR = {
   Hops: "#D9A441",
   Yeast: "#B8925A",
   Other: "#9BA88A",
+  Can: "#5C9A3C",
+  Bottle: "#D9A441",
+  Lid: "#B8925A",
+  Label: "#D4A24C",
+  Box: "#8A6A3D",
+  Carton: "#9BA88A",
 };
+
+const CONSUMABLE_CATEGORIES = ["Can", "Bottle", "Lid", "Label", "Box", "Carton", "Other"];
 
 const STEP_FOR_UNIT = { kg: 0.5, g: 50, L: 1, ea: 1 };
 
@@ -2070,7 +2078,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory" }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -2096,7 +2104,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           marginBottom: 18,
         }}
       >
-        <ChevronLeft size={16} /> All inventory
+        <ChevronLeft size={16} /> {backLabel}
       </button>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -2612,11 +2620,11 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   );
 }
 
-function AddInventoryModal({ onClose, onAdd, suppliers }) {
+function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES, unitOptions = ["kg", "g", "L", "ea"], title = "New inventory item", submitLabel = "Add to inventory" }) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("Grain");
+  const [category, setCategory] = useState(categories[0]);
   const [qty, setQty] = useState(10);
-  const [unit, setUnit] = useState("kg");
+  const [unit, setUnit] = useState(unitOptions[0]);
   const [threshold, setThreshold] = useState(5);
   const [supplierId, setSupplierId] = useState("");
   const [saving, setSaving] = useState(false);
@@ -2638,12 +2646,12 @@ function AddInventoryModal({ onClose, onAdd, suppliers }) {
   };
 
   return (
-    <Modal title="New inventory item" onClose={onClose}>
+    <Modal title={title} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Name" value={name} onChange={setName} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
-          <SelectField label="Unit" value={unit} onChange={setUnit} options={["kg", "g", "L", "ea"]} />
+          <SelectField label="Category" value={category} onChange={setCategory} options={categories} />
+          <SelectField label="Unit" value={unit} onChange={setUnit} options={unitOptions} />
           <NumberField label="Quantity on hand" value={qty} onChange={setQty} step="0.1" suffix={unit} />
           <NumberField label="Low-stock alert at" value={threshold} onChange={setThreshold} step="0.1" suffix={unit} />
         </div>
@@ -2691,7 +2699,7 @@ function AddInventoryModal({ onClose, onAdd, suppliers }) {
             cursor: saving ? "default" : "pointer",
           }}
         >
-          {saving ? "Saving…" : "Add to inventory"}
+          {saving ? "Saving…" : submitLabel}
         </button>
       </div>
     </Modal>
@@ -7801,6 +7809,10 @@ export default function TankLog() {
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
+  const [showAddConsumable, setShowAddConsumable] = useState(false);
+  const [selectedConsumableId, setSelectedConsumableId] = useState(null);
+  const [consumableQuery, setConsumableQuery] = useState("");
+  const [consumableAdjustTarget, setConsumableAdjustTarget] = useState(null);
   const [recipeQuery, setRecipeQuery] = useState("");
   const [adjustTarget, setAdjustTarget] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -7996,6 +8008,10 @@ export default function TankLog() {
   const selectedInventoryItem = useMemo(
     () => inventory.find((it) => it.id === selectedInventoryId) || null,
     [inventory, selectedInventoryId]
+  );
+  const selectedConsumableItem = useMemo(
+    () => consumables.find((it) => it.id === selectedConsumableId) || null,
+    [consumables, selectedConsumableId]
   );
 
   const addBatch = async (b) => {
@@ -8596,6 +8612,50 @@ export default function TankLog() {
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
   };
 
+  const addConsumable = async (item) => {
+    const { data, error } = await supabase.from("consumables").insert(consumableToRow(item, user.id, profile.companyId)).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => [rowToConsumable(data), ...prev]);
+    showToast("success", `${item.name} added to consumables.`);
+  };
+
+  const updateConsumableSupplier = async (id, supplierId) => {
+    const { error } = await supabase.from("consumables").update({ supplier_id: supplierId }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, supplierId } : it)));
+  };
+
+  const adjustConsumable = async (id, delta) => {
+    const item = consumables.find((it) => it.id === id);
+    if (!item) return;
+    const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
+    const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "manual", delta: actualDelta, note: "Manual adjustment" };
+    const newHistory = [...(item.history || []), historyEntry];
+    const { error } = await supabase.from("consumables").update({ qty: newQty, history: newHistory }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
+  };
+
+  const adjustConsumableWithNote = async (id, delta, batchRef) => {
+    const item = consumables.find((it) => it.id === id);
+    if (!item) return;
+    const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
+    const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+    const historyEntry = {
+      id: uid(),
+      date: new Date().toISOString(),
+      user: user.name,
+      type: "manual",
+      delta: actualDelta,
+      note: batchRef ? `Manual adjustment — Batch ${batchRef}` : "Manual adjustment",
+    };
+    const newHistory = [...(item.history || []), historyEntry];
+    const { error } = await supabase.from("consumables").update({ qty: newQty, history: newHistory }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
+  };
+
   const addPO = async (po) => {
     const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -8876,6 +8936,7 @@ export default function TankLog() {
               ["batches", "Fermentation", Droplet],
               ["packaged", "Packaged", Package],
               ["inventory", "Inventory", LayoutGrid],
+              ["consumables", "Consumables", Box],
               ["orders", "Purchase Orders", Truck],
               ["recipes", "Recipes", Beaker],
               ["recipeBuilder", "Recipe Builder", FlaskConical],
@@ -8883,7 +8944,7 @@ export default function TankLog() {
               ["foodsafety", "Food Safety", CheckCircle2],
               ["settings", "Settings", Settings],
             ].map(([key, label, Icon]) => {
-              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem;
+              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem;
               return (
                 <button
                   key={key}
@@ -8893,6 +8954,7 @@ export default function TankLog() {
                     setSelectedPOId(null);
                     setSelectedRecipeId(null);
                     setSelectedInventoryId(null);
+                    setSelectedConsumableId(null);
                   }}
                   style={{
                     display: "flex",
@@ -8947,7 +9009,7 @@ export default function TankLog() {
         </div>
 
         <div style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
-        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
               {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && (
@@ -8955,6 +9017,7 @@ export default function TankLog() {
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
                     else if (view === "inventory") setShowAddInventory(true);
+                    else if (view === "consumables") setShowAddConsumable(true);
                     else if (view === "orders") setShowAddPO(true);
                     else if (view === "recipes") setShowAddRecipe(true);
                     else setShowAddTank(true);
@@ -8976,7 +9039,7 @@ export default function TankLog() {
                   }}
                 >
                   <Plus size={16} />{" "}
-                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : "New tank"}
+                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "consumables" ? "New item" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : "New tank"}
                 </button>
               )}
             </div>
@@ -9218,6 +9281,88 @@ export default function TankLog() {
                       <EmptyState icon={Package} title="No ingredients tracked yet" subtitle="Add grain, hops, or yeast to get started, or bring some in via a purchase order." />
                     ) : (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No ingredients match "{inventoryQuery}".</div>
+                    )
+                  )}
+                </>
+              );
+            })()}
+
+            {!loadingData && view === "consumables" && (() => {
+              const filtered = consumables.filter((it) =>
+                it.name.toLowerCase().includes(consumableQuery.trim().toLowerCase())
+              );
+              const grouped = CONSUMABLE_CATEGORIES.map((cat) => ({
+                category: cat,
+                items: filtered.filter((it) => it.category === cat),
+              })).filter((g) => g.items.length > 0);
+
+              return (
+                <>
+                  <input
+                    type="text"
+                    value={consumableQuery}
+                    onChange={(e) => setConsumableQuery(e.target.value)}
+                    placeholder="Search consumables…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#F5F1E4",
+                      border: "1px solid #DDE0C8",
+                      borderRadius: 5,
+                      padding: "10px 12px",
+                      color: "#2A3324",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                      marginBottom: 16,
+                    }}
+                  />
+
+                  {consumables.some((it) => it.qty <= it.threshold) && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        color: "#5C9A3C",
+                        fontSize: 12.5,
+                        marginBottom: 14,
+                        background: "#FCF1DC",
+                        border: "1px solid #E3D3A0",
+                        borderRadius: 5,
+                        padding: "8px 12px",
+                      }}
+                    >
+                      <AlertTriangle size={14} />
+                      {consumables.filter((it) => it.qty <= it.threshold).length} item(s) running low
+                    </div>
+                  )}
+
+                  {grouped.map((g, i) => (
+                    <div key={g.category} style={{ marginBottom: i < grouped.length - 1 ? 22 : 0 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: CATEGORY_COLOR[g.category],
+                          marginBottom: 10,
+                        }}
+                      >
+                        {g.category} ({g.items.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {g.items.map((it) => (
+                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustConsumable} onOpen={setSelectedConsumableId} suppliers={suppliers} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {filtered.length === 0 && (
+                    consumables.length === 0 ? (
+                      <EmptyState icon={Box} title="No consumables tracked yet" subtitle="Add cans, lids, boxes, and labels to start tracking packaging stock." />
+                    ) : (
+                      <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No consumables match "{consumableQuery}".</div>
                     )
                   )}
                 </>
@@ -9709,6 +9854,18 @@ export default function TankLog() {
             onChangeSupplier={updateInventorySupplier}
           />
         )}
+
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && selectedConsumableItem && (
+          <InventoryItemDetail
+            item={selectedConsumableItem}
+            onBack={() => setSelectedConsumableId(null)}
+            onAdjust={adjustConsumable}
+            onLogAdjustment={setConsumableAdjustTarget}
+            suppliers={suppliers}
+            onChangeSupplier={updateConsumableSupplier}
+            backLabel="All consumables"
+          />
+        )}
         </div>
       </div>
 
@@ -9729,6 +9886,17 @@ export default function TankLog() {
         />
       )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} suppliers={suppliers} />}
+      {showAddConsumable && (
+        <AddInventoryModal
+          onClose={() => setShowAddConsumable(false)}
+          onAdd={addConsumable}
+          suppliers={suppliers}
+          categories={CONSUMABLE_CATEGORIES}
+          unitOptions={["ea", "box", "roll"]}
+          title="New consumable"
+          submitLabel="Add to consumables"
+        />
+      )}
       {showStockTake && (
         <StockTakeModal inventory={inventory} onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
       )}
@@ -9874,6 +10042,9 @@ export default function TankLog() {
       )}
       {adjustTarget && (
         <AdjustInventoryModal item={adjustTarget} onClose={() => setAdjustTarget(null)} onSave={adjustInventoryWithNote} />
+      )}
+      {consumableAdjustTarget && (
+        <AdjustInventoryModal item={consumableAdjustTarget} onClose={() => setConsumableAdjustTarget(null)} onSave={adjustConsumableWithNote} />
       )}
       {assignTankTarget && (
         <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
