@@ -7833,6 +7833,8 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
 function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const [query, setQuery] = useState("");
   const [selectedFamilyId, setSelectedFamilyId] = useState(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedBatchIds, setSelectedBatchIds] = useState([]);
 
   const families = activeRecipesByFamily(recipes).filter(
     (r) => r.name.toLowerCase().includes(query.trim().toLowerCase()) || r.style.toLowerCase().includes(query.trim().toLowerCase())
@@ -7909,6 +7911,8 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const rows = familyBatches.map((b) => {
     const latest = latestReading(b);
     const targetRecipe = recipes.find((r) => r.id === b.recipeId);
+    const firstPass = [...(b.diacetylTests || [])].sort((x, y) => (x.date < y.date ? -1 : 1)).find((t) => t.result === "pass");
+    const daysToDiacetylPass = firstPass ? daysBetween(b.startDate, firstPass.date.slice(0, 10)) : null;
     return {
       batch: b,
       latest,
@@ -7916,16 +7920,41 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
       actualAbv: calcABV(b.og, latest.gravity),
       attn: attenuation(b.og, b.fg, latest.gravity),
       days: daysBetween(b.startDate, latest.date),
+      daysToDiacetylPass,
     };
   });
 
-  const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
+  const avg = (arr) => {
+    const clean = arr.filter((v) => v != null);
+    return clean.length ? clean.reduce((s, v) => s + v, 0) / clean.length : null;
+  };
   const avgOG = avg(rows.map((r) => r.batch.og));
   const avgAttn = avg(rows.map((r) => r.attn));
   const avgCost = avg(rows.map((r) => r.batch.ingredientCost || 0));
   const avgDays = avg(rows.map((r) => r.days));
+  const avgMashPh = avg(rows.map((r) => r.batch.mashPh));
+  const avgDiacetylDays = avg(rows.map((r) => r.daysToDiacetylPass));
 
   const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn) }));
+
+  const toggleCompare = (id) =>
+    setSelectedBatchIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const compareRows = selectedBatchIds.map((id) => rows.find((r) => r.batch.id === id)).filter(Boolean);
+
+  const metricRow = (label, fn, fmt = (v) => v) => (
+    <tr style={{ borderBottom: "1px solid #EBE8D6" }}>
+      <td style={{ padding: "8px 10px", color: "#9BA88A", fontSize: 12, whiteSpace: "nowrap" }}>{label}</td>
+      {compareRows.map((r) => {
+        const v = fn(r);
+        return (
+          <td key={r.batch.id} style={{ padding: "8px 10px", fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#2A3324" }}>
+            {v == null ? "—" : fmt(v)}
+          </td>
+        );
+      })}
+    </tr>
+  );
 
   return (
     <div>
@@ -7936,25 +7965,93 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
         <ChevronLeft size={16} /> All recipes
       </button>
 
-      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: "0 0 4px", fontWeight: 500 }}>{selectedFamily.name}</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: 0, fontWeight: 500 }}>{selectedFamily.name}</h1>
+        {rows.length > 1 && (
+          <button
+            onClick={() => {
+              setCompareMode(!compareMode);
+              setSelectedBatchIds([]);
+            }}
+            style={{
+              background: compareMode ? "#5C9A3C" : "none",
+              border: "1px solid #C9D1AC",
+              borderRadius: 5,
+              padding: "7px 12px",
+              color: compareMode ? "#16191A" : "#5C6B54",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12.5,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            {compareMode ? "Done comparing" : "Compare batches"}
+          </button>
+        )}
+      </div>
       <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 18 }}>{selectedFamily.style} · {rows.length} batch{rows.length !== 1 ? "es" : ""} brewed</div>
 
       {rows.length === 0 && (
         <EmptyState icon={TrendingUp} title="No batches brewed from this recipe yet" subtitle="Once you brew a batch using it, its stats will show up here for comparison." />
       )}
 
+      {compareMode && selectedBatchIds.length >= 2 && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "4px 4px", marginBottom: 20, overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #DDE0C8" }}>
+                <td style={{ padding: "8px 10px" }} />
+                {compareRows.map((r) => (
+                  <td key={r.batch.id} style={{ padding: "8px 10px", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13, color: "#2A3324", whiteSpace: "nowrap" }}>
+                    #{r.batch.number}
+                  </td>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {metricRow("Brew date", (r) => r.batch.startDate)}
+              {metricRow("Target OG", (r) => r.targetRecipe?.og, (v) => v.toFixed(3))}
+              {metricRow("Actual OG", (r) => r.batch.og, (v) => v.toFixed(3))}
+              {metricRow("Target FG", (r) => r.targetRecipe?.fg, (v) => v.toFixed(3))}
+              {metricRow("Actual FG", (r) => r.latest.gravity, (v) => v.toFixed(3))}
+              {metricRow("Attenuation", (r) => r.attn, (v) => `${v.toFixed(0)}%`)}
+              {metricRow("ABV", (r) => r.actualAbv, (v) => `${v.toFixed(1)}%`)}
+              {metricRow("Mash pH", (r) => r.batch.mashPh, (v) => v.toFixed(2))}
+              {metricRow("Pre-boil gravity", (r) => r.batch.preBoilGravity, (v) => v.toFixed(3))}
+              {metricRow("Days in tank", (r) => r.days, (v) => `${v}d`)}
+              {metricRow("Days to diacetyl pass", (r) => r.daysToDiacetylPass, (v) => `${v}d`)}
+              {metricRow("Ingredient cost", (r) => r.batch.ingredientCost, (v) => `$${v.toFixed(2)}`)}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {compareMode && selectedBatchIds.length === 1 && (
+        <div style={{ color: "#9BA88A", fontSize: 12.5, marginBottom: 16 }}>Pick at least one more batch below to compare.</div>
+      )}
+
       {rows.length > 0 && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 10 }}>
             {[
               ["Avg OG", avgOG?.toFixed(3), "#5C9A3C"],
-              ["Avg attenuation", `${avgAttn?.toFixed(0)}%`, "#D9A441"],
-              ["Avg days in tank", avgDays?.toFixed(0), "#D4A24C"],
-              ["Avg ingredient cost", avgCost != null ? `$${avgCost.toFixed(0)}` : "—", "#9BA88A"],
+              ["Avg attenuation", avgAttn != null ? `${avgAttn.toFixed(0)}%` : "—", "#D9A441"],
+              ["Avg mash pH", avgMashPh != null ? avgMashPh.toFixed(2) : "—", "#B8925A"],
             ].map(([label, value, color]) => (
               <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 10px" }}>
                 <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
                 <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 19, color, marginTop: 4 }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>
+            {[
+              ["Avg days in tank", avgDays?.toFixed(0), "#D4A24C"],
+              ["Avg days to diacetyl pass", avgDiacetylDays != null ? avgDiacetylDays.toFixed(1) : "No passes logged yet", "#5C9A3C"],
+              ["Avg ingredient cost", avgCost != null ? `$${avgCost.toFixed(0)}` : "—", "#9BA88A"],
+            ].map(([label, value, color]) => (
+              <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 10px" }}>
+                <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: typeof value === "string" && value.includes(" ") ? 12 : 19, color, marginTop: 4 }}>{value}</div>
               </div>
             ))}
           </div>
@@ -7977,44 +8074,70 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {rows.map(({ batch, latest, targetRecipe, actualAbv, attn, days }) => (
-              <button
-                key={batch.id}
-                onClick={() => onOpenBatch(batch.id)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                  background: "#FFFFFF",
-                  border: "1px solid #DDE0C8",
-                  borderRadius: 6,
-                  padding: "12px 14px",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  width: "100%",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>
-                    {batch.name} <span style={{ color: "#9BA88A", fontWeight: 400, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{batch.number}</span>
-                  </span>
-                  <span style={{ color: "#9BA88A", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>{batch.startDate}</span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C6B54" }}>
-                  <span>
-                    OG {batch.og.toFixed(3)}
-                    {targetRecipe && Math.abs(batch.og - targetRecipe.og) > 0.001 && (
-                      <span style={{ color: "#D9A441" }}> ({batch.og > targetRecipe.og ? "+" : ""}{((batch.og - targetRecipe.og) * 1000).toFixed(0)})</span>
-                    )}
-                  </span>
-                  <span>FG {latest.gravity.toFixed(3)}</span>
-                  <span>{attn.toFixed(0)}% attn</span>
-                  <span>{actualAbv.toFixed(1)}% ABV</span>
-                  <span>{days}d</span>
-                  {batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
-                </div>
-              </button>
-            ))}
+            {rows.map(({ batch, latest, targetRecipe, actualAbv, attn, days, daysToDiacetylPass }) => {
+              const checked = selectedBatchIds.includes(batch.id);
+              return (
+                <button
+                  key={batch.id}
+                  onClick={() => (compareMode ? toggleCompare(batch.id) : onOpenBatch(batch.id))}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    background: checked ? "#F8F5EA" : "#FFFFFF",
+                    border: `1px solid ${checked ? "#5C9A3C" : "#DDE0C8"}`,
+                    borderRadius: 6,
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    width: "100%",
+                  }}
+                >
+                  {compareMode && (
+                    <div
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 4,
+                        border: `1.5px solid ${checked ? "#5C9A3C" : "#C9D1AC"}`,
+                        background: checked ? "#5C9A3C" : "none",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        marginTop: 2,
+                      }}
+                    >
+                      {checked && <CheckCircle2 size={12} color="#16191A" />}
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>
+                        {batch.name} <span style={{ color: "#9BA88A", fontWeight: 400, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{batch.number}</span>
+                      </span>
+                      <span style={{ color: "#9BA88A", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>{batch.startDate}</span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C6B54" }}>
+                      <span>
+                        OG {batch.og.toFixed(3)}
+                        {targetRecipe && Math.abs(batch.og - targetRecipe.og) > 0.001 && (
+                          <span style={{ color: "#D9A441" }}> ({batch.og > targetRecipe.og ? "+" : ""}{((batch.og - targetRecipe.og) * 1000).toFixed(0)})</span>
+                        )}
+                      </span>
+                      <span>FG {latest.gravity.toFixed(3)}</span>
+                      <span>{attn.toFixed(0)}% attn</span>
+                      <span>{actualAbv.toFixed(1)}% ABV</span>
+                      {batch.mashPh != null && <span>pH {batch.mashPh.toFixed(2)}</span>}
+                      {batch.preBoilGravity != null && <span>PBG {batch.preBoilGravity.toFixed(3)}</span>}
+                      <span>{days}d</span>
+                      {daysToDiacetylPass != null && <span>diacetyl {daysToDiacetylPass}d</span>}
+                      {batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -9313,7 +9436,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-13";
+const APP_VERSION = "2026-07-31-14";
 
 function UpdateBanner({ onRefresh }) {
   return (
