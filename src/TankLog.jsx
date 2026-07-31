@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -2703,6 +2703,263 @@ function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES,
         </button>
       </div>
     </Modal>
+  );
+}
+
+function PackageTypeCard({ packageType, onOpen }) {
+  return (
+    <button
+      onClick={() => onOpen(packageType.id)}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        background: "#FFFFFF",
+        border: "1px solid #DDE0C8",
+        borderRadius: 6,
+        padding: "14px 16px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
+    >
+      <div style={{ minWidth: 0 }}>
+        <h3
+          style={{
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 16,
+            color: "#2A3324",
+            margin: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {packageType.name}
+        </h3>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
+          {packageType.items.length} consumable{packageType.items.length !== 1 ? "s" : ""} per unit
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function AddPackageTypeModal({ onClose, onAdd, consumables }) {
+  const [name, setName] = useState("");
+  const [items, setItems] = useState([{ id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1 }]);
+  const [saving, setSaving] = useState(false);
+
+  const updateItem = (id, patch) =>
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+
+  const addItemRow = () =>
+    setItems((prev) => [...prev, { id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1 }]);
+
+  const removeItemRow = (id) => setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.id !== id) : prev));
+
+  const submit = async () => {
+    const cleanItems = items
+      .filter((it) => it.consumableId)
+      .map((it) => {
+        const consumable = consumables.find((c) => c.id === it.consumableId);
+        return { consumableId: it.consumableId, consumableName: consumable ? consumable.name : "", qtyPerUnit: Number(it.qtyPerUnit) || 0 };
+      });
+    if (!name.trim() || cleanItems.length === 0) return;
+    setSaving(true);
+    await onAdd({ id: uid(), name: name.trim(), items: cleanItems });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <Modal title="New package type" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Name" value={name} onChange={setName} />
+
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
+          Consumables used per unit packaged
+        </div>
+
+        {consumables.length === 0 && (
+          <div style={{ color: "#9BA88A", fontSize: 12.5 }}>
+            You don't have any consumables yet — add some in the Consumables screen first (cans, lids, boxes, etc.), then come back here.
+          </div>
+        )}
+
+        {consumables.length > 0 &&
+          items.map((line, i) => (
+            <div
+              key={line.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 100px auto",
+                gap: 10,
+                alignItems: "end",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 6,
+                padding: "12px",
+              }}
+            >
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+                  Consumable
+                </span>
+                <select
+                  value={line.consumableId}
+                  onChange={(e) => updateItem(line.id, { consumableId: e.target.value })}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: "#FFFFFF",
+                    border: "1px solid #DDE0C8",
+                    borderRadius: 4,
+                    padding: "9px 10px",
+                    color: "#2A3324",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 14,
+                  }}
+                >
+                  {consumables.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <NumberField label="Qty each" value={line.qtyPerUnit} onChange={(v) => updateItem(line.id, { qtyPerUnit: v })} step="1" />
+              {items.length > 1 && (
+                <button
+                  onClick={() => removeItemRow(line.id)}
+                  aria-label="Remove consumable"
+                  style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8 }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+
+        {consumables.length > 0 && (
+          <button
+            onClick={addItemRow}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              background: "none",
+              border: "1px dashed #C9D1AC",
+              borderRadius: 5,
+              padding: "9px",
+              color: "#5C6B54",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12.5,
+              cursor: "pointer",
+            }}
+          >
+            <Plus size={14} /> Add another consumable
+          </button>
+        )}
+
+        <button
+          onClick={submit}
+          disabled={saving || consumables.length === 0}
+          style={{
+            marginTop: 8,
+            background: saving || consumables.length === 0 ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving || consumables.length === 0 ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: saving || consumables.length === 0 ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : "Create package type"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function PackageTypeDetail({ packageType, onBack, onDelete }) {
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          color: "#5C6B54",
+          cursor: "pointer",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          padding: 0,
+          marginBottom: 18,
+        }}
+      >
+        <ChevronLeft size={16} /> All package types
+      </button>
+
+      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: "0 0 20px" }}>
+        {packageType.name}
+      </h1>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+        Consumables used per unit packaged
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
+        {packageType.items.map((it, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "10px 12px",
+              background: "#F8F5EA",
+              border: "1px solid #EBE8D6",
+              borderRadius: 5,
+              fontSize: 13.5,
+              color: "#2A3324",
+            }}
+          >
+            <span>{it.consumableName}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>× {it.qtyPerUnit}</span>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => onDelete(packageType.id)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          background: "none",
+          border: "1px solid #DDE0C8",
+          borderRadius: 5,
+          padding: "9px 12px",
+          color: "#5C6B54",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 12.5,
+          cursor: "pointer",
+        }}
+      >
+        <Trash2 size={14} /> Delete package type
+      </button>
+    </div>
   );
 }
 
@@ -7813,6 +8070,8 @@ export default function TankLog() {
   const [selectedConsumableId, setSelectedConsumableId] = useState(null);
   const [consumableQuery, setConsumableQuery] = useState("");
   const [consumableAdjustTarget, setConsumableAdjustTarget] = useState(null);
+  const [showAddPackageType, setShowAddPackageType] = useState(false);
+  const [selectedPackageTypeId, setSelectedPackageTypeId] = useState(null);
   const [recipeQuery, setRecipeQuery] = useState("");
   const [adjustTarget, setAdjustTarget] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -8012,6 +8271,10 @@ export default function TankLog() {
   const selectedConsumableItem = useMemo(
     () => consumables.find((it) => it.id === selectedConsumableId) || null,
     [consumables, selectedConsumableId]
+  );
+  const selectedPackageType = useMemo(
+    () => packageTypes.find((pt) => pt.id === selectedPackageTypeId) || null,
+    [packageTypes, selectedPackageTypeId]
   );
 
   const addBatch = async (b) => {
@@ -8656,6 +8919,20 @@ export default function TankLog() {
     setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
   };
 
+  const addPackageType = async (packageType) => {
+    const { data, error } = await supabase.from("package_types").insert(packageTypeToRow(packageType, user.id, profile.companyId)).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setPackageTypes((prev) => [rowToPackageType(data), ...prev]);
+    showToast("success", `${packageType.name} added.`);
+  };
+
+  const deletePackageType = async (id) => {
+    const { error } = await supabase.from("package_types").delete().eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setPackageTypes((prev) => prev.filter((pt) => pt.id !== id));
+    setSelectedPackageTypeId(null);
+  };
+
   const addPO = async (po) => {
     const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -8937,6 +9214,7 @@ export default function TankLog() {
               ["packaged", "Packaged", Package],
               ["inventory", "Inventory", LayoutGrid],
               ["consumables", "Consumables", Box],
+              ["packageTypes", "Package Types", Layers],
               ["orders", "Purchase Orders", Truck],
               ["recipes", "Recipes", Beaker],
               ["recipeBuilder", "Recipe Builder", FlaskConical],
@@ -8944,7 +9222,7 @@ export default function TankLog() {
               ["foodsafety", "Food Safety", CheckCircle2],
               ["settings", "Settings", Settings],
             ].map(([key, label, Icon]) => {
-              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem;
+              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType;
               return (
                 <button
                   key={key}
@@ -8955,6 +9233,7 @@ export default function TankLog() {
                     setSelectedRecipeId(null);
                     setSelectedInventoryId(null);
                     setSelectedConsumableId(null);
+                    setSelectedPackageTypeId(null);
                   }}
                   style={{
                     display: "flex",
@@ -9009,7 +9288,7 @@ export default function TankLog() {
         </div>
 
         <div style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
-        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
               {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && (
@@ -9018,6 +9297,7 @@ export default function TankLog() {
                     if (view === "batches") setShowAdd(true);
                     else if (view === "inventory") setShowAddInventory(true);
                     else if (view === "consumables") setShowAddConsumable(true);
+                    else if (view === "packageTypes") setShowAddPackageType(true);
                     else if (view === "orders") setShowAddPO(true);
                     else if (view === "recipes") setShowAddRecipe(true);
                     else setShowAddTank(true);
@@ -9039,7 +9319,7 @@ export default function TankLog() {
                   }}
                 >
                   <Plus size={16} />{" "}
-                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "consumables" ? "New item" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : "New tank"}
+                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "consumables" ? "New item" : view === "packageTypes" ? "New package type" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : "New tank"}
                 </button>
               )}
             </div>
@@ -9368,6 +9648,19 @@ export default function TankLog() {
                 </>
               );
             })()}
+
+            {!loadingData && view === "packageTypes" && (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {packageTypes.map((pt) => (
+                    <PackageTypeCard key={pt.id} packageType={pt} onOpen={setSelectedPackageTypeId} />
+                  ))}
+                </div>
+                {packageTypes.length === 0 && (
+                  <EmptyState icon={Layers} title="No package types yet" subtitle="Create one to define which cans, lids, boxes, or labels get used up each time you package a batch." />
+                )}
+              </>
+            )}
 
             {!loadingData && view === "orders" && (() => {
               const draftPOs = purchaseOrders.filter((po) => po.status === "Draft");
@@ -9866,6 +10159,14 @@ export default function TankLog() {
             backLabel="All consumables"
           />
         )}
+
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && selectedPackageType && (
+          <PackageTypeDetail
+            packageType={selectedPackageType}
+            onBack={() => setSelectedPackageTypeId(null)}
+            onDelete={deletePackageType}
+          />
+        )}
         </div>
       </div>
 
@@ -9896,6 +10197,9 @@ export default function TankLog() {
           title="New consumable"
           submitLabel="Add to consumables"
         />
+      )}
+      {showAddPackageType && (
+        <AddPackageTypeModal onClose={() => setShowAddPackageType(false)} onAdd={addPackageType} consumables={consumables} />
       )}
       {showStockTake && (
         <StockTakeModal inventory={inventory} onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
