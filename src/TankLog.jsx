@@ -8524,7 +8524,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDel
   };
 
   const handleDelete = () => {
-    if (window.confirm(`Delete the scheduled brew "${batch.name}"? This can't be undone from here.`)) {
+    if (window.confirm(`Delete the scheduled brew "${batch.name}"? You'll have a few seconds to undo right after.`)) {
       onDelete(batch.id);
       onClose();
     }
@@ -9544,7 +9544,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-20";
+const APP_VERSION = "2026-07-31-21";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10734,7 +10734,7 @@ export default function TankLog() {
   };
 
   const deletePO = (po) => {
-    if (!window.confirm(`Delete ${po.poNumber}? This can't be undone from here.`)) return;
+    if (!window.confirm(`Delete ${po.poNumber}? You'll have a few seconds to undo right after.`)) return;
     setPurchaseOrders((prev) => prev.filter((p) => p.id !== po.id));
     setSelectedPOId(null);
     const timeoutId = setTimeout(async () => {
