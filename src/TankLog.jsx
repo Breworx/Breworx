@@ -10138,8 +10138,8 @@ function EmailConfirmedScreen({ onContinue }) {
   );
 }
 
-function AuthScreen() {
-  const [mode, setMode] = useState("signin");
+function AuthScreen({ inviteToken }) {
+  const [mode, setMode] = useState(inviteToken ? "signup" : "signin");
   const [companyName, setCompanyName] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -10149,7 +10149,7 @@ function AuthScreen() {
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (mode === "signup" && !companyName.trim()) {
+    if (mode === "signup" && !inviteToken && !companyName.trim()) {
       setError("Enter your company name.");
       return;
     }
@@ -10172,7 +10172,7 @@ function AuthScreen() {
       const { error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { name: name.trim(), company: companyName.trim() } },
+        options: { data: { name: name.trim(), company: companyName.trim(), inviteToken: inviteToken || null } },
       });
       setBusy(false);
       if (signUpError) {
@@ -10244,12 +10244,17 @@ function AuthScreen() {
             Brewpoint
           </span>
           <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: 0, fontWeight: 500 }}>
-            {mode === "signin" ? "Welcome back" : "Start your brewery log"}
+            {mode === "signin" ? "Welcome back" : inviteToken ? "Join your team" : "Start your brewery log"}
           </h1>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {mode === "signup" && <TextField label="Company name" value={companyName} onChange={setCompanyName} />}
+          {mode === "signup" && inviteToken && (
+            <div style={{ color: "#5C6B54", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 12px" }}>
+              You're joining an existing brewery via invite link — no need to enter a company name.
+            </div>
+          )}
+          {mode === "signup" && !inviteToken && <TextField label="Company name" value={companyName} onChange={setCompanyName} />}
           {mode === "signup" && <TextField label="Your name" value={name} onChange={setName} />}
           <div onKeyDown={onKeyDown}>
             <TextField label="Email" value={email} onChange={setEmail} type="email" />
@@ -10540,7 +10545,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-44";
+const APP_VERSION = "2026-07-31-45";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10728,6 +10733,7 @@ export default function TankLog() {
     const params = new URLSearchParams(window.location.search);
     return params.get("view") === "settings" ? "settings" : "home";
   });
+  const [inviteToken] = useState(() => new URLSearchParams(window.location.search).get("invite"));
 
   useEffect(() => {
     if (window.location.search) {
@@ -10818,6 +10824,8 @@ export default function TankLog() {
   const [viewingSupplierDocs, setViewingSupplierDocs] = useState(null);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [teammates, setTeammates] = useState([]);
+  const [inviteLink, setInviteLink] = useState("");
+  const [creatingInvite, setCreatingInvite] = useState(false);
   const [tanks, setTanks] = useState([]);
   const [showAddTank, setShowAddTank] = useState(false);
   const [stockTakes, setStockTakes] = useState([]);
@@ -10898,11 +10906,11 @@ export default function TankLog() {
       let profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
       if (!profileRow.data) {
         const meta = session.user.user_metadata || {};
-        const { error: joinError } = await supabase.rpc("join_or_create_company", {
-          company_name: meta.company || "My Brewery",
-          member_name: meta.name || user.email.split("@")[0],
-        });
-        if (joinError) { showToast("error", "Something didn't save — check your connection and try again."); }
+        const memberName = meta.name || user.email.split("@")[0];
+        const { error: joinError } = meta.inviteToken
+          ? await supabase.rpc("join_via_invite", { invite_token: meta.inviteToken, member_name: memberName })
+          : await supabase.rpc("join_or_create_company", { company_name: meta.company || "My Brewery", member_name: memberName });
+        if (joinError) { showToast("error", meta.inviteToken ? "That invite link didn't work — check your connection and try again." : "Something didn't save — check your connection and try again."); }
         profileRow = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
       }
       if (cancelled) return;
@@ -11048,6 +11056,14 @@ export default function TankLog() {
       .then(({ error }) => {
         if (error) console.error(error);
       });
+  };
+
+  const createInvite = async () => {
+    setCreatingInvite(true);
+    const { data, error } = await supabase.rpc("create_company_invite");
+    setCreatingInvite(false);
+    if (error) { showToast("error", "Couldn't create an invite link — check your connection and try again."); return; }
+    setInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data}`);
   };
 
   const addBatch = async (b) => {
@@ -12158,7 +12174,7 @@ export default function TankLog() {
   }
 
   if (!user) {
-    return <AuthScreen />;
+    return <AuthScreen inviteToken={inviteToken} />;
   }
 
   return (
@@ -13423,6 +13439,72 @@ export default function TankLog() {
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     <Users size={13} /> Team ({teammates.length})
                   </div>
+                  {profile?.role === "owner" && (
+                    <div style={{ marginBottom: 10 }}>
+                      {!inviteLink ? (
+                        <button
+                          onClick={createInvite}
+                          disabled={creatingInvite}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 7,
+                            width: "100%",
+                            background: "none",
+                            border: "1px dashed #C9D1AC",
+                            borderRadius: 5,
+                            padding: "10px",
+                            color: "#5C6B54",
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: 13,
+                            cursor: creatingInvite ? "default" : "pointer",
+                          }}
+                        >
+                          <Plus size={14} /> {creatingInvite ? "Creating link…" : "Invite a teammate"}
+                        </button>
+                      ) : (
+                        <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px" }}>
+                          <div style={{ color: "#5C6B54", fontSize: 11.5, marginBottom: 6 }}>
+                            Share this link — it works once, for one person, and only for your company.
+                          </div>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <input
+                              readOnly
+                              value={inviteLink}
+                              onFocus={(e) => e.target.select()}
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                background: "#FFFFFF",
+                                border: "1px solid #DDE0C8",
+                                borderRadius: 4,
+                                padding: "8px 10px",
+                                color: "#2A3324",
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: 11.5,
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                navigator.clipboard?.writeText(inviteLink);
+                                showToast("success", "Link copied.");
+                              }}
+                              style={{ background: "#5C9A3C", border: "none", borderRadius: 4, padding: "0 12px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => setInviteLink("")}
+                            style={{ background: "none", border: "none", color: "#9BA88A", fontFamily: "'Inter', sans-serif", fontSize: 11.5, cursor: "pointer", padding: "6px 0 0" }}
+                          >
+                            Done
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {teammates.map((t) => (
                       <div
