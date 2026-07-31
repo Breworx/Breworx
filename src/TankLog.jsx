@@ -3434,7 +3434,7 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
   );
 }
 
-function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
+function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete }) {
   const [showReceive, setShowReceive] = useState(false);
   const batchesForLine = (lineName, lotNumber) => {
     const item = inventory.find((it) => it.name.toLowerCase() === lineName.toLowerCase());
@@ -3576,6 +3576,26 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
           onClose={() => setShowReceive(false)}
           onConfirm={(lotNumbers) => onReceive(po.id, lotNumbers)}
         />
+      )}
+
+      {po.status !== "Received" && onDelete && (
+        <button
+          onClick={() => onDelete(po)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "1px solid #E3D3A0",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#5C9A3C",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+            marginTop: 16,
+          }}
+        >
+          Delete order
+        </button>
       )}
     </div>
   );
@@ -9524,7 +9544,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-19";
+const APP_VERSION = "2026-07-31-20";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10711,6 +10731,26 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
     showToast("success", `${po.poNumber} created.`);
+  };
+
+  const deletePO = (po) => {
+    if (!window.confirm(`Delete ${po.poNumber}? This can't be undone from here.`)) return;
+    setPurchaseOrders((prev) => prev.filter((p) => p.id !== po.id));
+    setSelectedPOId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[po.id];
+      const { error } = await supabase.from("purchase_orders").delete().eq("id", po.id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[po.id] = timeoutId;
+    showToast("success", `${po.poNumber} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[po.id]);
+        delete pendingDeletesRef.current[po.id];
+        setPurchaseOrders((prev) => [po, ...prev]);
+      },
+    });
   };
 
   const markPOSent = async (id) => {
@@ -12144,7 +12184,7 @@ export default function TankLog() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} onDelete={deletePO} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
