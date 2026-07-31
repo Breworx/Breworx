@@ -120,6 +120,25 @@ function packagingByMonth(batches) {
 // assignment when checking whether it can stay put.
 // A batch can sit on a single tank (tankId) or be split across several
 // (splitTanks) — this returns every tank id it currently occupies either way.
+// Natural sort: "Tank 2" before "Tank 10", numeric chunks compared as
+// numbers rather than character-by-character; falls back to plain
+// alphabetical for tanks with non-numbered names.
+function compareTankNames(a, b) {
+  const chunks = /(\d+)|(\D+)/g;
+  const ax = (a || "").match(chunks) || [];
+  const bx = (b || "").match(chunks) || [];
+  const len = Math.max(ax.length, bx.length);
+  for (let i = 0; i < len; i++) {
+    const av = ax[i] ?? "";
+    const bv = bx[i] ?? "";
+    const bothNumeric = /^\d+$/.test(av) && /^\d+$/.test(bv);
+    const cmp = bothNumeric ? Number(av) - Number(bv) : av.localeCompare(bv);
+    if (cmp !== 0) return cmp;
+  }
+  return 0;
+}
+const sortedTanks = (tanks) => [...tanks].sort((a, b) => compareTankNames(a.name, b.name));
+
 function batchTankIds(batch) {
   if (batch.splitTanks && batch.splitTanks.length > 0) return batch.splitTanks.map((t) => t.tankId);
   if (batch.tankId) return [batch.tankId];
@@ -234,6 +253,50 @@ function BrewpointLoadingMark({ size = 52, label }) {
           {label}
         </span>
       )}
+    </div>
+  );
+}
+
+// Card-shaped placeholders shown while the first data load is in flight —
+// gives the screen its real shape immediately instead of a blank spinner.
+function SkeletonList({ count = 5 }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <style>{`
+        @keyframes bp-skeleton-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) {
+          .bp-skeleton-block { animation: none !important; opacity: 0.7 !important; }
+        }
+      `}</style>
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            background: "#FFFFFF",
+            border: "1px solid #DDE0C8",
+            borderRadius: 6,
+            padding: "16px 18px",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+          }}
+        >
+          <div
+            className="bp-skeleton-block"
+            style={{ width: 44, height: 44, borderRadius: 6, background: "#EBE8D6", flexShrink: 0, animation: "bp-skeleton-pulse 1.4s ease-in-out infinite", animationDelay: `${i * 0.08}s` }}
+          />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div
+              className="bp-skeleton-block"
+              style={{ width: "42%", height: 13, borderRadius: 4, background: "#EBE8D6", animation: "bp-skeleton-pulse 1.4s ease-in-out infinite", animationDelay: `${i * 0.08}s` }}
+            />
+            <div
+              className="bp-skeleton-block"
+              style={{ width: "65%", height: 10, borderRadius: 4, background: "#EBE8D6", animation: "bp-skeleton-pulse 1.4s ease-in-out infinite", animationDelay: `${i * 0.08}s` }}
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2636,7 +2699,7 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
             }}
           >
             <option value="">Unassigned</option>
-            {tanks.map((t) => {
+            {sortedTanks(tanks).map((t) => {
               const occupied = tankIsOccupied(batches, t.id, batch.id);
               const occupant = occupied ? occupyingBatch(batches, t.id, batch.id) : null;
               return (
@@ -3473,7 +3536,24 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory }) {
   );
 }
 
+// Standard SRM-to-color reference chart (1-40), the same approximation used
+// across most homebrew calculators — purely decorative, not scientific.
+const SRM_COLORS = [
+  "#FFE699", "#FFD878", "#FFCA5A", "#FFBF42", "#FBB123", "#F8A600", "#F39C00", "#EA8F00",
+  "#E58500", "#DE7C00", "#D77200", "#CF6900", "#CB6200", "#C35900", "#BB5100", "#B54C00",
+  "#B04500", "#A63E00", "#A13700", "#9B3200", "#952D00", "#8E2900", "#882300", "#821E00",
+  "#7B1A00", "#771900", "#6C1400", "#661100", "#600F00", "#5A0E00", "#550C00", "#4F0B00",
+  "#4A0900", "#450800", "#400706", "#3B0607", "#360607", "#310505", "#2C0403", "#270403",
+];
+function srmToHex(srm) {
+  if (srm == null || isNaN(srm)) return null;
+  const idx = Math.max(1, Math.min(40, Math.round(srm))) - 1;
+  return SRM_COLORS[idx];
+}
+
 function RecipeCard({ recipe, onOpen }) {
+  const srm = calcSRM(recipe.ingredients, recipe.volume);
+  const srmColor = srmToHex(srm);
   return (
     <button
       onClick={() => onOpen(recipe.id)}
@@ -3493,23 +3573,39 @@ function RecipeCard({ recipe, onOpen }) {
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
-      <div style={{ minWidth: 0 }}>
-        <h3
-          style={{
-            fontFamily: "'Oswald', sans-serif",
-            fontWeight: 500,
-            fontSize: 17,
-            color: "#2A3324",
-            margin: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {recipe.name}
-        </h3>
-        <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
-          {recipe.style} · {recipe.volume}L · {recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        {srmColor && (
+          <div
+            title={`~${srm.toFixed(0)} SRM`}
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: "50%",
+              background: srmColor,
+              border: "1px solid rgba(0,0,0,0.12)",
+              flexShrink: 0,
+              boxShadow: "inset 0 -3px 5px rgba(0,0,0,0.15), inset 0 2px 3px rgba(255,255,255,0.25)",
+            }}
+          />
+        )}
+        <div style={{ minWidth: 0 }}>
+          <h3
+            style={{
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 17,
+              color: "#2A3324",
+              margin: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {recipe.name}
+          </h3>
+          <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
+            {recipe.style} · {recipe.volume}L · {recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}
+          </div>
         </div>
       </div>
       <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 12.5, flexShrink: 0 }}>
@@ -5058,7 +5154,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     }}
                   >
                     <option value="">Unassigned</option>
-                    {tanks.map((t) => {
+                    {sortedTanks(tanks).map((t) => {
                       const currentlyOccupied = tankIsOccupied(batches, t.id);
                       const occupied = currentlyOccupied && startDate <= today();
                       const occupant = currentlyOccupied ? occupyingBatch(batches, t.id) : null;
@@ -5171,7 +5267,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                             }}
                           >
                             <option value="">Choose tank</option>
-                            {tanks.map((t) => {
+                            {sortedTanks(tanks).map((t) => {
                               const currentlyOccupied = tankIsOccupied(batches, t.id);
                               const usedAbove = splitRows.some((r) => r.id !== row.id && r.tankId === t.id);
                               const occupied = (currentlyOccupied && startDate <= today()) || usedAbove;
@@ -7617,7 +7713,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
               })}
             </div>
 
-            {tanks.map((tank) => {
+            {sortedTanks(tanks).map((tank) => {
               const occ = occupancyForTank(tank.id);
               return (
                 <div key={tank.id} style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", minHeight: 48 }}>
@@ -7814,7 +7910,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDel
             style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
           >
             <option value="">Unassigned</option>
-            {tanks.map((t) => {
+            {sortedTanks(tanks).map((t) => {
               const currentlyOccupied = tankIsOccupied(batches, t.id, batch.id);
               const occupied = currentlyOccupied && startDate <= today();
               const occupant = currentlyOccupied ? occupyingBatch(batches, t.id, batch.id) : null;
@@ -7978,7 +8074,7 @@ function HomeView({
             Your tanks
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
-            {tanks.map((t) => (
+            {sortedTanks(tanks).map((t) => (
               <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} />
             ))}
           </div>
@@ -8588,7 +8684,7 @@ export function XeroCallback() {
   );
 }
 
-function EmptyState({ icon: Icon, title, subtitle }) {
+function EmptyState({ icon: Icon, title, subtitle, action }) {
   return (
     <div style={{ textAlign: "center", padding: "40px 20px" }}>
       {Icon && <Icon size={26} color="#C9D1AC" style={{ marginBottom: 12 }} />}
@@ -8596,6 +8692,28 @@ function EmptyState({ icon: Icon, title, subtitle }) {
         {title}
       </div>
       {subtitle && <div style={{ fontSize: 12.5, color: "#9BA88A", maxWidth: 300, margin: "0 auto", lineHeight: 1.5 }}>{subtitle}</div>}
+      {action && (
+        <button
+          onClick={action.onClick}
+          style={{
+            marginTop: 16,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "9px 16px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={14} /> {action.label}
+        </button>
+      )}
     </div>
   );
 }
@@ -8679,7 +8797,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-8";
+const APP_VERSION = "2026-07-31-10";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -10234,7 +10352,7 @@ export default function TankLog() {
               )}
             </div>
 
-            {loadingData && <BrewpointLoadingMark label="Loading your brewery…" />}
+            {loadingData && <SkeletonList />}
 
             {!loadingData && view === "home" && (
               <HomeView
@@ -10482,7 +10600,7 @@ export default function TankLog() {
 
                   {filtered.length === 0 && (
                     inventory.length === 0 ? (
-                      <EmptyState icon={Package} title="No ingredients tracked yet" subtitle="Add grain, hops, or yeast to get started, or bring some in via a purchase order." />
+                      <EmptyState icon={Package} title="No ingredients tracked yet" subtitle="Add grain, hops, or yeast to get started, or bring some in via a purchase order." action={{ label: "Add ingredient", onClick: () => setShowAddInventory(true) }} />
                     ) : (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No ingredients match "{inventoryQuery}".</div>
                     )
@@ -10567,7 +10685,7 @@ export default function TankLog() {
 
                   {filtered.length === 0 && (
                     consumables.length === 0 ? (
-                      <EmptyState icon={Box} title="No consumables tracked yet" subtitle="Add cans, lids, boxes, and labels to start tracking packaging stock." />
+                      <EmptyState icon={Box} title="No consumables tracked yet" subtitle="Add cans, lids, boxes, and labels to start tracking packaging stock." action={{ label: "Add consumable", onClick: () => setShowAddConsumable(true) }} />
                     ) : (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No consumables match "{consumableQuery}".</div>
                     )
@@ -10587,7 +10705,7 @@ export default function TankLog() {
                   ))}
                 </div>
                 {packageTypes.length === 0 && (
-                  <EmptyState icon={Layers} title="No package types yet" subtitle="Create one to define which cans, lids, boxes, or labels get used up each time you package a batch." />
+                  <EmptyState icon={Layers} title="No package types yet" subtitle="Create one to define which cans, lids, boxes, or labels get used up each time you package a batch." action={{ label: "New package type", onClick: () => setShowAddPackageType(true) }} />
                 )}
               </>
             )}
@@ -10642,7 +10760,7 @@ export default function TankLog() {
                   )}
 
                   {purchaseOrders.length === 0 && (
-                    <EmptyState icon={Truck} title="No purchase orders yet" subtitle="Create one to bring in ingredients with proper lot tracking from day one." />
+                    <EmptyState icon={Truck} title="No purchase orders yet" subtitle="Create one to bring in ingredients with proper lot tracking from day one." action={{ label: "New order", onClick: () => setShowAddPO(true) }} />
                   )}
                 </>
               );
@@ -10684,7 +10802,7 @@ export default function TankLog() {
                     ))}
                     {filtered.length === 0 && (
                       activeByFamily.length === 0 ? (
-                        <EmptyState icon={Beaker} title="No recipes yet" subtitle="Add one so you can pull its ingredients in automatically when you start a brew." />
+                        <EmptyState icon={Beaker} title="No recipes yet" subtitle="Add one so you can pull its ingredients in automatically when you start a brew." action={{ label: "New recipe", onClick: () => setShowAddRecipe(true) }} />
                       ) : (
                         <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No recipes match "{recipeQuery}".</div>
                       )
@@ -10710,7 +10828,7 @@ export default function TankLog() {
                 <FirstVisitTip tipKey="brewery">
                   Set up your fermenters and brite tanks here so batches can be assigned to them — this is the first thing worth doing before you brew your first batch.
                 </FirstVisitTip>
-                {tanks.map((t) => {
+                {sortedTanks(tanks).map((t) => {
                   const occupant = occupyingBatch(batches, t.id);
                   return (
                     <div
@@ -10772,7 +10890,7 @@ export default function TankLog() {
                   );
                 })}
                 {tanks.length === 0 && (
-                  <EmptyState icon={Droplet} title="No tanks set up yet" subtitle="Add your fermenters and any Brite Tanks so batches can be assigned to them." />
+                  <EmptyState icon={Droplet} title="No tanks set up yet" subtitle="Add your fermenters and any Brite Tanks so batches can be assigned to them." action={{ label: "Add tank", onClick: () => setShowAddTank(true) }} />
                 )}
               </div>
             )}
