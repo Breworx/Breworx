@@ -5146,6 +5146,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       og: Number(og),
       fg: Number(fg),
       mashPh: null,
+      mashTemp: null,
       preBoilGravity: null,
       topUpWater: null,
       phIntoTank: null,
@@ -6381,6 +6382,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 22 }}>
         {[
           ["Mash pH", batch.mashPh, "mashPh", 0.01, "", 2],
+          ["Mash temp", batch.mashTemp, "mashTemp", 0.5, "°C", 1],
           ["Pre-boil SG", batch.preBoilGravity, "preBoilGravity", 0.001, "", 3],
           ["Top-up water", batch.topUpWater, "topUpWater", 0.1, "L", 1],
           ["pH into tank", batch.phIntoTank, "phIntoTank", 0.01, "", 2],
@@ -6807,6 +6809,8 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           <tbody>
             <tr><td style={{ padding: "4px 0", color: "#555", width: "40%" }}>Brew date</td><td>{batch.startDate}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Recipe</td><td>{batch.recipeName || "—"}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Mash pH</td><td>{batch.mashPh != null ? batch.mashPh.toFixed(2) : "—"}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Mash temp</td><td>{batch.mashTemp != null ? `${batch.mashTemp.toFixed(1)}°C` : "—"}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Target OG / FG</td><td>{batch.og.toFixed(3)} / {batch.fg.toFixed(3)}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Actual FG (latest reading)</td><td>{latest.gravity.toFixed(3)}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Attenuation</td><td>{pct.toFixed(0)}%</td></tr>
@@ -8010,6 +8014,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const avgCost = avg(rows.map((r) => r.batch.ingredientCost || 0));
   const avgDays = avg(rows.map((r) => r.days));
   const avgMashPh = avg(rows.map((r) => r.batch.mashPh));
+  const avgMashTemp = avg(rows.map((r) => r.batch.mashTemp));
   const avgDiacetylDays = avg(rows.map((r) => r.daysToDiacetylPass));
 
   const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn) }));
@@ -8094,6 +8099,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               {metricRow("Attenuation", (r) => r.attn, (v) => `${v.toFixed(0)}%`)}
               {metricRow("ABV", (r) => r.actualAbv, (v) => `${v.toFixed(1)}%`)}
               {metricRow("Mash pH", (r) => r.batch.mashPh, (v) => v.toFixed(2))}
+              {metricRow("Mash temp", (r) => r.batch.mashTemp, (v) => `${v.toFixed(1)}°C`)}
               {metricRow("Pre-boil gravity", (r) => r.batch.preBoilGravity, (v) => v.toFixed(3))}
               {metricRow("Days in tank", (r) => r.days, (v) => `${v}d`)}
               {metricRow("Days to diacetyl pass", (r) => r.daysToDiacetylPass, (v) => `${v}d`)}
@@ -8108,11 +8114,12 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
 
       {rows.length > 0 && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 10 }}>
             {[
               ["Avg OG", avgOG?.toFixed(3), "#5C9A3C"],
               ["Avg attenuation", avgAttn != null ? `${avgAttn.toFixed(0)}%` : "—", "#D9A441"],
               ["Avg mash pH", avgMashPh != null ? avgMashPh.toFixed(2) : "—", "#B8925A"],
+              ["Avg mash temp", avgMashTemp != null ? `${avgMashTemp.toFixed(1)}°C` : "—", "#E08A3C"],
             ].map(([label, value, color]) => (
               <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 10px" }}>
                 <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
@@ -8206,6 +8213,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                       <span>{attn.toFixed(0)}% attn</span>
                       <span>{actualAbv.toFixed(1)}% ABV</span>
                       {batch.mashPh != null && <span>pH {batch.mashPh.toFixed(2)}</span>}
+                      {batch.mashTemp != null && <span>{batch.mashTemp.toFixed(1)}°C mash</span>}
                       {batch.preBoilGravity != null && <span>PBG {batch.preBoilGravity.toFixed(3)}</span>}
                       <span>{days}d</span>
                       {daysToDiacetylPass != null && <span>diacetyl {daysToDiacetylPass}d</span>}
@@ -9544,7 +9552,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-22";
+const APP_VERSION = "2026-07-31-23";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10871,6 +10879,7 @@ export default function TankLog() {
 
   const BREW_DAY_FIELD_COLUMNS = {
     mashPh: "mash_ph",
+    mashTemp: "mash_temp",
     preBoilGravity: "pre_boil_gravity",
     topUpWater: "top_up_water",
     phIntoTank: "ph_into_tank",
