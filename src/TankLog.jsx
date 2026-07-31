@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -6188,7 +6188,7 @@ function DeleteCompanyModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -6517,11 +6517,12 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     </span>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", flexShrink: 0 }}>{packagedVolume(e).toFixed(2)} L</span>
                     <button
-                      onClick={() => onDeletePackagingEvent(batch.id, e.id)}
-                      aria-label="Delete packaging run"
+                      onClick={() => onUndoPackagingEvent(batch.id, e.id)}
+                      aria-label="Undo this packaging run"
+                      title="Undo — returns to Cooling and restores consumables"
                       style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 6, flexShrink: 0 }}
                     >
-                      <Trash2 size={13} />
+                      <RotateCcw size={13} />
                     </button>
                   </div>
                 ))}
@@ -9552,7 +9553,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-23";
+const APP_VERSION = "2026-07-31-24";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10919,8 +10920,9 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, schedule: newSchedule } : b)));
   };
 
-  const deductConsumablesForPackaging = async (batch, sessionCounts, packageTypeSelections) => {
-    // Work out total qty to deduct per consumable across every container type packaged this run.
+  const deductConsumablesForPackaging = async (batch, sessionCounts, packageTypeSelections, sign = -1) => {
+    // Work out total qty to deduct (or, with sign=1, restore) per consumable
+    // across every container type in this packaging session.
     const deductions = {}; // consumableId -> total qty
     let missingLabel = false;
     for (const c of CONTAINERS) {
@@ -10944,7 +10946,7 @@ export default function TankLog() {
     }
 
     if (missingLabel) {
-      showToast("error", `No matching Label consumable found for "${batch.recipeName || batch.name}" — that deduction was skipped.`);
+      showToast("error", `No matching Label consumable found for "${batch.recipeName || batch.name}" — that ${sign < 0 ? "deduction" : "return"} was skipped.`);
     }
 
     const ids = Object.keys(deductions);
@@ -10954,10 +10956,17 @@ export default function TankLog() {
     for (const consumableId of ids) {
       const item = nextConsumables.find((co) => co.id === consumableId);
       if (!item) continue;
-      const delta = -deductions[consumableId];
+      const delta = sign * deductions[consumableId];
       const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
       const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
-      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: actualDelta, note: `Packaging — ${batch.number || batch.name}` };
+      const historyEntry = {
+        id: uid(),
+        date: new Date().toISOString(),
+        user: user.name,
+        type: "batch",
+        delta: actualDelta,
+        note: sign < 0 ? `Packaging — ${batch.number || batch.name}` : `Undo packaging — ${batch.number || batch.name}`,
+      };
       const newHistory = [...(item.history || []), historyEntry];
       const { error } = await supabase.from("consumables").update({ qty: newQty, history: newHistory }).eq("id", consumableId);
       if (error) { showToast("error", "Something didn't save — check your connection and try again."); continue; }
@@ -10970,7 +10979,7 @@ export default function TankLog() {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     const events = packagingEvents(batch);
-    const newEvent = { id: uid(), date: today(), ...sessionCounts };
+    const newEvent = { id: uid(), date: today(), ...sessionCounts, packageTypes: packageTypeSelections };
     const newPackaging = { events: [...events, newEvent], discarded: packagingDiscarded(batch) };
     const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -10979,14 +10988,25 @@ export default function TankLog() {
     await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections);
   };
 
-  const deletePackagingEvent = async (id, eventId) => {
+  const undoPackagingEvent = async (id, eventId) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
+    const event = packagingEvents(batch).find((e) => e.id === eventId);
+    if (!event) return;
+    if (
+      !window.confirm(
+        "Undo this packaging run? It'll go back to the Cooling stage, and any consumables (cans, lids, boxes, labels) used for it will be returned to stock."
+      )
+    ) {
+      return;
+    }
     const events = packagingEvents(batch).filter((e) => e.id !== eventId);
     const newPackaging = { events, discarded: packagingDiscarded(batch) };
-    const { error } = await supabase.from("batches").update({ packaging: newPackaging }).eq("id", id);
+    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Cooling" }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Cooling" } : b)));
+    await deductConsumablesForPackaging(batch, event, event.packageTypes || {}, 1);
+    showToast("success", "Packaging undone — back to Cooling, consumables returned to stock.");
   };
 
   const discardRemaining = async (id) => {
@@ -12182,7 +12202,7 @@ export default function TankLog() {
             onDeleteReading={deleteReading}
             onEditBrewDayField={setBrewDayFieldTarget}
             onOpenPackaging={setPackagingTarget}
-            onDeletePackagingEvent={deletePackagingEvent}
+            onUndoPackagingEvent={undoPackagingEvent}
             onDiscardRemaining={setDiscardTarget}
             onAssignTank={setAssignTankTarget}
             onToggleScheduleStep={toggleScheduleStep}
