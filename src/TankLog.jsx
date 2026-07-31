@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -7548,7 +7548,7 @@ function PackagedView({ batches, onOpenBatch }) {
 // Big, at-a-glance tank visualization for the Home page — same fermenter
 // silhouette as the small Tank component used in batch cards, scaled up with
 // a gradient fill and an animated liquid surface for a "real tank" feel.
-function TankWallCard({ tank, batch, onOpen }) {
+function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const empty = !batch;
   const latest = batch ? latestReading(batch) : null;
   const color = batch ? STAGE_COLOR[batch.stage] || "#5C9A3C" : "#C9D1AC";
@@ -7562,92 +7562,128 @@ function TankWallCard({ tank, batch, onOpen }) {
   const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
 
   return (
-    <button
-      onClick={() => batch && onOpen(batch.id)}
+    <div
       style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 10,
+        position: "relative",
         background: "#FFFFFF",
-        border: `1px solid ${empty ? "#DDE0C8" : "#DDE0C8"}`,
+        border: "1px solid #DDE0C8",
         borderRadius: 8,
         padding: "16px 12px 14px",
-        cursor: batch ? "pointer" : "default",
-        textAlign: "center",
-        width: "100%",
         boxSizing: "border-box",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-        <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>
-          {tank.name}
-        </span>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>
-          {tank.type} · {tank.capacity}L
-        </span>
-      </div>
-
-      <svg width="88" height="140" viewBox="0 0 120 200">
-        <defs>
-          <clipPath id={clipId}>
-            <path d={bodyPath} />
-          </clipPath>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.55" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.9" />
-          </linearGradient>
-        </defs>
-
-        <path d={bodyPath} fill="#F8F5EA" stroke="#C9D1AC" strokeWidth="2.5" />
-
-        {!empty && (
-          <g clipPath={`url(#${clipId})`}>
-            <rect x="0" y={surfaceY} width="120" height="200" fill={`url(#${gradId})`} />
-            <g style={{ animation: "bp-wave-drift 6s linear infinite", transformBox: "fill-box" }}>
-              <path
-                d="M-60,0 C-45,-6 -35,6 -20,0 C-5,-6 5,6 20,0 C35,-6 45,6 60,0 C75,-6 85,6 100,0 C115,-6 125,6 140,0 C155,-6 165,6 180,0 V16 H-60 Z"
-                transform={`translate(0, ${surfaceY - 4})`}
-                fill={color}
-                opacity="0.5"
-              />
-            </g>
-          </g>
-        )}
-
-        <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
-        {!empty && (
-          <rect x="16" y="16" width="6" height="118" rx="3" fill="#FFFFFF" opacity="0.35" />
-        )}
-      </svg>
-
-      {empty ? (
-        <div style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'Inter', sans-serif" }}>Empty</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" }}>
-          <div
-            style={{
-              fontFamily: "'Oswald', sans-serif",
-              fontWeight: 500,
-              fontSize: 13.5,
-              color: "#2A3324",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: "100%",
-            }}
-          >
-            {batch.name}
-          </div>
-          <StagePill stage={batch.stage} />
-          <div style={{ display: "flex", gap: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#5C6B54" }}>
-            <span>{rem}L</span>
-            {latest && <span>SG {latest.gravity.toFixed(3)}</span>}
-            <span>{days}d</span>
-          </div>
-        </div>
+      {!empty && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onQuickLog(batch);
+          }}
+          title="Log a reading"
+          aria-label={`Log a reading for ${batch.name}`}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            width: 26,
+            height: 26,
+            borderRadius: "50%",
+            background: "#EBE8D6",
+            border: "1px solid #C9D1AC",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            zIndex: 1,
+          }}
+        >
+          <Droplet size={12} color="#5C9A3C" />
+        </button>
       )}
-    </button>
+      <button
+        onClick={() => batch && onOpen(batch.id)}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 10,
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: batch ? "pointer" : "default",
+          textAlign: "center",
+          width: "100%",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+          <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>
+            {tank.name}
+          </span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>
+            {tank.type} · {tank.capacity}L
+          </span>
+        </div>
+
+        <svg width="88" height="140" viewBox="0 0 120 200">
+          <defs>
+            <clipPath id={clipId}>
+              <path d={bodyPath} />
+            </clipPath>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.55" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.9" />
+            </linearGradient>
+          </defs>
+
+          <path d={bodyPath} fill="#F8F5EA" stroke="#C9D1AC" strokeWidth="2.5" />
+
+          {!empty && (
+            <g clipPath={`url(#${clipId})`}>
+              <rect x="0" y={surfaceY} width="120" height="200" fill={`url(#${gradId})`} />
+              <g style={{ animation: "bp-wave-drift 6s linear infinite", transformBox: "fill-box" }}>
+                <path
+                  d="M-60,0 C-45,-6 -35,6 -20,0 C-5,-6 5,6 20,0 C35,-6 45,6 60,0 C75,-6 85,6 100,0 C115,-6 125,6 140,0 C155,-6 165,6 180,0 V16 H-60 Z"
+                  transform={`translate(0, ${surfaceY - 4})`}
+                  fill={color}
+                  opacity="0.5"
+                />
+              </g>
+            </g>
+          )}
+
+          <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
+          {!empty && (
+            <rect x="16" y="16" width="6" height="118" rx="3" fill="#FFFFFF" opacity="0.35" />
+          )}
+        </svg>
+
+        {empty ? (
+          <div style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'Inter', sans-serif" }}>Empty</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" }}>
+            <div
+              style={{
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 13.5,
+                color: "#2A3324",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: "100%",
+              }}
+            >
+              {batch.name}
+            </div>
+            <StagePill stage={batch.stage} />
+            <div style={{ display: "flex", gap: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#5C6B54" }}>
+              <span>{rem}L</span>
+              {latest && <span>SG {latest.gravity.toFixed(3)}</span>}
+              <span>{days}d</span>
+            </div>
+          </div>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -7655,6 +7691,111 @@ function TankWallCard({ tank, batch, onOpen }) {
 // timeline as columns, and each batch drawn as a bar spanning the days it
 // occupies that tank. Tapping empty space schedules a new batch there;
 // tapping an existing bar opens that batch.
+// A global "jump to anything" search — batches, recipes, purchase orders,
+// and tanks — so getting to a specific record doesn't mean digging through
+// the right screen and scrolling to find it.
+function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+
+  const matchedBatches = q ? batches.filter((b) => b.name.toLowerCase().includes(q) || (b.number || "").toLowerCase().includes(q) || (b.style || "").toLowerCase().includes(q)).slice(0, 6) : [];
+  const matchedRecipes = q ? activeRecipesByFamily(recipes).filter((r) => r.name.toLowerCase().includes(q) || (r.style || "").toLowerCase().includes(q)).slice(0, 6) : [];
+  const matchedPOs = q ? purchaseOrders.filter((po) => po.poNumber.toLowerCase().includes(q) || po.supplier.toLowerCase().includes(q)).slice(0, 6) : [];
+  const matchedTanks = q ? tanks.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 4) : [];
+  const noResults = q && matchedBatches.length === 0 && matchedRecipes.length === 0 && matchedPOs.length === 0 && matchedTanks.length === 0;
+
+  const sectionLabel = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", margin: "14px 0 8px" };
+  const resultRow = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    background: "none",
+    border: "none",
+    borderRadius: 5,
+    padding: "10px 8px",
+    cursor: "pointer",
+    textAlign: "left",
+    fontFamily: "'Inter', sans-serif",
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(10,12,11,0.85)", zIndex: 70, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#F8F5EA", border: "1px solid #DDE0C8", borderRadius: 10, width: "100%", maxWidth: 480, maxHeight: "70vh", overflowY: "auto", padding: 16, boxShadow: "0 12px 40px rgba(0,0,0,0.35)" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+          <Search size={16} color="#9BA88A" style={{ flexShrink: 0 }} />
+          <input
+            autoFocus
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search batches, recipes, orders, tanks…"
+            style={{ flex: 1, border: "none", outline: "none", background: "none", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+        </div>
+
+        {!q && <div style={{ color: "#9BA88A", fontSize: 12.5, padding: "20px 8px", textAlign: "center" }}>Start typing to search everything at once.</div>}
+        {noResults && <div style={{ color: "#9BA88A", fontSize: 12.5, padding: "20px 8px", textAlign: "center" }}>No matches for "{query}".</div>}
+
+        {matchedBatches.length > 0 && (
+          <>
+            <div style={sectionLabel}>Batches</div>
+            {matchedBatches.map((b) => (
+              <button key={b.id} onClick={() => onOpenBatch(b.id)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{b.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{b.style}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedRecipes.length > 0 && (
+          <>
+            <div style={sectionLabel}>Recipes</div>
+            {matchedRecipes.map((r) => (
+              <button key={r.id} onClick={() => onOpenRecipe(r.id)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{r.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{r.style}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedPOs.length > 0 && (
+          <>
+            <div style={sectionLabel}>Purchase orders</div>
+            {matchedPOs.map((po) => (
+              <button key={po.id} onClick={() => onOpenPO(po.id)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{po.poNumber}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{po.supplier}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedTanks.length > 0 && (
+          <>
+            <div style={sectionLabel}>Tanks</div>
+            {matchedTanks.map((t) => (
+              <button key={t.id} onClick={() => onOpenTank(t.id)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{t.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{t.type}</span>
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled }) {
   const daysBack = 7;
   const daysForward = 35;
@@ -7983,6 +8124,8 @@ function HomeView({
   batches,
   consumables,
   packageTypes,
+  recentBatches,
+  onQuickLog,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -8075,7 +8218,52 @@ function HomeView({
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
             {sortedTanks(tanks).map((t) => (
-              <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} />
+              <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {recentBatches.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Recently viewed
+          </div>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+            {recentBatches.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => onOpenBatch(b.id)}
+                style={{
+                  flexShrink: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  background: "#FFFFFF",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 6,
+                  padding: "9px 12px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  minWidth: 120,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "'Oswald', sans-serif",
+                    fontWeight: 500,
+                    fontSize: 12.5,
+                    color: "#2A3324",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    maxWidth: 140,
+                  }}
+                >
+                  {b.name}
+                </span>
+                <StagePill stage={b.stage} />
+              </button>
             ))}
           </div>
         </div>
@@ -8797,7 +8985,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-10";
+const APP_VERSION = "2026-07-31-11";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -9011,6 +9199,7 @@ export default function TankLog() {
   const [brewRecipe, setBrewRecipe] = useState(null);
   const [batchPreset, setBatchPreset] = useState(null);
   const [editScheduledBatchId, setEditScheduledBatchId] = useState(null);
+  const [showQuickJump, setShowQuickJump] = useState(false);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
@@ -9186,6 +9375,28 @@ export default function TankLog() {
   }, [user?.id]);
 
   const selected = useMemo(() => batches.find((b) => b.id === selectedId) || null, [batches, selectedId]);
+
+  // Tracks the last few batches opened, purely for the "Recently viewed"
+  // strip on Home — local to this device, not synced.
+  const [recentBatchIds, setRecentBatchIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("brewpoint-recent-batches") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    if (!selected) return;
+    setRecentBatchIds((prev) => {
+      if (prev[0] === selected.id) return prev;
+      const next = [selected.id, ...prev.filter((id) => id !== selected.id)].slice(0, 6);
+      try {
+        localStorage.setItem("brewpoint-recent-batches", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [selected?.id]);
+  const recentBatches = recentBatchIds.map((id) => batches.find((b) => b.id === id)).filter(Boolean);
   const nextNumber = useMemo(() => String(Math.max(0, ...batches.map((b) => parseInt(b.number, 10) || 0)) + 1), [batches]);
   const selectedPO = useMemo(() => purchaseOrders.find((p) => p.id === selectedPOId) || null, [purchaseOrders, selectedPOId]);
   const nextPONumber = useMemo(() => {
@@ -10234,6 +10445,26 @@ export default function TankLog() {
             </span>
           </div>
 
+          <button
+            onClick={() => setShowQuickJump(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "#FFFFFF",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "8px 10px",
+              color: "#9BA88A",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12.5,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <Search size={13} /> Search…
+          </button>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {[
               ["home", "Home", Home],
@@ -10380,6 +10611,8 @@ export default function TankLog() {
                 batches={batches}
                 consumables={consumables}
                 packageTypes={packageTypes}
+                recentBatches={recentBatches}
+                onQuickLog={setLogTarget}
               />
             )}
 
@@ -11299,6 +11532,34 @@ export default function TankLog() {
           />
         );
       })()}
+      {showQuickJump && (
+        <QuickJumpModal
+          onClose={() => setShowQuickJump(false)}
+          batches={batches}
+          recipes={recipes}
+          purchaseOrders={purchaseOrders}
+          tanks={tanks}
+          onOpenBatch={(id) => {
+            setSelectedId(id);
+            setView("batches");
+            setShowQuickJump(false);
+          }}
+          onOpenRecipe={(id) => {
+            setSelectedRecipeId(id);
+            setView("recipes");
+            setShowQuickJump(false);
+          }}
+          onOpenPO={(id) => {
+            setSelectedPOId(id);
+            setView("orders");
+            setShowQuickJump(false);
+          }}
+          onOpenTank={() => {
+            setView("brewery");
+            setShowQuickJump(false);
+          }}
+        />
+      )}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} suppliers={suppliers} />}
       {showAddConsumable && (
         <AddInventoryModal
