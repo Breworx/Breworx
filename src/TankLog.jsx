@@ -2363,13 +2363,22 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
   const [phone, setPhone] = useState(supplier ? supplier.phone || "" : "");
   const [email, setEmail] = useState(supplier ? supplier.email || "" : "");
   const [address, setAddress] = useState(supplier ? supplier.address || "" : "");
+  const [leadTimeDays, setLeadTimeDays] = useState(supplier?.leadTimeDays ?? "");
   const [notes, setNotes] = useState(supplier ? supplier.notes || "" : "");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (!name.trim()) return;
     setSaving(true);
-    await onSave({ name: name.trim(), contactName: contactName.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), notes: notes.trim() });
+    await onSave({
+      name: name.trim(),
+      contactName: contactName.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      address: address.trim(),
+      leadTimeDays: leadTimeDays === "" ? null : Number(leadTimeDays),
+      notes: notes.trim(),
+    });
     setSaving(false);
     onClose();
   };
@@ -2382,6 +2391,7 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
         <TextField label="Phone (optional)" value={phone} onChange={setPhone} />
         <TextField label="Email (optional)" value={email} onChange={setEmail} />
         <TextField label="Address (optional)" value={address} onChange={setAddress} />
+        <NumberField label="Usual lead time (days, optional)" value={leadTimeDays} onChange={setLeadTimeDays} step="1" suffix="days" />
         <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
         <button
           onClick={submit}
@@ -6923,6 +6933,169 @@ function DeleteCompanyModal({ onClose, onConfirm }) {
   );
 }
 
+// Simple, ephemeral countdown timers for brew day — mash rest, boil,
+// whirlpool/recirculation. Nothing here is saved; it's meant to be watched
+// live while standing at the kettle, not referenced later.
+const BREW_TIMER_PRESETS = [
+  { label: "Mash", minutes: 60 },
+  { label: "Boil", minutes: 60 },
+  { label: "Whirlpool / recirc", minutes: 15 },
+];
+
+function BrewDayTimers() {
+  const [timers, setTimers] = useState([]);
+  const [customMinutes, setCustomMinutes] = useState(10);
+  const [customLabel, setCustomLabel] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const dingedRef = useRef(new Set());
+
+  useEffect(() => {
+    if (timers.length === 0) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [timers.length]);
+
+  useEffect(() => {
+    timers.forEach((t) => {
+      const remaining = t.endTime - now;
+      if (remaining <= 0 && !dingedRef.current.has(t.id)) {
+        dingedRef.current.add(t.id);
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.5);
+        } catch {}
+      }
+    });
+  }, [now, timers]);
+
+  const startTimer = (label, minutes) => {
+    if (!minutes || minutes <= 0) return;
+    setTimers((prev) => [...prev, { id: uid(), label, endTime: Date.now() + minutes * 60000 }]);
+    setNow(Date.now());
+  };
+
+  const stopTimer = (id) => {
+    dingedRef.current.delete(id);
+    setTimers((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const formatRemaining = (ms) => {
+    const done = ms <= 0;
+    const total = Math.abs(Math.ceil(ms / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${done ? "-" : ""}${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <div style={{ marginBottom: 16, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+        Brew day timers
+      </div>
+
+      {timers.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {timers.map((t) => {
+            const remaining = t.endTime - now;
+            const done = remaining <= 0;
+            return (
+              <div
+                key={t.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  background: done ? "#FBE5DC" : "#F8F5EA",
+                  border: `1px solid ${done ? "#E3B3A0" : "#EBE8D6"}`,
+                  borderRadius: 5,
+                }}
+              >
+                <span style={{ color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif" }}>
+                  {t.label}
+                  {done && <span style={{ color: "#B5502F", marginLeft: 8, fontSize: 11.5 }}>Time's up</span>}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: done ? "#B5502F" : "#2A3324" }}>
+                    {formatRemaining(remaining)}
+                  </span>
+                  <button
+                    onClick={() => stopTimer(t.id)}
+                    aria-label={`Stop ${t.label} timer`}
+                    style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        {BREW_TIMER_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            onClick={() => startTimer(p.label, p.minutes)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 20,
+              padding: "7px 12px",
+              color: "#5C6B54",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12.5,
+              cursor: "pointer",
+            }}
+          >
+            {p.label} · {p.minutes}m
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <TextField label="Custom timer name" value={customLabel} onChange={setCustomLabel} />
+        </div>
+        <div style={{ width: 90 }}>
+          <NumberField label="Mins" value={customMinutes} onChange={setCustomMinutes} step="1" />
+        </div>
+        <button
+          onClick={() => {
+            startTimer(customLabel.trim() || "Timer", Number(customMinutes));
+            setCustomLabel("");
+          }}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "10px 14px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Start
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
@@ -7033,6 +7206,8 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </div>
         ))}
       </div>
+
+      {batch.stage === "Brewing" && <BrewDayTimers />}
 
       {batch.schedule && batch.schedule.length > 0 && (() => {
         const next = batch.schedule.find((s) => !s.done);
@@ -10658,7 +10833,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-48";
+const APP_VERSION = "2026-07-31-49";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11968,6 +12143,29 @@ export default function TankLog() {
     });
   };
 
+  const createReorderPO = async (supplierName, items) => {
+    const po = {
+      id: uid(),
+      poNumber: nextPONumber,
+      supplier: supplierName,
+      orderDate: today(),
+      receivedDate: null,
+      status: "Draft",
+      deliveryCost: null,
+      lines: items.map((it) => ({
+        id: uid(),
+        name: it.name,
+        category: it.category,
+        qty: Math.max(it.threshold * 2 - it.qty, it.threshold, 1),
+        unit: it.unit,
+        costPerUnit: it.costPerUnit ?? null,
+      })),
+    };
+    await addPO(po);
+    setView("orders");
+    setSelectedPOId(po.id);
+  };
+
   const addPO = async (po) => {
     const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -12951,25 +13149,56 @@ export default function TankLog() {
                     </button>
                   )}
 
-                  {inventory.some((it) => it.qty <= it.threshold) && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        color: "#5C9A3C",
-                        fontSize: 12.5,
-                        marginBottom: 14,
-                        background: "#FCF1DC",
-                        border: "1px solid #E3D3A0",
-                        borderRadius: 5,
-                        padding: "8px 12px",
-                      }}
-                    >
-                      <AlertTriangle size={14} />
-                      {inventory.filter((it) => it.qty <= it.threshold).length} item(s) running low
-                    </div>
-                  )}
+                  {inventory.some((it) => it.qty <= it.threshold) && (() => {
+                    const lowItems = inventory.filter((it) => it.qty <= it.threshold);
+                    const bySupplier = {};
+                    lowItems.forEach((it) => {
+                      const key = it.supplierId || "none";
+                      if (!bySupplier[key]) bySupplier[key] = [];
+                      bySupplier[key].push(it);
+                    });
+                    return (
+                      <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {Object.entries(bySupplier).map(([supplierId, items]) => {
+                          const supplier = suppliers.find((s) => s.id === supplierId);
+                          return (
+                            <div
+                              key={supplierId}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: 10,
+                                color: "#5C9A3C",
+                                fontSize: 12.5,
+                                background: "#FCF1DC",
+                                border: "1px solid #E3D3A0",
+                                borderRadius: 5,
+                                padding: "8px 12px",
+                              }}
+                            >
+                              <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                                <span>
+                                  {items.length} item{items.length !== 1 ? "s" : ""} low
+                                  {supplier ? ` from ${supplier.name}` : ""}
+                                  {supplier?.leadTimeDays ? ` — usually ${supplier.leadTimeDays}d lead time` : ""}
+                                </span>
+                              </span>
+                              {supplier && (
+                                <button
+                                  onClick={() => createReorderPO(supplier.name, items)}
+                                  style={{ background: "#5C9A3C", border: "none", borderRadius: 4, padding: "6px 10px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 11.5, cursor: "pointer", flexShrink: 0 }}
+                                >
+                                  Create PO
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {grouped.map((g, i) => (
                     <div key={g.category} style={{ marginBottom: i < grouped.length - 1 ? 22 : 0 }}>
