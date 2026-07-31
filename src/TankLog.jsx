@@ -7380,6 +7380,112 @@ function PackagedView({ batches, onOpenBatch }) {
   );
 }
 
+// Big, at-a-glance tank visualization for the Home page — same fermenter
+// silhouette as the small Tank component used in batch cards, scaled up with
+// a gradient fill and an animated liquid surface for a "real tank" feel.
+function TankWallCard({ tank, batch, onOpen }) {
+  const empty = !batch;
+  const latest = batch ? latestReading(batch) : null;
+  const color = batch ? STAGE_COLOR[batch.stage] || "#5C9A3C" : "#C9D1AC";
+  const days = batch ? daysBetween(batch.startDate, today()) : null;
+  const rem = batch ? remainingVolume(batch) : 0;
+  const fillPct = batch && tank.capacity > 0 ? Math.max(4, Math.min(100, Math.round((rem / tank.capacity) * 100))) : 0;
+  const clipId = `tankwall-clip-${tank.id}`;
+  const gradId = `tankwall-grad-${tank.id}`;
+  // Body: x10–110, shoulders taper into a cone from y140 to the point at y190.
+  const bodyPath = "M10 10 H110 V140 L60 190 L10 140 Z";
+  const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
+
+  return (
+    <button
+      onClick={() => batch && onOpen(batch.id)}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 10,
+        background: "#FFFFFF",
+        border: `1px solid ${empty ? "#DDE0C8" : "#DDE0C8"}`,
+        borderRadius: 8,
+        padding: "16px 12px 14px",
+        cursor: batch ? "pointer" : "default",
+        textAlign: "center",
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+        <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>
+          {tank.name}
+        </span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>
+          {tank.type} · {tank.capacity}L
+        </span>
+      </div>
+
+      <svg width="88" height="140" viewBox="0 0 120 200">
+        <defs>
+          <clipPath id={clipId}>
+            <path d={bodyPath} />
+          </clipPath>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.55" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.9" />
+          </linearGradient>
+        </defs>
+
+        <path d={bodyPath} fill="#F8F5EA" stroke="#C9D1AC" strokeWidth="2.5" />
+
+        {!empty && (
+          <g clipPath={`url(#${clipId})`}>
+            <rect x="0" y={surfaceY} width="120" height="200" fill={`url(#${gradId})`} />
+            <g style={{ animation: "bp-wave-drift 6s linear infinite", transformBox: "fill-box" }}>
+              <path
+                d="M-60,0 C-45,-6 -35,6 -20,0 C-5,-6 5,6 20,0 C35,-6 45,6 60,0 C75,-6 85,6 100,0 C115,-6 125,6 140,0 C155,-6 165,6 180,0 V16 H-60 Z"
+                transform={`translate(0, ${surfaceY - 4})`}
+                fill={color}
+                opacity="0.5"
+              />
+            </g>
+          </g>
+        )}
+
+        <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
+        {!empty && (
+          <rect x="16" y="16" width="6" height="118" rx="3" fill="#FFFFFF" opacity="0.35" />
+        )}
+      </svg>
+
+      {empty ? (
+        <div style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'Inter', sans-serif" }}>Empty</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" }}>
+          <div
+            style={{
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 13.5,
+              color: "#2A3324",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "100%",
+            }}
+          >
+            {batch.name}
+          </div>
+          <StagePill stage={batch.stage} />
+          <div style={{ display: "flex", gap: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#5C6B54" }}>
+            <span>{rem}L</span>
+            {latest && <span>SG {latest.gravity.toFixed(3)}</span>}
+            <span>{days}d</span>
+          </div>
+        </div>
+      )}
+    </button>
+  );
+}
+
 function HomeView({
   companyName,
   companyLogo,
@@ -7396,6 +7502,7 @@ function HomeView({
   tanks,
   recipes,
   totalBatches,
+  batches,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -7467,6 +7574,25 @@ function HomeView({
           </h1>
         )}
       </div>
+
+      {tanks.length > 0 && (
+        <div>
+          <style>{`
+            @keyframes bp-wave-drift { from { transform: translateX(0); } to { transform: translateX(-60px); } }
+            @media (prefers-reduced-motion: reduce) {
+              [style*="bp-wave-drift"] { animation: none !important; }
+            }
+          `}</style>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Your tanks
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
+            {tanks.map((t) => (
+              <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {!setupComplete && !setupDismissed && (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 8, padding: "16px 18px" }}>
@@ -8109,7 +8235,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-1";
+const APP_VERSION = "2026-07-31-2";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -9660,6 +9786,7 @@ export default function TankLog() {
                 tanks={tanks}
                 recipes={recipes}
                 totalBatches={batches.length}
+                batches={batches}
               />
             )}
 
