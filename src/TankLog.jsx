@@ -10545,7 +10545,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-45";
+const APP_VERSION = "2026-07-31-46";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13536,7 +13536,9 @@ export default function TankLog() {
                     ))}
                   </div>
                   <div style={{ color: "#9BA88A", fontSize: 12, marginTop: 10 }}>
-                    Anyone who signs up using "{companyName}" as their company name joins this team automatically.
+                    {profile?.role === "owner"
+                      ? "Generate an invite link above to add someone — signing up on its own always creates a brand-new company now."
+                      : "Only the account owner can invite new teammates."}
                   </div>
                 </div>
 
