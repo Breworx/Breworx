@@ -9474,6 +9474,7 @@ function HomeView({
   packageTypes,
   recentBatches,
   onQuickLog,
+  activityLog,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -9612,6 +9613,39 @@ function HomeView({
                 </span>
                 <StagePill stage={b.stage} />
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activityLog.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Recent activity
+          </div>
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "4px 0" }}>
+            {activityLog.slice(0, 8).map((entry, i) => (
+              <div
+                key={entry.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i < Math.min(activityLog.length, 8) - 1 ? "1px solid #EBE8D6" : "none",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#2A3324", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {entry.description}
+                  </div>
+                  <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>{entry.userName}</div>
+                </div>
+                <span style={{ color: "#9BA88A", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
+                  {formatHistoryStamp(entry.createdAt)}
+                </span>
+              </div>
             ))}
           </div>
         </div>
@@ -10364,7 +10398,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-40";
+const APP_VERSION = "2026-07-31-41";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10559,6 +10593,7 @@ export default function TankLog() {
     }
   }, []);
   const [batches, setBatches] = useState([]);
+  const [activityLog, setActivityLog] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [logTarget, setLogTarget] = useState(null);
@@ -10689,6 +10724,7 @@ export default function TankLog() {
   useEffect(() => {
     if (!user) {
       setBatches([]);
+      setActivityLog([]);
       setInventory([]);
       setConsumables([]);
       setPackageTypes([]);
@@ -10734,7 +10770,7 @@ export default function TankLog() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -10751,6 +10787,7 @@ export default function TankLog() {
         supabase.from("xero_item_mappings").select("*").eq("company_id", myProfile.companyId),
         supabase.from("suppliers").select("*").order("name", { ascending: true }),
         supabase.from("supplier_documents").select("*").order("uploaded_at", { ascending: false }),
+        supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(50),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -10789,6 +10826,8 @@ export default function TankLog() {
       else setSuppliers(suppliersRes.data.map(rowToSupplier));
       if (supplierDocsRes.error) console.error(supplierDocsRes.error);
       else setSupplierDocuments(supplierDocsRes.data.map(rowToSupplierDocument));
+      if (activityRes.error) console.error(activityRes.error);
+      else setActivityLog(activityRes.data.map(rowToActivity));
       setLoadingData(false);
     })();
     return () => {
@@ -10839,6 +10878,28 @@ export default function TankLog() {
     [packageTypes, selectedPackageTypeId]
   );
 
+  // Fire-and-forget: records a line in the activity feed. Never blocks or
+  // fails the action it's attached to — if this insert fails, the real
+  // action already succeeded, so we just log it and move on.
+  const logActivity = (action, entityType, entityName, description) => {
+    const entry = {
+      id: uid(),
+      action,
+      entityType,
+      entityName,
+      description,
+      userName: user?.name || "Someone",
+      createdAt: new Date().toISOString(),
+    };
+    setActivityLog((prev) => [entry, ...prev].slice(0, 50));
+    supabase
+      .from("activity_log")
+      .insert(activityToRow(entry, user.id, profile.companyId))
+      .then(({ error }) => {
+        if (error) console.error(error);
+      });
+  };
+
   const addBatch = async (b) => {
     // Work out which lots each ingredient will draw from — and their cost —
     // before creating the batch, so the batch record itself carries the
@@ -10879,6 +10940,7 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => [rowToBatch(data), ...prev]);
     showToast("success", `${b.name} created.`);
+    logActivity("created", "batch", b.name, `${b.startDate > today() ? "Scheduled" : "Started"} batch ${b.name} (#${b.number})`);
 
     for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
       const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => i.name.toLowerCase() === item.name.toLowerCase())?.qty || 0)) * 100) / 100);
@@ -10929,6 +10991,7 @@ export default function TankLog() {
     // are delayed so Undo can cancel them before anything actually happens.
     setBatches((prev) => prev.filter((b) => b.id !== id));
     setSelectedId(null);
+    logActivity("deleted", "batch", batch.name, `${batch.name} (#${batch.number}) deleted`);
 
     const timeoutId = setTimeout(async () => {
       delete pendingDeletesRef.current[id];
@@ -11006,6 +11069,7 @@ export default function TankLog() {
 
     setRecipes((prev) => [newRecipe, ...prev.map((rec) => (rec.familyId === familyId ? { ...rec, isActive: false } : rec))]);
     setSelectedRecipeId(newRecipe.id);
+    logActivity("created", "recipe", newRecipe.name, `${version > 1 ? "New version of" : "Recipe"} ${newRecipe.name} saved`);
     return newRecipe;
   };
 
@@ -11065,6 +11129,7 @@ export default function TankLog() {
     if (!recipe) return;
     setRecipes((prev) => prev.filter((r) => r.id !== id));
     setSelectedRecipeId(null);
+    logActivity("deleted", "recipe", recipe.name, `${recipe.name} deleted`);
     const timeoutId = setTimeout(async () => {
       delete pendingDeletesRef.current[id];
       const { error } = await supabase.from("recipes").delete().eq("id", id);
@@ -11373,6 +11438,7 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setTanks((prev) => [rowToTank(data), ...prev]);
     showToast("success", `${t.name} added.`);
+    logActivity("added", "tank", t.name, `Tank ${t.name} added`);
   };
 
   const updateTank = async (id, patch) => {
@@ -11385,6 +11451,7 @@ export default function TankLog() {
     const tank = tanks.find((t) => t.id === id);
     if (!tank) return;
     setTanks((prev) => prev.filter((t) => t.id !== id));
+    logActivity("deleted", "tank", tank.name, `Tank ${tank.name} deleted`);
     const timeoutId = setTimeout(async () => {
       delete pendingDeletesRef.current[id];
       const { error } = await supabase.from("tanks").delete().eq("id", id);
@@ -11580,12 +11647,14 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
     showToast("success", `${po.poNumber} created.`);
+    logActivity("created", "purchase order", po.poNumber, `Purchase order ${po.poNumber} created for ${po.supplier}`);
   };
 
   const deletePO = (po) => {
     if (!window.confirm(`Delete ${po.poNumber}? You'll have a few seconds to undo right after.`)) return;
     setPurchaseOrders((prev) => prev.filter((p) => p.id !== po.id));
     setSelectedPOId(null);
+    logActivity("deleted", "purchase order", po.poNumber, `Purchase order ${po.poNumber} deleted`);
     const timeoutId = setTimeout(async () => {
       delete pendingDeletesRef.current[po.id];
       const { error } = await supabase.from("purchase_orders").delete().eq("id", po.id);
@@ -11660,6 +11729,7 @@ export default function TankLog() {
     if (poError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today(), lines: finalizedLines } : p)));
     showToast("success", `${po.poNumber} received — inventory updated.`);
+    logActivity("received", "purchase order", po.poNumber, `Purchase order ${po.poNumber} received from ${po.supplier} — inventory updated`);
   };
 
   const advance = async (id) => {
@@ -11676,6 +11746,7 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ stage: nextStage }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage } : b)));
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${nextStage}`);
   };
 
   const moveStageBack = async (id) => {
@@ -11849,6 +11920,7 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
     syncPackagingToXero(batch, sessionCounts);
     await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections);
+    logActivity("packaged", "batch", batch.name, `${batch.name} (#${batch.number}) packaged`);
   };
 
   const undoPackagingEvent = async (id, eventId) => {
@@ -11870,6 +11942,7 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Cooling" } : b)));
     await deductConsumablesForPackaging(batch, event, event.packageTypes || {}, 1);
     showToast("success", "Packaging undone — back to Cooling, consumables returned to stock.");
+    logActivity("undid packaging for", "batch", batch.name, `Packaging undone for ${batch.name} (#${batch.number})`);
   };
 
   const discardRemaining = async (id) => {
@@ -12291,6 +12364,7 @@ export default function TankLog() {
                 packageTypes={packageTypes}
                 recentBatches={recentBatches}
                 onQuickLog={setLogTarget}
+                activityLog={activityLog}
               />
             )}
 
