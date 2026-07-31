@@ -9738,7 +9738,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-27";
+const APP_VERSION = "2026-07-31-28";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11308,7 +11308,7 @@ export default function TankLog() {
         @media print {
           body * { visibility: hidden; }
           .bp-print-sheet, .bp-print-sheet * { visibility: visible; }
-          .bp-print-sheet { position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
+          .bp-print-sheet { display: block !important; position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
         }
       `}</style>
       {updateAvailable && (
