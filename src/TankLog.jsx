@@ -26,6 +26,8 @@ import {
   consumableToRow,
   rowToPackageType,
   packageTypeToRow,
+  rowToActivity,
+  activityToRow,
 } from "./lib/mappers";
 
 // The path a batch follows depends on whether the brewery has any Brite Beer
@@ -10398,7 +10400,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-42";
+const APP_VERSION = "2026-07-31-43";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
