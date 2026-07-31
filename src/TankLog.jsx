@@ -4914,7 +4914,18 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const removeSplitRow = (id) => setSplitRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
   const splitTotal = splitRows.reduce((sum, r) => sum + (Number(r.volume) || 0), 0);
   const noSingleTankFits =
-    !splitMode && tanks.length > 0 && Number(volume) > 0 && !tanks.some((t) => !tankIsOccupied(batches, t.id) && t.capacity >= Number(volume));
+    !splitMode &&
+    tanks.length > 0 &&
+    Number(volume) > 0 &&
+    !tanks.some((t) => (!tankIsOccupied(batches, t.id) || startDate > today()) && t.capacity >= Number(volume));
+
+  const selectedTank = tanks.find((t) => t.id === tankId) || null;
+  const blockReason =
+    !splitMode && selectedTank && tankIsOccupied(batches, selectedTank.id) && startDate <= today()
+      ? `${selectedTank.name} is currently occupied by ${occupyingBatch(batches, selectedTank.id)?.name || "another batch"} — pick a later date or a different tank.`
+      : splitMode && startDate <= today() && splitRows.some((r) => r.tankId && tankIsOccupied(batches, r.tankId))
+      ? "One of the tanks you've chosen is currently occupied — pick a later date or different tanks."
+      : null;
 
   const searchableRecipes = activeRecipesByFamily(recipes);
   const nameMatches =
@@ -4926,8 +4937,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
 
   const submit = async () => {
     if (!name.trim()) return;
+    if (blockReason) return;
     const tank = tanks.find((t) => t.id === tankId) || null;
-    if (!splitMode && tank && tankIsOccupied(batches, tank.id)) return;
     let finalSplitTanks = [];
     if (splitMode) {
       finalSplitTanks = splitRows
@@ -4936,7 +4947,6 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           const t = tanks.find((tk) => tk.id === r.tankId);
           return { tankId: r.tankId, tankName: t ? t.name : "", volume: Number(r.volume) || 0 };
         });
-      if (finalSplitTanks.some((t) => tankIsOccupied(batches, t.tankId))) return;
     }
     const cleanBatchIngredients = batchIngredients.filter((ing) => ing.name.trim().length > 0 && Number(ing.qty) > 0);
     const mashSteps = cleanBatchIngredients
@@ -5040,16 +5050,25 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                   >
                     <option value="">Unassigned</option>
                     {tanks.map((t) => {
-                      const occupied = tankIsOccupied(batches, t.id);
-                      const occupant = occupied ? occupyingBatch(batches, t.id) : null;
+                      const currentlyOccupied = tankIsOccupied(batches, t.id);
+                      const occupied = currentlyOccupied && startDate <= today();
+                      const occupant = currentlyOccupied ? occupyingBatch(batches, t.id) : null;
                       return (
                         <option key={t.id} value={t.id} disabled={occupied}>
-                          {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                          {t.name} ({t.capacity}L)
+                          {occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                          {!occupied && currentlyOccupied ? ` — currently in use by ${occupant?.name || "another batch"}` : ""}
                         </option>
                       );
                     })}
                   </select>
                 </label>
+                {!splitMode && tankId && startDate > today() && tankIsOccupied(batches, tankId) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C9A3C", fontSize: 12, marginTop: -4 }}>
+                    <AlertTriangle size={12} />
+                    This tank is currently in use — make sure it'll be free by {startDate}.
+                  </div>
+                )}
                 {noSingleTankFits && (
                   <div style={{ marginTop: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C9A3C", fontSize: 12, marginBottom: 8 }}>
@@ -5144,11 +5163,13 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                           >
                             <option value="">Choose tank</option>
                             {tanks.map((t) => {
-                              const occupied = tankIsOccupied(batches, t.id) || splitRows.some((r) => r.id !== row.id && r.tankId === t.id);
-                              const occupant = tankIsOccupied(batches, t.id) ? occupyingBatch(batches, t.id) : null;
+                              const currentlyOccupied = tankIsOccupied(batches, t.id);
+                              const usedAbove = splitRows.some((r) => r.id !== row.id && r.tankId === t.id);
+                              const occupied = (currentlyOccupied && startDate <= today()) || usedAbove;
+                              const occupant = currentlyOccupied ? occupyingBatch(batches, t.id) : null;
                               return (
                                 <option key={t.id} value={t.id} disabled={occupied}>
-                                  {t.name} ({t.capacity}L){occupant ? ` — occupied by ${occupant.name}` : occupied ? " — already used above" : ""}
+                                  {t.name} ({t.capacity}L){usedAbove ? " — already used above" : occupant && occupied ? ` — occupied by ${occupant.name}` : occupant ? ` — currently in use by ${occupant.name}` : ""}
                                 </option>
                               );
                             })}
@@ -5484,6 +5505,12 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
             </button>
           </div>
         </div>
+        {blockReason && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#5C9A3C", fontSize: 12, marginTop: -4 }}>
+            <AlertTriangle size={12} />
+            {blockReason}
+          </div>
+        )}
         <button
           onClick={submit}
           disabled={saving}
@@ -5501,7 +5528,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
             cursor: saving ? "default" : "pointer",
           }}
         >
-          {saving ? "Saving…" : `Start batch #${nextNumber}`}
+          {saving ? "Saving…" : startDate > today() ? `Schedule batch #${nextNumber}` : `Start batch #${nextNumber}`}
         </button>
       </div>
     </Modal>
@@ -7757,6 +7784,9 @@ function HomeView({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <FirstVisitTip tipKey="home">
+        Welcome to Brewpoint. This Home screen is your at-a-glance view — your tanks and what's in them, tasks that need doing, and anything running low. Use the checklist below to get set up, and check out Production in the menu when you're ready to schedule brews ahead of time.
+      </FirstVisitTip>
       <div>
         <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 2 }}>Welcome back to</div>
         {companyLogo ? (
@@ -8481,7 +8511,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-4";
+const APP_VERSION = "2026-07-31-6";
 
 function UpdateBanner({ onRefresh }) {
   return (
