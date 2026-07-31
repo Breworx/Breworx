@@ -10398,7 +10398,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-41";
+const APP_VERSION = "2026-07-31-42";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10748,6 +10748,7 @@ export default function TankLog() {
     let cancelled = false;
     setLoadingData(true);
     (async () => {
+      try {
       // Every account belongs to a company. If this is the very first time
       // this user has ever loaded the app, they won't have a profile row
       // yet — create/join their company now using what they entered at
@@ -10828,7 +10829,14 @@ export default function TankLog() {
       else setSupplierDocuments(supplierDocsRes.data.map(rowToSupplierDocument));
       if (activityRes.error) console.error(activityRes.error);
       else setActivityLog(activityRes.data.map(rowToActivity));
-      setLoadingData(false);
+      } catch (err) {
+        // Whatever went wrong, never leave the app stuck on the loading
+        // skeleton forever — surface it and let the user try again.
+        console.error(err);
+        if (!cancelled) showToast("error", "Something went wrong loading your data — check your connection and try refreshing.");
+      } finally {
+        if (!cancelled) setLoadingData(false);
+      }
     })();
     return () => {
       cancelled = true;
