@@ -37,13 +37,13 @@ function getStages(hasBriteTanks) {
 }
 
 const STAGE_COLOR = {
-  Brewing: "#8A6A3D",
-  Primary: "#5C9A3C",
-  Cooling: "#B8925A",
-  "Brite Tank": "#D4A24C",
+  Brewing: "#E08A3C",
+  Primary: "#4FB83D",
+  Cooling: "#4AA8C9",
+  "Brite Tank": "#F0B429",
   // Kept for any batches created before this stage restructure.
-  Secondary: "#B8925A",
-  Conditioning: "#D4A24C",
+  Secondary: "#4AA8C9",
+  Conditioning: "#F0B429",
   Packaged: "#9BA88A",
 };
 
@@ -2161,7 +2161,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -2365,6 +2365,26 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           </div>
         )}
       </div>
+
+      {onDelete && (
+        <button
+          onClick={() => onDelete(item)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "1px solid #E3D3A0",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#5C9A3C",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+            marginTop: 26,
+          }}
+        >
+          Delete {item.name}
+        </button>
+      )}
     </div>
   );
 }
@@ -2747,9 +2767,16 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   );
 }
 
-function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES, unitOptions = ["kg", "g", "L", "ea"], title = "New inventory item", submitLabel = "Add to inventory", showCost = false }) {
+function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES, unitOptions = ["kg", "g", "L", "ea"], title = "New inventory item", submitLabel = "Add to inventory", showCost = false, storageKey = "brewpoint-last-category" }) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(categories[0]);
+  const [category, setCategory] = useState(() => {
+    try {
+      const last = localStorage.getItem(storageKey);
+      return last && categories.includes(last) ? last : categories[0];
+    } catch {
+      return categories[0];
+    }
+  });
   const [qty, setQty] = useState(10);
   const [unit, setUnit] = useState(unitOptions[0]);
   const [threshold, setThreshold] = useState(5);
@@ -2759,6 +2786,9 @@ function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES,
 
   const submit = async () => {
     if (!name.trim()) return;
+    try {
+      localStorage.setItem(storageKey, category);
+    } catch {}
     setSaving(true);
     await onAdd({
       id: uid(),
@@ -4970,7 +5000,14 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [og, setOg] = useState(presetRecipe ? presetRecipe.og : 1.05);
   const [fg, setFg] = useState(presetRecipe ? presetRecipe.fg : 1.01);
   const [temp, setTemp] = useState(20);
-  const [tankId, setTankId] = useState(presetTankId || "");
+  const [tankId, setTankId] = useState(() => {
+    if (presetTankId) return presetTankId;
+    try {
+      return localStorage.getItem("brewpoint-last-tank") || "";
+    } catch {
+      return "";
+    }
+  });
   const [startDate, setStartDate] = useState(presetStartDate || today());
   const [plannedDays, setPlannedDays] = useState("");
   const [splitMode, setSplitMode] = useState(false);
@@ -5051,6 +5088,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     if (!name.trim()) return;
     if (blockReason) return;
     const tank = tanks.find((t) => t.id === tankId) || null;
+    if (tank) {
+      try {
+        localStorage.setItem("brewpoint-last-tank", tank.id);
+      } catch {}
+    }
     let finalSplitTanks = [];
     if (splitMode) {
       finalSplitTanks = splitRows
@@ -8854,6 +8896,37 @@ function HomeView({
         ))}
       </div>
 
+      {(() => {
+        const groups = {};
+        batches.forEach((b) => {
+          const key = monthKeyFromDate(b.startDate);
+          if (!groups[key]) groups[key] = { batches: 0, cost: 0 };
+          groups[key].batches += 1;
+          groups[key].cost += b.ingredientCost || 0;
+        });
+        const monthlyData = Object.keys(groups)
+          .sort()
+          .slice(-6)
+          .map((key) => ({ date: monthLabelFromKey(key).slice(0, 3), Batches: groups[key].batches, Cost: Math.round(groups[key].cost) }));
+        if (monthlyData.length < 2) return null;
+        return (
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <TrendingUp size={13} /> Brewing activity — last 6 months
+            </div>
+            <ResponsiveContainer width="100%" height={150}>
+              <BarChart data={monthlyData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+                <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+                <YAxis stroke="#9BA88A" fontSize={11} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
+                <Bar dataKey="Batches" fill="#4FB83D" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
+
       {inProgressBatches.length > 0 && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
@@ -9451,9 +9524,10 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-16";
+const APP_VERSION = "2026-07-31-19";
 
 function UpdateBanner({ onRefresh }) {
+  const [refreshing, setRefreshing] = useState(false);
   return (
     <div
       style={{
@@ -9469,6 +9543,7 @@ function UpdateBanner({ onRefresh }) {
         alignItems: "center",
         justifyContent: "center",
         gap: 10,
+        flexWrap: "wrap",
       }}
     >
       <CheckCircle2 size={14} color="#8FCB6C" />
@@ -9476,9 +9551,13 @@ function UpdateBanner({ onRefresh }) {
         A new version of Brewpoint is available.
       </span>
       <button
-        onClick={onRefresh}
+        onClick={() => {
+          setRefreshing(true);
+          onRefresh();
+        }}
+        disabled={refreshing}
         style={{
-          background: "none",
+          background: refreshing ? "#3A4A2E" : "none",
           border: "1px solid #C9D1AC",
           borderRadius: 5,
           padding: "4px 10px",
@@ -9486,10 +9565,10 @@ function UpdateBanner({ onRefresh }) {
           fontFamily: "'Oswald', sans-serif",
           fontWeight: 500,
           fontSize: 12,
-          cursor: "pointer",
+          cursor: refreshing ? "default" : "pointer",
         }}
       >
-        Refresh
+        {refreshing ? "Refreshing…" : "Refresh"}
       </button>
     </div>
   );
@@ -9652,6 +9731,8 @@ export default function TankLog() {
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
+  const [batchQuery, setBatchQuery] = useState("");
+  const [poQuery, setPoQuery] = useState("");
   const [showAddConsumable, setShowAddConsumable] = useState(false);
   const [selectedConsumableId, setSelectedConsumableId] = useState(null);
   const [consumableQuery, setConsumableQuery] = useState("");
@@ -10469,6 +10550,26 @@ export default function TankLog() {
     showToast("success", `${item.name} added to inventory.`);
   };
 
+  const deleteInventoryItem = (item) => {
+    if (!window.confirm(`Delete ${item.name}? Any stock and history logged against it will be lost.`)) return;
+    setInventory((prev) => prev.filter((it) => it.id !== item.id));
+    setSelectedInventoryId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[item.id];
+      const { error } = await supabase.from("inventory_items").delete().eq("id", item.id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[item.id] = timeoutId;
+    showToast("success", `${item.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[item.id]);
+        delete pendingDeletesRef.current[item.id];
+        setInventory((prev) => [item, ...prev]);
+      },
+    });
+  };
+
   const updateInventorySupplier = async (id, supplierId) => {
     const { error } = await supabase.from("inventory_items").update({ supplier_id: supplierId }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -10511,6 +10612,26 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setConsumables((prev) => [rowToConsumable(data), ...prev]);
     showToast("success", `${item.name} added to consumables.`);
+  };
+
+  const deleteConsumable = (item) => {
+    if (!window.confirm(`Delete ${item.name}? Any stock and history logged against it will be lost.`)) return;
+    setConsumables((prev) => prev.filter((it) => it.id !== item.id));
+    setSelectedConsumableId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[item.id];
+      const { error } = await supabase.from("consumables").delete().eq("id", item.id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[item.id] = timeoutId;
+    showToast("success", `${item.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[item.id]);
+        delete pendingDeletesRef.current[item.id];
+        setConsumables((prev) => [item, ...prev]);
+      },
+    });
   };
 
   const updateConsumableSupplier = async (id, supplierId) => {
@@ -10565,10 +10686,24 @@ export default function TankLog() {
   };
 
   const deletePackageType = async (id) => {
-    const { error } = await supabase.from("package_types").delete().eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    const packageType = packageTypes.find((pt) => pt.id === id);
+    if (!packageType) return;
     setPackageTypes((prev) => prev.filter((pt) => pt.id !== id));
     setSelectedPackageTypeId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[id];
+      const { error } = await supabase.from("package_types").delete().eq("id", id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[id] = timeoutId;
+    showToast("success", `${packageType.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[id]);
+        delete pendingDeletesRef.current[id];
+        setPackageTypes((prev) => [packageType, ...prev]);
+      },
+    });
   };
 
   const addPO = async (po) => {
@@ -10905,9 +11040,7 @@ export default function TankLog() {
             // A plain reload() isn't always enough to escape iOS's aggressive
             // caching for installed home-screen apps — navigating to a
             // cache-busted URL forces a genuinely fresh fetch instead.
-            const url = new URL(window.location.href);
-            url.searchParams.set("_v", Date.now().toString());
-            window.location.replace(url.toString());
+            window.location.href = window.location.pathname + "?v=" + Date.now();
           }}
         />
       )}
@@ -11037,7 +11170,14 @@ export default function TankLog() {
 
         <div style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
-          <>
+          <div key={view} className="bp-view-fade">
+            <style>{`
+              @keyframes bp-view-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+              .bp-view-fade { animation: bp-view-fade-in 180ms ease-out; }
+              @media (prefers-reduced-motion: reduce) {
+                .bp-view-fade { animation: none; }
+              }
+            `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
               {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && (
                 <button
@@ -11136,65 +11276,99 @@ export default function TankLog() {
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
             )}
 
-            {!loadingData && view === "batches" && (
-              <>
-                <FirstVisitTip tipKey="batches">
-                  Every batch lives here from brew day through to packaging. Tap "New batch" to start one, log gravity readings as it ferments, then advance it through each stage.
-                </FirstVisitTip>
-                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-                  Fermenting ({fermentingBatches.length})
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (conditioningBatches.length || inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
-                  {fermentingBatches.map((b) => (
-                    <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
-                  ))}
-                  {fermentingBatches.length === 0 && (
-                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-                      No batches fermenting right now. Start one to get going.
-                    </div>
+            {!loadingData && view === "batches" && (() => {
+              const matches = (b) => {
+                const q = batchQuery.trim().toLowerCase();
+                if (!q) return true;
+                return b.name.toLowerCase().includes(q) || (b.style || "").toLowerCase().includes(q) || (b.number || "").toLowerCase().includes(q);
+              };
+              const fFerm = fermentingBatches.filter(matches);
+              const fCond = conditioningBatches.filter(matches);
+              const fProg = inProgressBatches.filter(matches);
+              const fPack = packagedBatches.filter(matches);
+              const noMatches = batchQuery.trim() && fFerm.length === 0 && fCond.length === 0 && fProg.length === 0 && fPack.length === 0;
+              return (
+                <>
+                  <FirstVisitTip tipKey="batches">
+                    Every batch lives here from brew day through to packaging. Tap "New batch" to start one, log gravity readings as it ferments, then advance it through each stage.
+                  </FirstVisitTip>
+                  <input
+                    type="text"
+                    value={batchQuery}
+                    onChange={(e) => setBatchQuery(e.target.value)}
+                    placeholder="Search batches by name, style, or number…"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "#F5F1E4",
+                      border: "1px solid #DDE0C8",
+                      borderRadius: 5,
+                      padding: "10px 12px",
+                      color: "#2A3324",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                      marginBottom: 16,
+                    }}
+                  />
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                    Fermenting ({fFerm.length})
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (fCond.length || fProg.length || fPack.length) ? 26 : 0 }}>
+                    {fFerm.map((b) => (
+                      <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                    ))}
+                    {fFerm.length === 0 && !noMatches && (
+                      <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
+                        No batches fermenting right now. Start one to get going.
+                      </div>
+                    )}
+                  </div>
+
+                  {fCond.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                        Conditioning ({fCond.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (fProg.length || fPack.length) ? 26 : 0 }}>
+                        {fCond.map((b) => (
+                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                        ))}
+                      </div>
+                    </>
                   )}
-                </div>
 
-                {conditioningBatches.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-                      Conditioning ({conditioningBatches.length})
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (inProgressBatches.length || packagedBatches.length) ? 26 : 0 }}>
-                      {conditioningBatches.map((b) => (
-                        <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
-                      ))}
-                    </div>
-                  </>
-                )}
+                  {fProg.length > 0 && (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
+                        <Package size={12} /> Packaging in progress ({fProg.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: fPack.length ? 26 : 0 }}>
+                        {fProg.map((b) => (
+                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
 
-                {inProgressBatches.length > 0 && (
-                  <>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
-                      <Package size={12} /> Packaging in progress ({inProgressBatches.length})
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: packagedBatches.length ? 26 : 0 }}>
-                      {inProgressBatches.map((b) => (
-                        <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
-                      ))}
-                    </div>
-                  </>
-                )}
+                  {fPack.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                        Packaged ({fPack.length})
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {fPack.map((b) => (
+                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                        ))}
+                      </div>
+                    </>
+                  )}
 
-                {packagedBatches.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-                      Packaged ({packagedBatches.length})
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      {packagedBatches.map((b) => (
-                        <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
+                  {noMatches && (
+                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No batches match "{batchQuery}".</div>
+                  )}
+                </>
+              );
+            })()}
 
             {!loadingData && view === "inventory" && (() => {
               const filtered = inventory.filter((it) =>
@@ -11433,14 +11607,37 @@ export default function TankLog() {
             )}
 
             {!loadingData && view === "orders" && (() => {
-              const draftPOs = purchaseOrders.filter((po) => po.status === "Draft");
-              const sentPOs = purchaseOrders.filter((po) => po.status === "Sent");
-              const receivedPOs = purchaseOrders.filter((po) => po.status === "Received");
+              const q = poQuery.trim().toLowerCase();
+              const matchesPO = (po) => !q || po.poNumber.toLowerCase().includes(q) || po.supplier.toLowerCase().includes(q);
+              const draftPOs = purchaseOrders.filter((po) => po.status === "Draft" && matchesPO(po));
+              const sentPOs = purchaseOrders.filter((po) => po.status === "Sent" && matchesPO(po));
+              const receivedPOs = purchaseOrders.filter((po) => po.status === "Received" && matchesPO(po));
+              const noMatches = q && draftPOs.length === 0 && sentPOs.length === 0 && receivedPOs.length === 0;
               return (
                 <>
                   <FirstVisitTip tipKey="orders">
                     Create purchase orders to bring ingredients in from suppliers. Receiving one adds the stock straight into Inventory with proper lot tracking and cost per unit.
                   </FirstVisitTip>
+                  {purchaseOrders.length > 0 && (
+                    <input
+                      type="text"
+                      value={poQuery}
+                      onChange={(e) => setPoQuery(e.target.value)}
+                      placeholder="Search orders by number or supplier…"
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        background: "#F5F1E4",
+                        border: "1px solid #DDE0C8",
+                        borderRadius: 5,
+                        padding: "10px 12px",
+                        color: "#2A3324",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 14,
+                        marginBottom: 16,
+                      }}
+                    />
+                  )}
                   <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Draft ({draftPOs.length})
                   </div>
@@ -11448,7 +11645,7 @@ export default function TankLog() {
                     {draftPOs.map((po) => (
                       <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
                     ))}
-                    {draftPOs.length === 0 && (
+                    {draftPOs.length === 0 && !noMatches && purchaseOrders.length > 0 && (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                         No drafts. Start a new order to build one out before sending it to a supplier.
                       </div>
@@ -11483,6 +11680,9 @@ export default function TankLog() {
 
                   {purchaseOrders.length === 0 && (
                     <EmptyState icon={Truck} title="No purchase orders yet" subtitle="Create one to bring in ingredients with proper lot tracking from day one." action={{ label: "New order", onClick: () => setShowAddPO(true) }} />
+                  )}
+                  {noMatches && (
+                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No orders match "{poQuery}".</div>
                   )}
                 </>
               );
@@ -11920,7 +12120,7 @@ export default function TankLog() {
                 </button>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {selected && (
@@ -11976,6 +12176,7 @@ export default function TankLog() {
             onLogAdjustment={setAdjustTarget}
             suppliers={suppliers}
             onChangeSupplier={updateInventorySupplier}
+            onDelete={deleteInventoryItem}
           />
         )}
 
@@ -11990,6 +12191,7 @@ export default function TankLog() {
             backLabel="All consumables"
             showCost
             onChangeCost={updateConsumableCost}
+            onDelete={deleteConsumable}
           />
         )}
 
@@ -12065,7 +12267,14 @@ export default function TankLog() {
           }}
         />
       )}
-      {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} suppliers={suppliers} />}
+      {showAddInventory && (
+        <AddInventoryModal
+          onClose={() => setShowAddInventory(false)}
+          onAdd={addInventoryItem}
+          suppliers={suppliers}
+          storageKey="brewpoint-last-ingredient-category"
+        />
+      )}
       {showAddConsumable && (
         <AddInventoryModal
           onClose={() => setShowAddConsumable(false)}
@@ -12076,6 +12285,7 @@ export default function TankLog() {
           title="New consumable"
           submitLabel="Add to consumables"
           showCost
+          storageKey="brewpoint-last-consumable-category"
         />
       )}
       {showAddPackageType && (
