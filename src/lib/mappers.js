@@ -360,3 +360,28 @@ export function packageTypeToRow(packageType, userId, companyId) {
     items: packageType.items || [],
   };
 }
+
+export function rowToActivity(row) {
+  return {
+    id: row.id,
+    action: row.action,
+    entityType: row.entity_type,
+    entityName: row.entity_name,
+    description: row.description,
+    userName: row.user_name,
+    createdAt: row.created_at,
+  };
+}
+
+export function activityToRow(entry, userId, companyId) {
+  return {
+    id: entry.id,
+    user_id: userId,
+    company_id: companyId,
+    action: entry.action,
+    entity_type: entry.entityType,
+    entity_name: entry.entityName,
+    description: entry.description,
+    user_name: entry.userName,
+  };
+}
