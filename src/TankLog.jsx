@@ -9244,7 +9244,7 @@ function HomeView({
     ["Fermenting", fermentingBatches.length, STAGE_COLOR.Primary, "batches"],
     ["Conditioning", conditioningBatches.length, STAGE_COLOR.Conditioning, "batches"],
     ["Packaging", inProgressBatches.length, "#D4A24C", "batches"],
-    ["Packaged", packagedBatches.length, "#9BA88A", "batches"],
+    ["Finished Stock", packagedBatches.length, "#9BA88A", "batches"],
   ];
 
   return (
@@ -10074,7 +10074,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-35";
+const APP_VERSION = "2026-07-31-36";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11769,7 +11769,7 @@ export default function TankLog() {
                 label: "Production",
                 items: [
                   ["batches", "Fermentation", Droplet],
-                  ["packaged", "Packaged", Package],
+                  ["packaged", "Finished Stock", Package],
                   ["production", "Production", Calendar],
                   ["brewery", "Brewery", Warehouse],
                 ],
