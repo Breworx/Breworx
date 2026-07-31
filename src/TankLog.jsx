@@ -10074,7 +10074,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-34";
+const APP_VERSION = "2026-07-31-35";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11796,7 +11796,18 @@ export default function TankLog() {
             ].map((group, gi) => (
               <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {group.label && (
-                  <div style={{ fontSize: 10.5, letterSpacing: "0.07em", textTransform: "uppercase", color: "#9BA88A", padding: "0 12px", marginBottom: 4 }}>
+                  <div
+                    style={{
+                      fontFamily: "'Oswald', sans-serif",
+                      fontWeight: 500,
+                      fontSize: 12.5,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "#5C9A3C",
+                      padding: "0 12px",
+                      marginBottom: 6,
+                    }}
+                  >
                     {group.label}
                   </div>
                 )}
