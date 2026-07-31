@@ -203,24 +203,35 @@ function aggregatePackagingCounts(batch) {
   return totals;
 }
 
+const BP_TANK_PATH = "M11 5 Q9 5 9 7 V21.5 L18.3 33.2 Q19 34 19.7 33.2 L29 21.5 V7 Q29 5 27 5 Z";
+
 function BreworxMark({ size = 24 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
       <defs>
         <clipPath id="bp-tank-clip">
-          <path d="M9 5 H29 V23 L19 34 L9 23 Z" />
+          <path d={BP_TANK_PATH} />
         </clipPath>
+        <linearGradient id="bp-liquid-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#7CB854" />
+          <stop offset="100%" stopColor="#4A7D2E" />
+        </linearGradient>
+        <linearGradient id="bp-marker-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#E8BE63" />
+          <stop offset="100%" stopColor="#D4A24C" />
+        </linearGradient>
       </defs>
-      {/* Fermenter tank outline */}
-      <path d="M9 5 H29 V23 L19 34 L9 23 Z" stroke="#5C9A3C" strokeWidth="2.2" strokeLinejoin="round" />
-      {/* Liquid fill */}
+      {/* Fermenter tank outline, softened shoulders */}
+      <path d={BP_TANK_PATH} stroke="#5C9A3C" strokeWidth="2.1" strokeLinejoin="round" strokeLinecap="round" />
+      {/* Liquid fill with gradient depth + glass highlight */}
       <g clipPath="url(#bp-tank-clip)">
-        <rect x="7" y="16" width="24" height="20" fill="#5C9A3C" opacity="0.32" />
+        <rect x="7" y="15" width="24" height="21" fill="url(#bp-liquid-grad)" opacity="0.85" />
+        <rect x="12.5" y="8" width="2.4" height="21" rx="1.2" fill="#FFFFFF" opacity="0.28" />
       </g>
       {/* Reading marker calling out the point on the tank */}
-      <line x1="29" y1="16" x2="35" y2="10" stroke="#D4A24C" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="35" cy="10" r="3" fill="#D4A24C" />
-      <circle cx="35" cy="10" r="6" stroke="#D4A24C" strokeWidth="1.1" opacity="0.5" />
+      <line x1="27.5" y1="15" x2="34" y2="9" stroke="url(#bp-marker-grad)" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="34" cy="9" r="2.6" fill="url(#bp-marker-grad)" />
+      <circle cx="34" cy="9" r="5.4" stroke="#D4A24C" strokeWidth="1" opacity="0.4" />
     </svg>
   );
 }
@@ -235,17 +246,21 @@ function BrewpointLoadingMark({ size = 52, label }) {
       <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
         <defs>
           <clipPath id="bp-loading-clip">
-            <path d="M9 5 H29 V23 L19 34 L9 23 Z" />
+            <path d={BP_TANK_PATH} />
           </clipPath>
+          <linearGradient id="bp-loading-liquid-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7CB854" />
+            <stop offset="100%" stopColor="#4A7D2E" />
+          </linearGradient>
         </defs>
-        <path d="M9 5 H29 V23 L19 34 L9 23 Z" stroke="#5C9A3C" strokeWidth="2.2" strokeLinejoin="round" />
+        <path d={BP_TANK_PATH} stroke="#5C9A3C" strokeWidth="2.1" strokeLinejoin="round" strokeLinecap="round" />
         <g clipPath="url(#bp-loading-clip)">
-          <rect x="7" y="16" width="24" height="20" fill="#5C9A3C" style={{ animation: "bp-mark-pulse 1.6s ease-in-out infinite" }} />
+          <rect x="7" y="15" width="24" height="21" fill="url(#bp-loading-liquid-grad)" style={{ animation: "bp-mark-pulse 1.6s ease-in-out infinite" }} />
         </g>
         <g style={{ transformOrigin: "19px 19px", animation: "bp-mark-spin 1.3s linear infinite" }}>
-          <line x1="29" y1="16" x2="35" y2="10" stroke="#D4A24C" strokeWidth="1.8" strokeLinecap="round" />
-          <circle cx="35" cy="10" r="3" fill="#D4A24C" />
-          <circle cx="35" cy="10" r="6" stroke="#D4A24C" strokeWidth="1.1" opacity="0.5" />
+          <line x1="27.5" y1="15" x2="34" y2="9" stroke="#D4A24C" strokeWidth="1.7" strokeLinecap="round" />
+          <circle cx="34" cy="9" r="2.6" fill="#D4A24C" />
+          <circle cx="34" cy="9" r="5.4" stroke="#D4A24C" strokeWidth="1" opacity="0.4" />
         </g>
       </svg>
       {label && (
@@ -9436,7 +9451,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-14";
+const APP_VERSION = "2026-07-31-16";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -10884,7 +10899,18 @@ export default function TankLog() {
           .bp-print-sheet { position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
         }
       `}</style>
-      {updateAvailable && <UpdateBanner onRefresh={() => window.location.reload()} />}
+      {updateAvailable && (
+        <UpdateBanner
+          onRefresh={() => {
+            // A plain reload() isn't always enough to escape iOS's aggressive
+            // caching for installed home-screen apps — navigating to a
+            // cache-busted URL forces a genuinely fresh fetch instead.
+            const url = new URL(window.location.href);
+            url.searchParams.set("_v", Date.now().toString());
+            window.location.replace(url.toString());
+          }}
+        />
+      )}
       {isOffline && <OfflineBanner />}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
