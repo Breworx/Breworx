@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -7503,6 +7503,8 @@ function HomeView({
   recipes,
   totalBatches,
   batches,
+  consumables,
+  packageTypes,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -7537,8 +7539,12 @@ function HomeView({
 
   const setupSteps = [
     { done: tanks.length > 0, label: "Set up your tanks", sub: "So batches can be assigned to them", goTo: "brewery" },
+    { done: purchaseOrders.length > 0, label: "Create a purchase order", sub: "Bring ingredients in from a supplier with lot tracking", goTo: "orders" },
+    { done: inventory.length > 0, label: "Check your ingredient inventory", sub: "Grain, hops, and yeast — added manually or via a purchase order", goTo: "inventory" },
     { done: recipes.length > 0, label: "Add a recipe", sub: "Pulls ingredients in automatically on brew day", goTo: "recipes" },
     { done: totalBatches > 0, label: "Brew your first batch", sub: "Start tracking a batch from grain to glass", goTo: "batches" },
+    { done: consumables.length > 0, label: "Add packaging consumables", sub: "Cans, lids, boxes, and labels", goTo: "consumables" },
+    { done: packageTypes.length > 0, label: "Set up a package type", sub: "So packaging a batch deducts the right consumables automatically", goTo: "packageTypes" },
   ];
   const setupComplete = setupSteps.every((s) => s.done);
   const [setupDismissed, setSetupDismissed] = useState(() => {
@@ -8209,6 +8215,59 @@ function EmptyState({ icon: Icon, title, subtitle }) {
   );
 }
 
+// A short explainer shown the first time someone visits a given screen —
+// dismissed permanently per-screen once tapped, so it never nags after that.
+function FirstVisitTip({ tipKey, children }) {
+  const storageKey = `brewpoint-tip-dismissed-${tipKey}`;
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) === "true";
+    } catch {
+      return false;
+    }
+  });
+  if (dismissed) return null;
+  const dismiss = () => {
+    setDismissed(true);
+    try {
+      localStorage.setItem(storageKey, "true");
+    } catch {}
+  };
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        background: "#F8F5EA",
+        border: "1px solid #C9D1AC",
+        borderRadius: 6,
+        padding: "12px 14px",
+        marginBottom: 16,
+      }}
+    >
+      <Info size={15} color="#5C9A3C" style={{ flexShrink: 0, marginTop: 1 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ color: "#2A3324", fontSize: 12.5, lineHeight: 1.5 }}>{children}</div>
+        <button
+          onClick={dismiss}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#5C9A3C",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 12,
+            cursor: "pointer",
+            padding: "6px 0 0",
+          }}
+        >
+          Got it, don't show this again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function OfflineBanner() {
   return (
     <div
@@ -8235,7 +8294,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-2";
+const APP_VERSION = "2026-07-31-3";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -9787,6 +9846,8 @@ export default function TankLog() {
                 recipes={recipes}
                 totalBatches={batches.length}
                 batches={batches}
+                consumables={consumables}
+                packageTypes={packageTypes}
               />
             )}
 
@@ -9801,16 +9862,21 @@ export default function TankLog() {
             )}
 
             {!loadingData && view === "foodsafety" && (
-              <FoodSafetyView
-                records={foodSafetyRecords}
-                onStartChecklist={setActiveChecklistTemplate}
-                onStartCalibration={() => setShowCalibrationModal(true)}
-                onStartTraining={() => setShowTrainingModal(true)}
-                onStartNote={(category, title) => setActiveNoteModal({ category, title })}
-                onOpenStaff={setViewingStaffTraining}
-                suppliers={suppliers}
-                onOpenSupplier={setViewingSupplierDocs}
-              />
+              <>
+                <FirstVisitTip tipKey="foodsafety">
+                  Log daily, weekly, and monthly checklists, equipment calibration, and staff training here to stay on top of compliance.
+                </FirstVisitTip>
+                <FoodSafetyView
+                  records={foodSafetyRecords}
+                  onStartChecklist={setActiveChecklistTemplate}
+                  onStartCalibration={() => setShowCalibrationModal(true)}
+                  onStartTraining={() => setShowTrainingModal(true)}
+                  onStartNote={(category, title) => setActiveNoteModal({ category, title })}
+                  onOpenStaff={setViewingStaffTraining}
+                  suppliers={suppliers}
+                  onOpenSupplier={setViewingSupplierDocs}
+                />
+              </>
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
@@ -9818,6 +9884,9 @@ export default function TankLog() {
 
             {!loadingData && view === "batches" && (
               <>
+                <FirstVisitTip tipKey="batches">
+                  Every batch lives here from brew day through to packaging. Tap "New batch" to start one, log gravity readings as it ferments, then advance it through each stage.
+                </FirstVisitTip>
                 <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                   Fermenting ({fermentingBatches.length})
                 </div>
@@ -9884,6 +9953,9 @@ export default function TankLog() {
 
               return (
                 <>
+                  <FirstVisitTip tipKey="inventory">
+                    Track your brewing ingredients — grain, hops, yeast — here. Add stock manually, or receive it automatically through a Purchase Order with proper lot tracking.
+                  </FirstVisitTip>
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <button
                       onClick={() => setShowStockTake(true)}
@@ -10016,6 +10088,9 @@ export default function TankLog() {
 
               return (
                 <>
+                  <FirstVisitTip tipKey="consumables">
+                    Track packaging supplies — cans, lids, boxes, labels — here, separately from your brewing ingredients. Add a cost per unit to track true packaging costs.
+                  </FirstVisitTip>
                   <input
                     type="text"
                     value={consumableQuery}
@@ -10089,6 +10164,9 @@ export default function TankLog() {
 
             {!loadingData && view === "packageTypes" && (
               <>
+                <FirstVisitTip tipKey="packageTypes">
+                  Define what consumables get used per unit packaged — e.g. 1 can + 1 lid + a share of a box. Pick a package type when you log a packaging run and it'll deduct stock automatically.
+                </FirstVisitTip>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {packageTypes.map((pt) => (
                     <PackageTypeCard key={pt.id} packageType={pt} onOpen={setSelectedPackageTypeId} />
@@ -10106,6 +10184,9 @@ export default function TankLog() {
               const receivedPOs = purchaseOrders.filter((po) => po.status === "Received");
               return (
                 <>
+                  <FirstVisitTip tipKey="orders">
+                    Create purchase orders to bring ingredients in from suppliers. Receiving one adds the stock straight into Inventory with proper lot tracking and cost per unit.
+                  </FirstVisitTip>
                   <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Draft ({draftPOs.length})
                   </div>
@@ -10162,6 +10243,9 @@ export default function TankLog() {
               );
               return (
                 <>
+                  <FirstVisitTip tipKey="recipes">
+                    Save your recipes here to reuse on brew day — ingredients pull in automatically. Build and test a new one first in Recipe Builder.
+                  </FirstVisitTip>
                   <input
                     type="text"
                     value={recipeQuery}
@@ -10209,6 +10293,9 @@ export default function TankLog() {
 
             {!loadingData && view === "brewery" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <FirstVisitTip tipKey="brewery">
+                  Set up your fermenters and brite tanks here so batches can be assigned to them — this is the first thing worth doing before you brew your first batch.
+                </FirstVisitTip>
                 {tanks.map((t) => {
                   const occupant = occupyingBatch(batches, t.id);
                   return (
