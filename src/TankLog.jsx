@@ -6927,11 +6927,11 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       </div>
 
       {batch.ingredients && batch.ingredients.length > 0 && (
-        <>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-            Ingredients{batch.recipeName ? ` — ${batch.recipeName}` : ""}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+        <details style={{ marginBottom: 22 }}>
+          <summary style={{ cursor: "pointer", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
+            Ingredients{batch.recipeName ? ` — ${batch.recipeName}` : ""} ({batch.ingredients.length})
+          </summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
             {batch.ingredients.map((ing) => (
               <div
                 key={ing.id}
@@ -6956,7 +6956,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               </div>
             ))}
           </div>
-        </>
+        </details>
       )}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "center" }}>
@@ -10211,7 +10211,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-38";
+const APP_VERSION = "2026-07-31-39";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
