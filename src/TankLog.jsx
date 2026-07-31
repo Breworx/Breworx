@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -7694,6 +7694,202 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
 // A global "jump to anything" search — batches, recipes, purchase orders,
 // and tanks — so getting to a specific record doesn't mean digging through
 // the right screen and scrolling to find it.
+// Lets a recipe be searched for, then shows every batch ever brewed from
+// any version of it side by side — target vs actual OG/FG, attenuation,
+// ABV, days in tank, and cost — so drift or consistency across brews of
+// the same beer is visible at a glance instead of buried per-batch.
+function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
+  const [query, setQuery] = useState("");
+  const [selectedFamilyId, setSelectedFamilyId] = useState(null);
+
+  const families = activeRecipesByFamily(recipes).filter(
+    (r) => r.name.toLowerCase().includes(query.trim().toLowerCase()) || r.style.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  if (!selectedFamilyId) {
+    return (
+      <div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search recipes to compare their batch history…"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "10px 12px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+            marginBottom: 16,
+          }}
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {families.map((r) => {
+            const familyRecipeIds = new Set(recipes.filter((rec) => rec.familyId === r.familyId).map((rec) => rec.id));
+            const batchCount = batches.filter((b) => b.recipeId && familyRecipeIds.has(b.recipeId)).length;
+            return (
+              <button
+                key={r.familyId}
+                onClick={() => setSelectedFamilyId(r.familyId)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  background: "#FFFFFF",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 6,
+                  padding: "14px 16px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  width: "100%",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2A3324", margin: 0 }}>{r.name}</h3>
+                  <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>{r.style}</div>
+                </div>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 12.5, flexShrink: 0 }}>
+                  {batchCount} batch{batchCount !== 1 ? "es" : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {families.length === 0 && (
+          <EmptyState icon={TrendingUp} title="No recipes match" subtitle="Try a different search, or brew a batch first — comparisons need at least one brew to show anything." />
+        )}
+      </div>
+    );
+  }
+
+  const selectedFamily = recipes.find((r) => r.familyId === selectedFamilyId && r.isActive) || recipes.find((r) => r.familyId === selectedFamilyId);
+  const familyRecipeIds = new Set(recipes.filter((r) => r.familyId === selectedFamilyId).map((r) => r.id));
+  const familyBatches = batches
+    .filter((b) => b.recipeId && familyRecipeIds.has(b.recipeId))
+    .slice()
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+
+  const rows = familyBatches.map((b) => {
+    const latest = latestReading(b);
+    const targetRecipe = recipes.find((r) => r.id === b.recipeId);
+    return {
+      batch: b,
+      latest,
+      targetRecipe,
+      actualAbv: calcABV(b.og, latest.gravity),
+      attn: attenuation(b.og, b.fg, latest.gravity),
+      days: daysBetween(b.startDate, latest.date),
+    };
+  });
+
+  const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
+  const avgOG = avg(rows.map((r) => r.batch.og));
+  const avgAttn = avg(rows.map((r) => r.attn));
+  const avgCost = avg(rows.map((r) => r.batch.ingredientCost || 0));
+  const avgDays = avg(rows.map((r) => r.days));
+
+  const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn) }));
+
+  return (
+    <div>
+      <button
+        onClick={() => setSelectedFamilyId(null)}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: 0, marginBottom: 18 }}
+      >
+        <ChevronLeft size={16} /> All recipes
+      </button>
+
+      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: "0 0 4px", fontWeight: 500 }}>{selectedFamily.name}</h1>
+      <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 18 }}>{selectedFamily.style} · {rows.length} batch{rows.length !== 1 ? "es" : ""} brewed</div>
+
+      {rows.length === 0 && (
+        <EmptyState icon={TrendingUp} title="No batches brewed from this recipe yet" subtitle="Once you brew a batch using it, its stats will show up here for comparison." />
+      )}
+
+      {rows.length > 0 && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+            {[
+              ["Avg OG", avgOG?.toFixed(3), "#5C9A3C"],
+              ["Avg attenuation", `${avgAttn?.toFixed(0)}%`, "#D9A441"],
+              ["Avg days in tank", avgDays?.toFixed(0), "#D4A24C"],
+              ["Avg ingredient cost", avgCost != null ? `$${avgCost.toFixed(0)}` : "—", "#9BA88A"],
+            ].map(([label, value, color]) => (
+              <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 10px" }}>
+                <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 19, color, marginTop: 4 }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {chartData.length > 1 && (
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 20 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <TrendingUp size={13} /> Attenuation across batches
+              </div>
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+                  <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
+                  <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+                  <YAxis stroke="#9BA88A" fontSize={11} unit="%" domain={["dataMin - 5", "dataMax + 5"]} />
+                  <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
+                  <Line type="monotone" dataKey="Attenuation" stroke="#D9A441" strokeWidth={2} dot={{ r: 3, fill: "#D9A441" }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {rows.map(({ batch, latest, targetRecipe, actualAbv, attn, days }) => (
+              <button
+                key={batch.id}
+                onClick={() => onOpenBatch(batch.id)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  background: "#FFFFFF",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 6,
+                  padding: "12px 14px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  width: "100%",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>
+                    {batch.name} <span style={{ color: "#9BA88A", fontWeight: 400, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{batch.number}</span>
+                  </span>
+                  <span style={{ color: "#9BA88A", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>{batch.startDate}</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C6B54" }}>
+                  <span>
+                    OG {batch.og.toFixed(3)}
+                    {targetRecipe && Math.abs(batch.og - targetRecipe.og) > 0.001 && (
+                      <span style={{ color: "#D9A441" }}> ({batch.og > targetRecipe.og ? "+" : ""}{((batch.og - targetRecipe.og) * 1000).toFixed(0)})</span>
+                    )}
+                  </span>
+                  <span>FG {latest.gravity.toFixed(3)}</span>
+                  <span>{attn.toFixed(0)}% attn</span>
+                  <span>{actualAbv.toFixed(1)}% ABV</span>
+                  <span>{days}d</span>
+                  {batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -8985,7 +9181,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-11";
+const APP_VERSION = "2026-07-31-12";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -10476,6 +10672,7 @@ export default function TankLog() {
               ["orders", "Purchase Orders", Truck],
               ["recipes", "Recipes", Beaker],
               ["recipeBuilder", "Recipe Builder", FlaskConical],
+              ["recipeAnalytics", "Recipe Analytics", TrendingUp],
               ["brewery", "Brewery", Warehouse],
               ["production", "Production", Calendar],
               ["foodsafety", "Food Safety", CheckCircle2],
@@ -10550,7 +10747,7 @@ export default function TankLog() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && (
                 <button
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
@@ -11054,6 +11251,22 @@ export default function TankLog() {
                 inventory={inventory}
                 onAddInventoryItem={addInventoryItem}
               />
+            )}
+
+            {!loadingData && view === "recipeAnalytics" && (
+              <>
+                <FirstVisitTip tipKey="recipeAnalytics">
+                  Search for a recipe to see every batch ever brewed from it side by side — target vs actual OG/FG, attenuation, ABV, days in tank, and cost — so you can spot drift or confirm consistency over time.
+                </FirstVisitTip>
+                <RecipeAnalyticsView
+                  recipes={recipes}
+                  batches={batches}
+                  onOpenBatch={(id) => {
+                    setSelectedId(id);
+                    setView("batches");
+                  }}
+                />
+              </>
             )}
 
             {!loadingData && view === "brewery" && (
