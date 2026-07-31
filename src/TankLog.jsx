@@ -2078,10 +2078,11 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory" }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
+  const [costDraft, setCostDraft] = useState(item.costPerUnit ?? "");
 
   const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)", stocktake: "Stock take correction" };
   const typeColor = { batch: "#5C9A3C", manual: "#5C6B54", received: "#D9A441", restored: "#D9A441", stocktake: "#D4A24C" };
@@ -2166,6 +2167,49 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
       >
         Log adjustment with a batch ID
       </button>
+
+      {showCost && (
+        <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 22 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+            Cost per unit
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number"
+              step="0.01"
+              value={costDraft}
+              onChange={(e) => setCostDraft(e.target.value)}
+              placeholder="0.00"
+              style={{
+                flex: 1,
+                boxSizing: "border-box",
+                background: "#FFFFFF",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            />
+            <button
+              onClick={() => onChangeCost(item.id, costDraft === "" ? null : Number(costDraft))}
+              style={{
+                background: "#EBE8D6",
+                border: "1px solid #C9D1AC",
+                borderRadius: 4,
+                padding: "0 14px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </label>
+      )}
 
       <label style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 22 }}>
         <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
@@ -2620,13 +2664,14 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   );
 }
 
-function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES, unitOptions = ["kg", "g", "L", "ea"], title = "New inventory item", submitLabel = "Add to inventory" }) {
+function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES, unitOptions = ["kg", "g", "L", "ea"], title = "New inventory item", submitLabel = "Add to inventory", showCost = false }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState(categories[0]);
   const [qty, setQty] = useState(10);
   const [unit, setUnit] = useState(unitOptions[0]);
   const [threshold, setThreshold] = useState(5);
   const [supplierId, setSupplierId] = useState("");
+  const [costPerUnit, setCostPerUnit] = useState("");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -2640,6 +2685,7 @@ function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES,
       unit,
       threshold: Number(threshold) || 0,
       supplierId: supplierId || null,
+      ...(showCost ? { costPerUnit: costPerUnit === "" ? null : Number(costPerUnit) } : {}),
     });
     setSaving(false);
     onClose();
@@ -2654,6 +2700,7 @@ function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES,
           <SelectField label="Unit" value={unit} onChange={setUnit} options={unitOptions} />
           <NumberField label="Quantity on hand" value={qty} onChange={setQty} step="0.1" suffix={unit} />
           <NumberField label="Low-stock alert at" value={threshold} onChange={setThreshold} step="0.1" suffix={unit} />
+          {showCost && <NumberField label="Cost per unit (optional)" value={costPerUnit} onChange={setCostPerUnit} step="0.01" />}
         </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
@@ -2751,23 +2798,26 @@ function PackageTypeCard({ packageType, onOpen }) {
 
 function AddPackageTypeModal({ onClose, onAdd, consumables }) {
   const [name, setName] = useState("");
-  const [items, setItems] = useState([{ id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1 }]);
+  const [items, setItems] = useState([{ id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1, matchLabelByRecipeName: false }]);
   const [saving, setSaving] = useState(false);
 
   const updateItem = (id, patch) =>
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
 
   const addItemRow = () =>
-    setItems((prev) => [...prev, { id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1 }]);
+    setItems((prev) => [...prev, { id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1, matchLabelByRecipeName: false }]);
 
   const removeItemRow = (id) => setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.id !== id) : prev));
 
   const submit = async () => {
     const cleanItems = items
-      .filter((it) => it.consumableId)
+      .filter((it) => it.matchLabelByRecipeName || it.consumableId)
       .map((it) => {
+        if (it.matchLabelByRecipeName) {
+          return { consumableId: null, consumableName: null, matchLabelByRecipeName: true, qtyPerUnit: Number(it.qtyPerUnit) || 0 };
+        }
         const consumable = consumables.find((c) => c.id === it.consumableId);
-        return { consumableId: it.consumableId, consumableName: consumable ? consumable.name : "", qtyPerUnit: Number(it.qtyPerUnit) || 0 };
+        return { consumableId: it.consumableId, consumableName: consumable ? consumable.name : "", matchLabelByRecipeName: false, qtyPerUnit: Number(it.qtyPerUnit) || 0 };
       });
     if (!name.trim() || cleanItems.length === 0) return;
     setSaving(true);
@@ -2796,51 +2846,67 @@ function AddPackageTypeModal({ onClose, onAdd, consumables }) {
             <div
               key={line.id}
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 100px auto",
-                gap: 10,
-                alignItems: "end",
                 background: "#F5F1E4",
                 border: "1px solid #DDE0C8",
                 borderRadius: 6,
                 padding: "12px",
+                position: "relative",
               }}
             >
-              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
-                  Consumable
-                </span>
-                <select
-                  value={line.consumableId}
-                  onChange={(e) => updateItem(line.id, { consumableId: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    background: "#FFFFFF",
-                    border: "1px solid #DDE0C8",
-                    borderRadius: 4,
-                    padding: "9px 10px",
-                    color: "#2A3324",
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 14,
-                  }}
-                >
-                  {consumables.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <NumberField label="Qty each" value={line.qtyPerUnit} onChange={(v) => updateItem(line.id, { qtyPerUnit: v })} step="1" />
               {items.length > 1 && (
                 <button
                   onClick={() => removeItemRow(line.id)}
                   aria-label="Remove consumable"
-                  style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8 }}
+                  style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8 }}
                 >
                   <Trash2 size={14} />
                 </button>
+              )}
+              <label style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={line.matchLabelByRecipeName}
+                  onChange={(e) => updateItem(line.id, { matchLabelByRecipeName: e.target.checked, consumableId: e.target.checked ? null : consumables[0]?.id || "" })}
+                />
+                <span style={{ fontSize: 12.5, color: "#5C6B54", fontFamily: "'Inter', sans-serif" }}>
+                  Auto-match label by beer name (skip picking a specific label)
+                </span>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: line.matchLabelByRecipeName ? "1fr" : "1fr 100px", gap: 10, alignItems: "end" }}>
+                {!line.matchLabelByRecipeName && (
+                  <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+                      Consumable
+                    </span>
+                    <select
+                      value={line.consumableId}
+                      onChange={(e) => updateItem(line.id, { consumableId: e.target.value })}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        background: "#FFFFFF",
+                        border: "1px solid #DDE0C8",
+                        borderRadius: 4,
+                        padding: "9px 10px",
+                        color: "#2A3324",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 14,
+                      }}
+                    >
+                      {consumables.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <NumberField label="Qty each" value={line.qtyPerUnit} onChange={(v) => updateItem(line.id, { qtyPerUnit: v })} step="1" />
+              </div>
+              {line.matchLabelByRecipeName && (
+                <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 8 }}>
+                  At packaging time, this'll look for a Label consumable with the same name as the beer being packaged.
+                </div>
               )}
             </div>
           ))}
@@ -2935,7 +3001,7 @@ function PackageTypeDetail({ packageType, onBack, onDelete }) {
               color: "#2A3324",
             }}
           >
-            <span>{it.consumableName}</span>
+            <span>{it.matchLabelByRecipeName ? "Label (auto-matched by beer name)" : it.consumableName}</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>× {it.qtyPerUnit}</span>
           </div>
         ))}
@@ -5561,12 +5627,13 @@ function EditBrewDayFieldModal({ target, onClose, onSave }) {
   );
 }
 
-function PackagingModal({ batch, onClose, onSave }) {
+function PackagingModal({ batch, onClose, onSave, packageTypes }) {
   const [counts, setCounts] = useState(() => {
     const init = {};
     CONTAINERS.forEach((c) => (init[c.key] = 0));
     return init;
   });
+  const [packageTypeSelections, setPackageTypeSelections] = useState({});
 
   const remaining = remainingVolume(batch);
   const sessionVolume = CONTAINERS.reduce((sum, c) => sum + (Number(counts[c.key]) || 0) * c.volumeL, 0);
@@ -5576,7 +5643,7 @@ function PackagingModal({ batch, onClose, onSave }) {
   const submit = () => {
     const session = {};
     CONTAINERS.forEach((c) => (session[c.key] = Number(counts[c.key]) || 0));
-    onSave(batch.id, session);
+    onSave(batch.id, session, packageTypeSelections);
     onClose();
   };
 
@@ -5601,6 +5668,38 @@ function PackagingModal({ batch, onClose, onSave }) {
             />
           ))}
         </div>
+
+        {packageTypes.length > 0 &&
+          CONTAINERS.filter((c) => Number(counts[c.key]) > 0).map((c) => (
+            <label key={c.key} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+                Package type for {c.label} (optional — deducts consumables)
+              </span>
+              <select
+                value={packageTypeSelections[c.key] || ""}
+                onChange={(e) => setPackageTypeSelections((prev) => ({ ...prev, [c.key]: e.target.value || null }))}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: "#F5F1E4",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 4,
+                  padding: "9px 10px",
+                  color: "#2A3324",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 14,
+                }}
+              >
+                <option value="">None — don't deduct consumables</option>
+                {packageTypes.map((pt) => (
+                  <option key={pt.id} value={pt.id}>
+                    {pt.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+
         <div
           style={{
             display: "flex",
@@ -8888,6 +8987,13 @@ export default function TankLog() {
     setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, supplierId } : it)));
   };
 
+  const updateConsumableCost = async (id, costPerUnit) => {
+    const { error } = await supabase.from("consumables").update({ cost_per_unit: costPerUnit }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, costPerUnit } : it)));
+    showToast("success", "Cost updated.");
+  };
+
   const adjustConsumable = async (id, delta) => {
     const item = consumables.find((it) => it.id === id);
     if (!item) return;
@@ -9097,7 +9203,54 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, schedule: newSchedule } : b)));
   };
 
-  const logPackagingSession = async (id, sessionCounts) => {
+  const deductConsumablesForPackaging = async (batch, sessionCounts, packageTypeSelections) => {
+    // Work out total qty to deduct per consumable across every container type packaged this run.
+    const deductions = {}; // consumableId -> total qty
+    let missingLabel = false;
+    for (const c of CONTAINERS) {
+      const count = Number(sessionCounts[c.key]) || 0;
+      const packageTypeId = packageTypeSelections[c.key];
+      if (count <= 0 || !packageTypeId) continue;
+      const packageType = packageTypes.find((pt) => pt.id === packageTypeId);
+      if (!packageType) continue;
+      for (const item of packageType.items) {
+        let consumableId = item.consumableId;
+        if (item.matchLabelByRecipeName) {
+          const beerName = (batch.recipeName || batch.name || "").trim().toLowerCase();
+          const match = consumables.find((co) => co.category === "Label" && co.name.trim().toLowerCase() === beerName);
+          if (!match) { missingLabel = true; continue; }
+          consumableId = match.id;
+        }
+        if (!consumableId) continue;
+        const qty = (Number(item.qtyPerUnit) || 0) * count;
+        deductions[consumableId] = (deductions[consumableId] || 0) + qty;
+      }
+    }
+
+    if (missingLabel) {
+      showToast("error", `No matching Label consumable found for "${batch.recipeName || batch.name}" — that deduction was skipped.`);
+    }
+
+    const ids = Object.keys(deductions);
+    if (ids.length === 0) return;
+
+    let nextConsumables = [...consumables];
+    for (const consumableId of ids) {
+      const item = nextConsumables.find((co) => co.id === consumableId);
+      if (!item) continue;
+      const delta = -deductions[consumableId];
+      const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
+      const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: actualDelta, note: `Packaging — ${batch.number || batch.name}` };
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error } = await supabase.from("consumables").update({ qty: newQty, history: newHistory }).eq("id", consumableId);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); continue; }
+      nextConsumables = nextConsumables.map((co) => (co.id === consumableId ? { ...co, qty: newQty, history: newHistory } : co));
+    }
+    setConsumables(nextConsumables);
+  };
+
+  const logPackagingSession = async (id, sessionCounts, packageTypeSelections = {}) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     const events = packagingEvents(batch);
@@ -9107,6 +9260,7 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
     syncPackagingToXero(batch, sessionCounts);
+    await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections);
   };
 
   const deletePackagingEvent = async (id, eventId) => {
@@ -10157,6 +10311,8 @@ export default function TankLog() {
             suppliers={suppliers}
             onChangeSupplier={updateConsumableSupplier}
             backLabel="All consumables"
+            showCost
+            onChangeCost={updateConsumableCost}
           />
         )}
 
@@ -10196,6 +10352,7 @@ export default function TankLog() {
           unitOptions={["ea", "box", "roll"]}
           title="New consumable"
           submitLabel="Add to consumables"
+          showCost
         />
       )}
       {showAddPackageType && (
@@ -10360,7 +10517,7 @@ export default function TankLog() {
         <EditBrewDayFieldModal target={brewDayFieldTarget} onClose={() => setBrewDayFieldTarget(null)} onSave={updateBrewDayField} />
       )}
       {packagingTarget && (
-        <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={logPackagingSession} />
+        <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={logPackagingSession} packageTypes={packageTypes} />
       )}
       {discardTarget && (
         <DiscardRemainingModal batch={discardTarget} onClose={() => setDiscardTarget(null)} onConfirm={discardRemaining} />
