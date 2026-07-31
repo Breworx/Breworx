@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -10074,7 +10074,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-31";
+const APP_VERSION = "2026-07-31-32";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10303,6 +10303,7 @@ export default function TankLog() {
   const [batchPreset, setBatchPreset] = useState(null);
   const [editScheduledBatchId, setEditScheduledBatchId] = useState(null);
   const [showQuickJump, setShowQuickJump] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
@@ -11647,6 +11648,30 @@ export default function TankLog() {
           .bp-print-sheet, .bp-print-sheet * { visibility: visible; }
           .bp-print-sheet { display: block !important; position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
         }
+        .bp-hamburger-btn { display: none; }
+        .bp-sidebar-backdrop { display: none; }
+        @media (max-width: 860px) {
+          .bp-hamburger-btn { display: flex !important; }
+          .bp-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 96;
+            transform: translateX(-100%);
+            transition: transform 0.22s ease;
+            box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+          }
+          .bp-sidebar.bp-sidebar-open { transform: translateX(0); }
+          .bp-sidebar-backdrop.bp-sidebar-open {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(10,12,11,0.5);
+            z-index: 95;
+          }
+          .bp-main-content { padding-top: 64px !important; }
+        }
       `}</style>
       {updateAvailable && (
         <UpdateBanner
@@ -11661,11 +11686,38 @@ export default function TankLog() {
       {isOffline && <OfflineBanner />}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
+      <button
+        className="bp-hamburger-btn"
+        onClick={() => setSidebarOpen(true)}
+        aria-label="Open menu"
+        style={{
+          display: "none",
+          position: "fixed",
+          top: 14,
+          left: 14,
+          zIndex: 94,
+          alignItems: "center",
+          justifyContent: "center",
+          width: 40,
+          height: 40,
+          background: "#FFFFFF",
+          border: "1px solid #DDE0C8",
+          borderRadius: 6,
+          cursor: "pointer",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+        }}
+      >
+        <Menu size={18} color="#2A3324" />
+      </button>
+      <div className={`bp-sidebar-backdrop ${sidebarOpen ? "bp-sidebar-open" : ""}`} onClick={() => setSidebarOpen(false)} />
+
       <div style={{ display: "flex", minHeight: "100vh" }}>
         <div
+          className={`bp-sidebar ${sidebarOpen ? "bp-sidebar-open" : ""}`}
           style={{
             width: 210,
             flexShrink: 0,
+            background: "#F5F1E4",
             borderRight: "1px solid #DDE0C8",
             padding: "24px 14px",
             display: "flex",
@@ -11673,11 +11725,21 @@ export default function TankLog() {
             gap: 26,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#5C9A3C", padding: "0 6px" }}>
-            <BreworxMark size={26} />
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              Brewpoint
-            </span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "0 6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#5C9A3C" }}>
+              <BreworxMark size={26} />
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                Brewpoint
+              </span>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="bp-hamburger-btn"
+              aria-label="Close menu"
+              style={{ display: "none", background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 4 }}
+            >
+              <X size={18} />
+            </button>
           </div>
 
           <button
@@ -11700,63 +11762,88 @@ export default function TankLog() {
             <Search size={13} /> Search…
           </button>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
             {[
-              ["home", "Home", Home],
-              ["batches", "Fermentation", Droplet],
-              ["packaged", "Packaged", Package],
-              ["inventory", "Inventory", LayoutGrid],
-              ["consumables", "Consumables", Box],
-              ["packageTypes", "Package Types", Layers],
-              ["orders", "Purchase Orders", Truck],
-              ["recipes", "Recipes", Beaker],
-              ["recipeBuilder", "Recipe Builder", FlaskConical],
-              ["recipeAnalytics", "Recipe Analytics", TrendingUp],
-              ["brewery", "Brewery", Warehouse],
-              ["production", "Production", Calendar],
-              ["foodsafety", "Food Safety", CheckCircle2],
-              ["settings", "Settings", Settings],
-            ].map(([key, label, Icon]) => {
-              const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType;
-              return (
-                <button
-                  key={key}
-                  onClick={() => {
-                    setView(key);
-                    setSelectedId(null);
-                    setSelectedPOId(null);
-                    setSelectedRecipeId(null);
-                    setSelectedInventoryId(null);
-                    setSelectedConsumableId(null);
-                    setSelectedPackageTypeId(null);
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    textAlign: "left",
-                    background: isCurrent ? "#FFFFFF" : "none",
-                    border: "none",
-                    borderLeft: `2px solid ${isCurrent ? "#5C9A3C" : "transparent"}`,
-                    borderRadius: 4,
-                    padding: "10px 12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Icon size={16} color={isCurrent ? "#5C9A3C" : "#9BA88A"} style={{ flexShrink: 0 }} />
-                  <span
-                    style={{
-                      fontFamily: "'Oswald', sans-serif",
-                      fontSize: 15,
-                      color: isCurrent ? "#2A3324" : "#5C6B54",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {label}
-                  </span>
-                </button>
-              );
-            })}
+              { items: [["home", "Home", Home]] },
+              {
+                label: "Production",
+                items: [
+                  ["batches", "Fermentation", Droplet],
+                  ["packaged", "Packaged", Package],
+                  ["production", "Production", Calendar],
+                  ["brewery", "Brewery", Warehouse],
+                ],
+              },
+              {
+                label: "Recipes",
+                items: [
+                  ["recipes", "Recipes", Beaker],
+                  ["recipeBuilder", "Recipe Builder", FlaskConical],
+                  ["recipeAnalytics", "Recipe Analytics", TrendingUp],
+                ],
+              },
+              {
+                label: "Stock",
+                items: [
+                  ["inventory", "Inventory", LayoutGrid],
+                  ["consumables", "Consumables", Box],
+                  ["packageTypes", "Package Types", Layers],
+                  ["orders", "Purchase Orders", Truck],
+                ],
+              },
+              { label: "Compliance", items: [["foodsafety", "Food Safety", CheckCircle2]] },
+              { items: [["settings", "Settings", Settings]] },
+            ].map((group, gi) => (
+              <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {group.label && (
+                  <div style={{ fontSize: 10.5, letterSpacing: "0.07em", textTransform: "uppercase", color: "#9BA88A", padding: "0 12px", marginBottom: 4 }}>
+                    {group.label}
+                  </div>
+                )}
+                {group.items.map(([key, label, Icon]) => {
+                  const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setView(key);
+                        setSelectedId(null);
+                        setSelectedPOId(null);
+                        setSelectedRecipeId(null);
+                        setSelectedInventoryId(null);
+                        setSelectedConsumableId(null);
+                        setSelectedPackageTypeId(null);
+                        setSidebarOpen(false);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        textAlign: "left",
+                        background: isCurrent ? "#FFFFFF" : "none",
+                        border: "none",
+                        borderLeft: `2px solid ${isCurrent ? "#5C9A3C" : "transparent"}`,
+                        borderRadius: 4,
+                        padding: "10px 12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Icon size={16} color={isCurrent ? "#5C9A3C" : "#9BA88A"} style={{ flexShrink: 0 }} />
+                      <span
+                        style={{
+                          fontFamily: "'Oswald', sans-serif",
+                          fontSize: 15,
+                          color: isCurrent ? "#2A3324" : "#5C6B54",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "0 6px" }}>
@@ -11782,7 +11869,7 @@ export default function TankLog() {
           </div>
         </div>
 
-        <div style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
+        <div className="bp-main-content" style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px" }}>
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
           <div key={view} className="bp-view-fade">
             <style>{`
