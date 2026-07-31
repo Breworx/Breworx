@@ -175,6 +175,7 @@ export function rowToProfile(row) {
     companyId: row.company_id,
     name: row.name,
     role: row.role,
+    createdAt: row.created_at || null,
   };
 }
 
