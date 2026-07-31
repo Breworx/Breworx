@@ -354,6 +354,159 @@ function compareScheduleItems(a, b) {
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+const HELP_ARTICLES = [
+  {
+    category: "Getting started",
+    question: "How do I add a recipe?",
+    answer: "Go to Recipes → New recipe, or use Recipe Builder for live OG/FG/ABV/IBU/SRM calculators while you build it out. \"Save & brew this recipe\" saves it and jumps straight into New Batch pre-filled.",
+  },
+  {
+    category: "Getting started",
+    question: "How do I brew a batch?",
+    answer: "On Fermentation, tap \"New batch.\" Pick a saved recipe (it pre-fills everything) or enter details manually, choose a tank and brew date, then start it.",
+  },
+  {
+    category: "Getting started",
+    question: "How do I add a tank?",
+    answer: "Go to Brewery → New tank. Set its name, type (Fermenter or Brite Tank), and capacity.",
+  },
+  {
+    category: "Batches",
+    question: "How do I schedule a batch for the future?",
+    answer: "Go to Production and tap an empty day on any tank's row — it opens New Batch pre-filled with that tank and date. You can also just type a future date directly into New Batch's \"Brew date\" field.",
+  },
+  {
+    category: "Batches",
+    question: "Why can't I pick a certain tank when creating a batch?",
+    answer: "A tank is only blocked if it's genuinely occupied right now and you're brewing today or earlier. If you're scheduling for a future date, an occupied tank is still selectable — you'll just get a heads-up reminder to make sure it's free by then.",
+  },
+  {
+    category: "Batches",
+    question: "How do I change my batch numbering?",
+    answer: "New Batch has an editable \"Batch number\" field, pre-filled with the next number in sequence. Type over it to start counting from wherever you want — future batches keep incrementing from your new number.",
+  },
+  {
+    category: "Batches",
+    question: "How do I package a batch?",
+    answer: "Open the batch and advance it through its stages (Brewing → Primary → Cooling). Once it's ready, tap \"Package batch,\" enter how many cans/kegs you filled, and optionally pick a Package Type to deduct consumables automatically.",
+  },
+  {
+    category: "Batches",
+    question: "I packaged a batch by mistake — can I undo it?",
+    answer: "Yes. On the batch page, find the packaging run under Packaging and tap the circular undo icon next to it. It reverts the batch to Cooling and returns any consumables that were deducted back into stock.",
+  },
+  {
+    category: "Batches",
+    question: "How do I track quality issues like diacetyl or oxidation?",
+    answer: "While a batch is Brewing, Primary, or Cooling, its page shows a Quality checklist of common faults. Tap one to cycle through Low → Medium → High → off. Each day gets its own fresh assessment, so an earlier note is never silently overwritten.",
+  },
+  {
+    category: "Recipes",
+    question: "How do I compare batches brewed from the same recipe?",
+    answer: "Go to Recipe Analytics, search for the recipe, then tap \"Compare batches\" and select two or more to see target vs. actual OG/FG, attenuation, ABV, mash pH/temp, cost, and faults side by side.",
+  },
+  {
+    category: "Recipes",
+    question: "How do I print a recipe or batch sheet?",
+    answer: "Both recipe pages and batch pages have a \"Print / Save as PDF\" button near the bottom. On an iPad, the print dialog lets you save straight to Files as a PDF.",
+  },
+  {
+    category: "Stock",
+    question: "What's the difference between Inventory and Consumables?",
+    answer: "Inventory is your brewing ingredients — grain, hops, yeast. Consumables are packaging materials — cans, lids, boxes, labels. They're tracked separately since they're used at completely different stages.",
+  },
+  {
+    category: "Stock",
+    question: "What's a Package Type?",
+    answer: "A Package Type defines which consumables (and how many of each) get used per unit packaged — e.g. 1 can + 1 lid + a share of a box. Pick one when logging a packaging run and it deducts the right stock automatically. A label line can also be set to auto-match by beer name, so one package type works across every recipe.",
+  },
+  {
+    category: "Stock",
+    question: "How do purchase orders work?",
+    answer: "Create a draft PO with supplier and line items, mark it Sent once it's placed, then \"Mark received\" once it arrives — that's what actually adds the stock into Inventory, with proper lot tracking and cost per unit.",
+  },
+  {
+    category: "Stock",
+    question: "How do I export my data?",
+    answer: "Inventory, Purchase Orders, and Batches (on the Fermentation screen) each have an \"Export CSV\" link above their list, which respects whatever search filter is active.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I log a food safety checklist or staff sickness?",
+    answer: "Go to Food Safety. Checklists are at the top; \"Staff training,\" \"Staff sickness,\" calibration, water tests, and mock recalls are all under Other records.",
+  },
+  {
+    category: "Account",
+    question: "How do I start completely fresh (delete everything)?",
+    answer: "Settings → \"Delete company\" (near the bottom, in red). It wipes every batch, recipe, and record for the whole company, then signs you out to the sign-up screen. Type \"DELETE COMPANY\" to confirm — this can't be undone.",
+  },
+  {
+    category: "Account",
+    question: "I made a mistake — can I undo a delete?",
+    answer: "Almost everything you can delete (batches, recipes, tanks, suppliers, ingredients, consumables, package types, purchase orders) shows a 5-second \"Undo\" option in the confirmation toast right after you delete it.",
+  },
+  {
+    category: "Finding things",
+    question: "How do I quickly find something without digging through menus?",
+    answer: "Tap \"Search…\" right under the logo in the sidebar. It searches batches, recipes, purchase orders, and tanks all at once.",
+  },
+];
+
+function HelpGuideModal({ onClose }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = HELP_ARTICLES.filter(
+    (a) => !q || a.question.toLowerCase().includes(q) || a.answer.toLowerCase().includes(q) || a.category.toLowerCase().includes(q)
+  );
+  const categories = [...new Set(filtered.map((a) => a.category))];
+
+  return (
+    <Modal title="Help guide" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search for how to do something…"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "10px 12px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+          }}
+        />
+        {filtered.length === 0 && (
+          <div style={{ color: "#9BA88A", fontSize: 13, padding: "12px 4px" }}>No matches for "{query}".</div>
+        )}
+        {categories.map((cat) => (
+          <div key={cat}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+              {cat}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {filtered
+                .filter((a) => a.category === cat)
+                .map((a, i) => (
+                  <details key={i} style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px" }}>
+                    <summary style={{ cursor: "pointer", color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif" }}>
+                      {a.question}
+                    </summary>
+                    <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5, marginTop: 8 }}>{a.answer}</div>
+                  </details>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 const CHANGELOG = [
   {
     id: 1,
@@ -10211,7 +10364,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-39";
+const APP_VERSION = "2026-07-31-40";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10440,6 +10593,7 @@ export default function TankLog() {
   const [batchPreset, setBatchPreset] = useState(null);
   const [editScheduledBatchId, setEditScheduledBatchId] = useState(null);
   const [showQuickJump, setShowQuickJump] = useState(false);
+  const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   useEffect(() => {
@@ -11925,6 +12079,26 @@ export default function TankLog() {
             <Search size={13} /> Search…
           </button>
 
+          <button
+            onClick={() => setShowHelpGuide(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "none",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "8px 10px",
+              color: "#9BA88A",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12.5,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <Info size={13} /> Help guide
+          </button>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
             {[
               { items: [["home", "Home", Home]] },
@@ -13226,6 +13400,7 @@ export default function TankLog() {
           />
         );
       })()}
+      {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
         <QuickJumpModal
