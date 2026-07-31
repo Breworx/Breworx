@@ -5351,6 +5351,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     }
   });
   const [startDate, setStartDate] = useState(presetStartDate || today());
+  const [batchNumber, setBatchNumber] = useState(nextNumber);
   const [plannedDays, setPlannedDays] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState([{ id: uid(), tankId: "", volume: "" }]);
@@ -5416,6 +5417,8 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       ? `${selectedTank.name} is currently occupied by ${occupyingBatch(batches, selectedTank.id)?.name || "another batch"} — pick a later date or a different tank.`
       : splitMode && startDate <= today() && splitRows.some((r) => r.tankId && tankIsOccupied(batches, r.tankId))
       ? "One of the tanks you've chosen is currently occupied — pick a later date or different tanks."
+      : batches.some((b) => b.number === batchNumber.trim())
+      ? `Batch #${batchNumber.trim()} already exists — pick a different number.`
       : null;
 
   const searchableRecipes = activeRecipesByFamily(recipes);
@@ -5461,7 +5464,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     setSaving(true);
     await onAdd({
       id: uid(),
-      number: nextNumber,
+      number: batchNumber.trim() || nextNumber,
       name: name.trim(),
       style: style.trim() || "Unspecified",
       volume: Number(volume) || 0,
@@ -5522,6 +5525,30 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               This is in the future — the batch is created now to reserve the tank and hold a spot on the schedule.
             </span>
           )}
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
+            Batch number
+          </span>
+          <input
+            type="text"
+            value={batchNumber}
+            onChange={(e) => setBatchNumber(e.target.value)}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 4,
+              padding: "9px 10px",
+              color: "#2A3324",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 14,
+            }}
+          />
+          <span style={{ color: "#9BA88A", fontSize: 11.5 }}>
+            Defaults to the next number in sequence — change it to start counting from somewhere else.
+          </span>
         </label>
         <NumberField
           label="Estimated days in tank (optional)"
@@ -6033,7 +6060,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
             cursor: saving ? "default" : "pointer",
           }}
         >
-          {saving ? "Saving…" : startDate > today() ? `Schedule batch #${nextNumber}` : `Start batch #${nextNumber}`}
+          {saving ? "Saving…" : startDate > today() ? `Schedule batch #${batchNumber.trim() || nextNumber}` : `Start batch #${batchNumber.trim() || nextNumber}`}
         </button>
       </div>
     </Modal>
@@ -10047,7 +10074,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-30";
+const APP_VERSION = "2026-07-31-31";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
