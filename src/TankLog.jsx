@@ -8109,6 +8109,50 @@ function OfflineBanner() {
   );
 }
 
+const APP_VERSION = "2026-07-31-1";
+
+function UpdateBanner({ onRefresh }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 95,
+        background: "#1F2E18",
+        borderBottom: "1px solid #C9D1AC",
+        padding: "8px 16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+      }}
+    >
+      <CheckCircle2 size={14} color="#8FCB6C" />
+      <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+        A new version of Brewpoint is available.
+      </span>
+      <button
+        onClick={onRefresh}
+        style={{
+          background: "none",
+          border: "1px solid #C9D1AC",
+          borderRadius: 5,
+          padding: "4px 10px",
+          color: "#F5F1E4",
+          fontFamily: "'Oswald', sans-serif",
+          fontWeight: 500,
+          fontSize: 12,
+          cursor: "pointer",
+        }}
+      >
+        Refresh
+      </button>
+    </div>
+  );
+}
+
 function ToastStack({ toasts, onDismiss }) {
   if (toasts.length === 0) return null;
   return (
@@ -8200,6 +8244,33 @@ export default function TankLog() {
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  // Detects when a newer build has been deployed while this session is still
+  // open — important for the installed PWA, which otherwise keeps showing a
+  // stale cached version until the user manually reinstalls it.
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  useEffect(() => {
+    const checkForUpdate = async () => {
+      try {
+        const res = await fetch(`/version.txt?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const latest = (await res.text()).trim();
+        if (latest && latest !== APP_VERSION) setUpdateAvailable(true);
+      } catch {
+        // Network hiccup or offline — not worth surfacing, just skip this check.
+      }
+    };
+    checkForUpdate();
+    const interval = setInterval(checkForUpdate, 5 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") checkForUpdate();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
   const showToast = (type, message, action) => {
@@ -9424,6 +9495,7 @@ export default function TankLog() {
         button:focus-visible { outline: 2px solid #5C9A3C; outline-offset: 2px; }
       `}</style>
 
+      {updateAvailable && <UpdateBanner onRefresh={() => window.location.reload()} />}
       {isOffline && <OfflineBanner />}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
