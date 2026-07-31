@@ -5878,6 +5878,74 @@ function DeleteAccountModal({ onClose, onConfirm }) {
   );
 }
 
+function DeleteCompanyModal({ onClose, onConfirm }) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const canDelete = confirmText.trim().toUpperCase() === "DELETE COMPANY";
+
+  const submit = async () => {
+    if (!canDelete) return;
+    setBusy(true);
+    setError("");
+    const timeout = new Promise((resolve) =>
+      setTimeout(() => resolve({ error: "Timed out — no response after 15 seconds. Check your connection and try again." }), 15000)
+    );
+    const result = await Promise.race([onConfirm(), timeout]);
+    if (result && result.error) {
+      setError(result.error);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Delete company" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div
+          style={{
+            color: "#B5502F",
+            fontSize: 13,
+            background: "#FBE5DC",
+            border: "1px solid #E3B3A0",
+            borderRadius: 5,
+            padding: "10px 12px",
+            lineHeight: 1.5,
+          }}
+        >
+          This permanently deletes everything — every batch, ingredient, consumable, recipe, purchase
+          order, tank, food safety record, and supplier tied to this company — then deletes the company
+          itself and your login. Any teammates on this account will be signed out and lose access too.
+          This cannot be undone.
+        </div>
+        <TextField label='Type "DELETE COMPANY" to confirm' value={confirmText} onChange={setConfirmText} />
+        {error && (
+          <div style={{ color: "#5C9A3C", fontSize: 12.5, background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px" }}>
+            {error}
+          </div>
+        )}
+        <button
+          onClick={submit}
+          disabled={!canDelete || busy}
+          style={{
+            background: canDelete ? "#B5502F" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: canDelete ? "#FFFFFF" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: canDelete && !busy ? "pointer" : "default",
+          }}
+        >
+          {busy ? "Deleting…" : "Permanently delete company"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onDeletePackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -8180,6 +8248,7 @@ export default function TankLog() {
   const [selectedRecipeId, setSelectedRecipeId] = useState(null);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [showDeleteCompany, setShowDeleteCompany] = useState(false);
   const [brewRecipe, setBrewRecipe] = useState(null);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
@@ -9300,6 +9369,22 @@ export default function TankLog() {
     }
   };
 
+  const deleteCompany = async () => {
+    try {
+      const { error } = await supabase.rpc("delete_my_company");
+      if (error) {
+        console.error(error);
+        return { error: error.message };
+      }
+      setShowDeleteCompany(false);
+      await supabase.auth.signOut();
+      return { error: null };
+    } catch (err) {
+      console.error(err);
+      return { error: (err && err.message) || "Something went wrong. Check your connection and try again." };
+    }
+  };
+
   const hasBriteTanks = tanks.some((t) => t.type === "Brite Tank");
   const stages = getStages(hasBriteTanks);
   const fermentingBatches = batches.filter((b) => ["Brewing", "Primary", "Secondary"].includes(b.stage));
@@ -10241,6 +10326,21 @@ export default function TankLog() {
                 >
                   Delete account
                 </button>
+
+                <button
+                  onClick={() => setShowDeleteCompany(true)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#E3D3A0",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    padding: "4px 0",
+                  }}
+                >
+                  Delete company (removes everything for everyone)
+                </button>
               </div>
             )}
           </>
@@ -10524,6 +10624,9 @@ export default function TankLog() {
       )}
       {showDeleteAccount && (
         <DeleteAccountModal onClose={() => setShowDeleteAccount(false)} onConfirm={deleteAccount} />
+      )}
+      {showDeleteCompany && (
+        <DeleteCompanyModal onClose={() => setShowDeleteCompany(false)} onConfirm={deleteCompany} />
       )}
     </div>
   );
