@@ -9544,7 +9544,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-21";
+const APP_VERSION = "2026-07-31-22";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10571,7 +10571,7 @@ export default function TankLog() {
   };
 
   const deleteInventoryItem = (item) => {
-    if (!window.confirm(`Delete ${item.name}? Any stock and history logged against it will be lost.`)) return;
+    if (!window.confirm(`Delete ${item.name}? You'll have a few seconds to undo right after.`)) return;
     setInventory((prev) => prev.filter((it) => it.id !== item.id));
     setSelectedInventoryId(null);
     const timeoutId = setTimeout(async () => {
@@ -10635,7 +10635,7 @@ export default function TankLog() {
   };
 
   const deleteConsumable = (item) => {
-    if (!window.confirm(`Delete ${item.name}? Any stock and history logged against it will be lost.`)) return;
+    if (!window.confirm(`Delete ${item.name}? You'll have a few seconds to undo right after.`)) return;
     setConsumables((prev) => prev.filter((it) => it.id !== item.id));
     setSelectedConsumableId(null);
     const timeoutId = setTimeout(async () => {
