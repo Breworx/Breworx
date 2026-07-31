@@ -29,6 +29,7 @@ export function rowToBatch(row) {
     schedule: row.schedule || [],
     diacetylTests: row.diacetyl_tests || [],
     ingredientCost: row.ingredient_cost ?? 0,
+    plannedDays: row.planned_days ?? null,
   };
 }
 
@@ -61,6 +62,7 @@ export function batchToRow(batch, userId, companyId) {
     schedule: batch.schedule || [],
     diacetyl_tests: batch.diacetylTests || [],
     ingredient_cost: batch.ingredientCost ?? 0,
+    planned_days: batch.plannedDays ?? null,
   };
 }
 
@@ -316,6 +318,7 @@ export function rowToConsumable(row) {
     lots: row.lots || [],
     history: row.history || [],
     supplierId: row.supplier_id || null,
+    costPerUnit: row.cost_per_unit ?? null,
   };
 }
 
@@ -332,6 +335,7 @@ export function consumableToRow(item, userId, companyId) {
     supplier_id: item.supplierId || null,
     lots: item.lots || [],
     history: item.history || [],
+    cost_per_unit: item.costPerUnit ?? null,
   };
 }
 
