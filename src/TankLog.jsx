@@ -4887,6 +4887,28 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       </button>
 
       <button
+        onClick={() => window.print()}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          background: "none",
+          border: "1px solid #DDE0C8",
+          borderRadius: 5,
+          padding: "11px",
+          color: "#5C6B54",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginTop: 10,
+        }}
+      >
+        <FileText size={14} /> Print / Save as PDF
+      </button>
+
+      <button
         onClick={() => onDelete(recipe)}
         style={{
           width: "100%",
@@ -4903,6 +4925,86 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       >
         Delete recipe
       </button>
+
+      {(() => {
+        const calcOgVal = calcOG(recipe.ingredients, recipe.volume, recipe.efficiency);
+        const calcFgVal = calcFG(calcOgVal, recipe.ingredients.find((i) => i.category === "Yeast")?.attenuation);
+        const calcAbv = calcABV(calcOgVal, calcFgVal);
+        const calcIbuVal = calcIBU(recipe.schedule, recipe.volume, calcOgVal);
+        const calcSrmVal = calcSRM(recipe.ingredients, recipe.volume);
+        return (
+          <div className="bp-print-sheet" style={{ display: "none" }}>
+            <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, margin: "0 0 2px" }}>{recipe.name}</h1>
+            <div style={{ color: "#555", fontSize: 13, marginBottom: 16 }}>
+              {recipe.style} · {recipe.volume}L batch
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 13 }}>
+              <tbody>
+                <tr><td style={{ padding: "4px 0", color: "#555", width: "40%" }}>Target OG / FG</td><td>{recipe.og.toFixed(3)} / {recipe.fg.toFixed(3)}</td></tr>
+                {calcAbv > 0 && <tr><td style={{ padding: "4px 0", color: "#555" }}>Est. ABV</td><td>{calcAbv.toFixed(1)}%</td></tr>}
+                {calcIbuVal > 0 && <tr><td style={{ padding: "4px 0", color: "#555" }}>Est. IBU</td><td>{calcIbuVal.toFixed(0)}</td></tr>}
+                {calcSrmVal > 0 && <tr><td style={{ padding: "4px 0", color: "#555" }}>Est. SRM</td><td>{calcSrmVal.toFixed(1)}</td></tr>}
+                <tr><td style={{ padding: "4px 0", color: "#555" }}>Mash efficiency</td><td>{recipe.efficiency}%</td></tr>
+                <tr><td style={{ padding: "4px 0", color: "#555" }}>Boil time</td><td>{recipe.boilTime} min</td></tr>
+              </tbody>
+            </table>
+
+            {recipe.ingredients && recipe.ingredients.length > 0 && (
+              <>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Ingredients</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 12.5 }}>
+                  <tbody>
+                    {recipe.ingredients.map((ing, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                        <td style={{ padding: "4px 0" }}>{ing.name}</td>
+                        <td style={{ padding: "4px 0", color: "#555" }}>{ing.category}</td>
+                        <td style={{ padding: "4px 0", textAlign: "right" }}>{ing.qty} {ing.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+
+            {recipe.schedule && recipe.schedule.length > 0 && (
+              <>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Schedule</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <tbody>
+                    {recipe.schedule.map((s, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                        <td style={{ padding: "4px 0" }}>{s.label || s.name}</td>
+                        <td style={{ padding: "4px 0", color: "#555" }}>{s.time != null ? `${s.time} min` : ""}</td>
+                        <td style={{ padding: "4px 0", textAlign: "right" }}>{s.amount ? `${s.amount} ${s.unit || ""}` : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+
+            {recipe.waterChemistry && (
+              <>
+                <div style={{ fontWeight: 600, fontSize: 13, margin: "16px 0 6px" }}>Water chemistry</div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <tbody>
+                    <tr><td style={{ padding: "4px 0", color: "#555" }}>Target profile</td><td>{recipe.waterChemistry.targetPreset}</td></tr>
+                    {Object.entries(recipe.waterChemistry.saltGrams || {})
+                      .filter(([, v]) => v)
+                      .map(([salt, grams]) => (
+                        <tr key={salt} style={{ borderBottom: "1px solid #ddd" }}>
+                          <td style={{ padding: "4px 0", color: "#555" }}>{salt}</td>
+                          <td style={{ padding: "4px 0" }}>{grams} g</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -9738,7 +9840,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-28";
+const APP_VERSION = "2026-07-31-29";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
