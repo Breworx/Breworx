@@ -10074,7 +10074,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-33";
+const APP_VERSION = "2026-07-31-34";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11670,7 +11670,7 @@ export default function TankLog() {
             background: rgba(10,12,11,0.5);
             z-index: 95;
           }
-          .bp-main-content { padding-top: 64px !important; }
+          .bp-main-content { padding-top: calc(env(safe-area-inset-top, 0px) + 64px) !important; }
         }
       `}</style>
       {updateAvailable && (
@@ -11693,8 +11693,8 @@ export default function TankLog() {
         style={{
           display: "none",
           position: "fixed",
-          top: 14 + (updateAvailable ? 42 : 0) + (isOffline ? 42 : 0),
-          left: 14,
+          top: `calc(env(safe-area-inset-top, 0px) + ${14 + (updateAvailable ? 42 : 0) + (isOffline ? 42 : 0)}px)`,
+          left: `calc(env(safe-area-inset-left, 0px) + 14px)`,
           zIndex: 97,
           alignItems: "center",
           justifyContent: "center",
@@ -11719,7 +11719,7 @@ export default function TankLog() {
             flexShrink: 0,
             background: "#F5F1E4",
             borderRight: "1px solid #DDE0C8",
-            padding: "24px 14px",
+            padding: "calc(env(safe-area-inset-top, 0px) + 24px) 14px 24px",
             display: "flex",
             flexDirection: "column",
             gap: 26,
