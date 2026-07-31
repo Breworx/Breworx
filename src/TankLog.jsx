@@ -4861,6 +4861,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [temp, setTemp] = useState(20);
   const [tankId, setTankId] = useState(presetTankId || "");
   const [startDate, setStartDate] = useState(presetStartDate || today());
+  const [plannedDays, setPlannedDays] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState([{ id: uid(), tankId: "", volume: "" }]);
   const [nameFocused, setNameFocused] = useState(false);
@@ -4986,6 +4987,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       ingredients: cleanBatchIngredients,
       schedule: [...mashSteps, ...batchSchedule],
       readings: [{ id: uid(), date: startDate || today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
+      plannedDays: plannedDays === "" ? null : Number(plannedDays),
     });
     setSaving(false);
     onClose();
@@ -5025,6 +5027,13 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
             </span>
           )}
         </label>
+        <NumberField
+          label="Estimated days in tank (optional)"
+          value={plannedDays}
+          onChange={setPlannedDays}
+          step="1"
+          suffix="days"
+        />
         {tanks.length > 0 && (
           <div>
             {!splitMode ? (
@@ -7549,7 +7558,7 @@ function TankWallCard({ tank, batch, onOpen }) {
 // timeline as columns, and each batch drawn as a bar spanning the days it
 // occupies that tank. Tapping empty space schedules a new batch there;
 // tapping an existing bar opens that batch.
-function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank }) {
+function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled }) {
   const daysBack = 7;
   const daysForward = 35;
   const rangeStart = addDays(today(), -daysBack);
@@ -7564,10 +7573,11 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank }) 
       .map((b) => {
         const events = packagingEvents(b);
         const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
+        const estimatedEnd = b.plannedDays ? addDays(b.startDate, b.plannedDays) : addDays(today(), 1);
         const end = fullyDone
           ? (events.length > 0 ? events[events.length - 1].date : b.startDate)
-          : addDays(today(), 1);
-        return { batch: b, start: b.startDate, end };
+          : estimatedEnd;
+        return { batch: b, start: b.startDate, end, isEstimate: !fullyDone && !!b.plannedDays };
       })
       .filter((o) => o.end >= rangeStart && o.start <= dayList[dayList.length - 1]);
 
@@ -7637,13 +7647,14 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank }) 
                         style={{ width: dayWidth, height: 48, flexShrink: 0, borderLeft: "1px solid #F5F1E4", cursor: "pointer" }}
                       />
                     ))}
-                    {occ.map(({ batch, start, end }) => {
+                    {occ.map(({ batch, start, end, isEstimate }) => {
                       const startIdx = Math.max(0, dayIndex(start));
                       const endIdx = Math.min(totalDays - 1, dayIndex(end));
+                      const isScheduled = batch.startDate > today();
                       return (
                         <button
                           key={batch.id}
-                          onClick={() => onOpenBatch(batch.id)}
+                          onClick={() => (isScheduled ? onEditScheduled(batch.id) : onOpenBatch(batch.id))}
                           style={{
                             position: "absolute",
                             left: startIdx * dayWidth + 2,
@@ -7651,7 +7662,8 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank }) 
                             top: 7,
                             height: 34,
                             background: STAGE_COLOR[batch.stage] || "#5C9A3C",
-                            border: "none",
+                            opacity: isEstimate ? 0.6 : 1,
+                            border: isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
                             borderRadius: 5,
                             cursor: "pointer",
                             display: "flex",
@@ -7694,9 +7706,164 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank }) 
           ))}
       </div>
       <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 10 }}>
-        Tap an empty day on a tank's row to schedule a batch there. Tap an existing bar to open that batch.
+        Tap an empty day on a tank's row to schedule a batch there. Tap a solid bar to open that batch, or a scheduled (future) bar to edit its date, recipe, or tank. Dashed bars are an estimated end date, not yet confirmed by packaging.
       </div>
     </div>
+  );
+}
+
+// For a batch that's scheduled for a future date and hasn't actually started
+// brewing yet — lets the details, tank, and timing be changed freely, or the
+// whole thing removed, since nothing real has happened to it yet.
+function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDelete, onClose }) {
+  const [name, setName] = useState(batch.name);
+  const [style, setStyle] = useState(batch.style || "");
+  const [volume, setVolume] = useState(batch.volume);
+  const [startDate, setStartDate] = useState(batch.startDate);
+  const [plannedDays, setPlannedDays] = useState(batch.plannedDays ?? "");
+  const [tankId, setTankId] = useState(batch.tankId || "");
+  const [recipeId, setRecipeId] = useState(batch.recipeId || "");
+  const [saving, setSaving] = useState(false);
+
+  const searchableRecipes = activeRecipesByFamily(recipes);
+  const applyRecipe = (id) => {
+    setRecipeId(id);
+    const r = recipes.find((rec) => rec.id === id);
+    if (r) {
+      setName(r.name);
+      setStyle(r.style);
+      setVolume(r.volume);
+    }
+  };
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    const tank = tanks.find((t) => t.id === tankId) || null;
+    const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
+    await onSave(batch.id, {
+      name: name.trim(),
+      style,
+      volume: Number(volume) || 0,
+      startDate,
+      plannedDays: plannedDays === "" ? null : Number(plannedDays),
+      tankId: tank ? tank.id : null,
+      tankName: tank ? tank.name : null,
+      recipeId: recipeId || null,
+      recipeName: activeRecipe ? activeRecipe.name : null,
+      readings: batch.readings.map((r, i) => (i === 0 ? { ...r, date: startDate } : r)),
+    });
+    setSaving(false);
+    onClose();
+  };
+
+  const handleDelete = () => {
+    if (window.confirm(`Delete the scheduled brew "${batch.name}"? This can't be undone from here.`)) {
+      onDelete(batch.id);
+      onClose();
+    }
+  };
+
+  return (
+    <Modal title={`Edit scheduled brew`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C9A3C", fontSize: 12, background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px", lineHeight: 1.5 }}>
+          This is scheduled for a future date and hasn't started brewing yet — change anything below, or remove it entirely.
+        </div>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Recipe (optional)</span>
+          <select
+            value={recipeId}
+            onChange={(e) => applyRecipe(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            <option value="">No recipe</option>
+            {searchableRecipes.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} ({r.style})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <TextField label="Name" value={name} onChange={setName} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <TextField label="Style" value={style} onChange={setStyle} />
+          <NumberField label="Volume" value={volume} onChange={setVolume} step="0.1" suffix="L" />
+        </div>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Brew date</span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+        </label>
+
+        <NumberField label="Estimated days in tank (optional)" value={plannedDays} onChange={setPlannedDays} step="1" suffix="days" />
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
+          <select
+            value={tankId}
+            onChange={(e) => setTankId(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            <option value="">Unassigned</option>
+            {tanks.map((t) => {
+              const currentlyOccupied = tankIsOccupied(batches, t.id, batch.id);
+              const occupied = currentlyOccupied && startDate <= today();
+              const occupant = currentlyOccupied ? occupyingBatch(batches, t.id, batch.id) : null;
+              return (
+                <option key={t.id} value={t.id} disabled={occupied}>
+                  {t.name} ({t.capacity}L)
+                  {occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                  {!occupied && currentlyOccupied ? ` — currently in use by ${occupant?.name || "another batch"}` : ""}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+
+        <button
+          onClick={submit}
+          disabled={saving}
+          style={{
+            marginTop: 4,
+            background: saving ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: saving ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          onClick={handleDelete}
+          style={{
+            background: "none",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "10px",
+            color: "#B5502F",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Delete this scheduled batch
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -8511,7 +8678,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-6";
+const APP_VERSION = "2026-07-31-7";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -8724,6 +8891,7 @@ export default function TankLog() {
   const [showDeleteCompany, setShowDeleteCompany] = useState(false);
   const [brewRecipe, setBrewRecipe] = useState(null);
   const [batchPreset, setBatchPreset] = useState(null);
+  const [editScheduledBatchId, setEditScheduledBatchId] = useState(null);
   const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
@@ -8980,6 +9148,25 @@ export default function TankLog() {
       if (invError) { showToast("error", "Something didn't save — check your connection and try again."); }
       else setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
     }
+  };
+
+  const updateScheduledBatch = async (id, patch) => {
+    const row = {
+      name: patch.name,
+      style: patch.style,
+      volume: patch.volume,
+      start_date: patch.startDate,
+      planned_days: patch.plannedDays,
+      tank_id: patch.tankId,
+      tank_name: patch.tankName,
+      recipe_id: patch.recipeId,
+      recipe_name: patch.recipeName,
+      readings: patch.readings,
+    };
+    const { error } = await supabase.from("batches").update(row).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    showToast("success", "Schedule updated.");
   };
 
   const deleteBatch = async (id) => {
@@ -10605,6 +10792,7 @@ export default function TankLog() {
                     setBatchPreset({ tankId, startDate });
                     setShowAdd(true);
                   }}
+                  onEditScheduled={setEditScheduledBatchId}
                 />
               </>
             )}
@@ -10977,6 +11165,21 @@ export default function TankLog() {
           presetStartDate={batchPreset ? batchPreset.startDate : null}
         />
       )}
+      {editScheduledBatchId && (() => {
+        const editingBatch = batches.find((b) => b.id === editScheduledBatchId);
+        if (!editingBatch) return null;
+        return (
+          <EditScheduledBatchModal
+            batch={editingBatch}
+            tanks={tanks}
+            batches={batches}
+            recipes={recipes}
+            onSave={updateScheduledBatch}
+            onDelete={deleteBatch}
+            onClose={() => setEditScheduledBatchId(null)}
+          />
+        );
+      })()}
       {showAddInventory && <AddInventoryModal onClose={() => setShowAddInventory(false)} onAdd={addInventoryItem} suppliers={suppliers} />}
       {showAddConsumable && (
         <AddInventoryModal
