@@ -154,6 +154,18 @@ const COMMON_FAULTS = [
 const FAULT_SEVERITY_COLOR = { Low: "#D9A441", Medium: "#E08A3C", High: "#B5502F" };
 const FAULT_SEVERITY_NEXT = { none: "Low", Low: "Medium", Medium: "High", High: null };
 
+// batch.faults is a log of dated entries (multiple per fault name allowed,
+// one per day it was reassessed) so a fault noticed one day and gone the
+// next doesn't erase the earlier observation. This collapses it down to
+// just the latest entry per fault — i.e. "what's the current read."
+function currentFaults(batch) {
+  const byName = {};
+  (batch.faults || []).forEach((f) => {
+    if (!byName[f.fault] || f.date > byName[f.fault].date) byName[f.fault] = f;
+  });
+  return Object.values(byName);
+}
+
 function batchTankIds(batch) {
   if (batch.splitTanks && batch.splitTanks.length > 0) return batch.splitTanks.map((t) => t.tankId);
   if (batch.tankId) return [batch.tankId];
@@ -5884,13 +5896,14 @@ function EditBrewDayFieldModal({ target, onClose, onSave }) {
   );
 }
 
-function PackagingModal({ batch, onClose, onSave, packageTypes }) {
+function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault }) {
   const [counts, setCounts] = useState(() => {
     const init = {};
     CONTAINERS.forEach((c) => (init[c.key] = 0));
     return init;
   });
   const [packageTypeSelections, setPackageTypeSelections] = useState({});
+  const activeFaults = currentFaults(batch);
 
   const remaining = remainingVolume(batch);
   const sessionVolume = CONTAINERS.reduce((sum, c) => sum + (Number(counts[c.key]) || 0) * c.volumeL, 0);
@@ -5907,6 +5920,44 @@ function PackagingModal({ batch, onClose, onSave, packageTypes }) {
   return (
     <Modal title={`Log packaging — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {activeFaults.length > 0 && (
+          <div style={{ background: "#FBE5DC", border: "1px solid #E3B3A0", borderRadius: 6, padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#B5502F", fontSize: 12.5, fontFamily: "'Oswald', sans-serif", fontWeight: 500, marginBottom: 8 }}>
+              <AlertTriangle size={14} /> Still flagged before packaging — still accurate?
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {activeFaults.map((f) => {
+                const color = FAULT_SEVERITY_COLOR[f.severity];
+                return (
+                  <button
+                    key={f.fault}
+                    onClick={() => onToggleFault(batch.id, f.fault)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: `${color}22`,
+                      border: `1px solid ${color}`,
+                      borderRadius: 20,
+                      padding: "6px 12px",
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      color,
+                      fontFamily: "'Inter', sans-serif",
+                    }}
+                  >
+                    {f.fault}
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700 }}>{f.severity.toUpperCase()}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ color: "#B5502F", fontSize: 11.5, marginTop: 8 }}>
+              If it's cleared up since it was last noted, tap it now to update — otherwise it'll be recorded on this batch as-is.
+            </div>
+          </div>
+        )}
+
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           Remaining in tank: <span style={{ color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span>
           {" "}of {batch.volume} L batch
@@ -6717,49 +6768,78 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </div>
       )}
 
-      {(["Brewing", "Primary", "Cooling"].includes(batch.stage) || (batch.faults && batch.faults.length > 0)) && (
-        <div style={{ marginBottom: 22 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-            Quality checklist — common faults
+      {(["Brewing", "Primary", "Cooling"].includes(batch.stage) || (batch.faults && batch.faults.length > 0)) && (() => {
+        const active = currentFaults(batch);
+        const history = [...(batch.faults || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+        const hasHistory = new Set(history.map((f) => f.fault)).size < history.length; // more entries than unique faults = reassessed at least once
+        return (
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+              Quality checklist — common faults
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {COMMON_FAULTS.map((fault) => {
+                const existing = active.find((f) => f.fault === fault);
+                const severity = existing ? existing.severity : null;
+                const isToday = existing && existing.date === today();
+                const color = severity ? FAULT_SEVERITY_COLOR[severity] : "#9BA88A";
+                return (
+                  <button
+                    key={fault}
+                    onClick={() => onToggleFault(batch.id, fault)}
+                    title={existing && !isToday ? `Last noted ${formatHistoryStamp(existing.date)} — tap to reassess today` : undefined}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: severity ? `${color}22` : "#FFFFFF",
+                      border: `1px solid ${severity ? color : "#DDE0C8"}`,
+                      borderRadius: 20,
+                      padding: "6px 12px",
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      color: severity ? color : "#5C6B54",
+                      fontFamily: "'Inter', sans-serif",
+                    }}
+                  >
+                    {fault}
+                    {severity && (
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: "0.03em" }}>
+                        {severity.toUpperCase()}
+                        {!isToday ? "*" : ""}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 8 }}>
+              Tap a fault to cycle Low → Medium → High → off. Each day gets its own fresh read — tapping today never overwrites an earlier day's note.
+              {hasHistory && " * = from an earlier day."}
+            </div>
+
+            {hasHistory && (
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 12, fontFamily: "'Inter', sans-serif" }}>
+                  View full fault history
+                </summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8 }}>
+                  {history.map((f) => (
+                    <div
+                      key={f.id || `${f.fault}-${f.date}`}
+                      style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}
+                    >
+                      <span style={{ color: "#2A3324" }}>{f.fault}</span>
+                      <span style={{ color: FAULT_SEVERITY_COLOR[f.severity], fontFamily: "'JetBrains Mono', monospace" }}>{f.severity}</span>
+                      <span style={{ color: "#9BA88A" }}>{formatHistoryStamp(f.date)}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {COMMON_FAULTS.map((fault) => {
-              const existing = (batch.faults || []).find((f) => f.fault === fault);
-              const severity = existing ? existing.severity : null;
-              const color = severity ? FAULT_SEVERITY_COLOR[severity] : "#9BA88A";
-              return (
-                <button
-                  key={fault}
-                  onClick={() => onToggleFault(batch.id, fault)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    background: severity ? `${color}22` : "#FFFFFF",
-                    border: `1px solid ${severity ? color : "#DDE0C8"}`,
-                    borderRadius: 20,
-                    padding: "6px 12px",
-                    cursor: "pointer",
-                    fontSize: 12.5,
-                    color: severity ? color : "#5C6B54",
-                    fontFamily: "'Inter', sans-serif",
-                  }}
-                >
-                  {fault}
-                  {severity && (
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: "0.03em" }}>
-                      {severity.toUpperCase()}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 8 }}>
-            Tap a fault to cycle Low → Medium → High → off.
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {chartData.length > 1 && (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
@@ -8076,10 +8156,10 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const avgMashPh = avg(rows.map((r) => r.batch.mashPh));
   const avgMashTemp = avg(rows.map((r) => r.batch.mashTemp));
   const avgDiacetylDays = avg(rows.map((r) => r.daysToDiacetylPass));
-  const faultFreeCount = rows.filter((r) => !r.batch.faults || r.batch.faults.length === 0).length;
+  const faultFreeCount = rows.filter((r) => currentFaults(r.batch).length === 0).length;
   const faultFreePct = rows.length ? Math.round((faultFreeCount / rows.length) * 100) : null;
 
-  const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn), Faults: (r.batch.faults || []).length }));
+  const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn), Faults: currentFaults(r.batch).length }));
 
   const toggleCompare = (id) =>
     setSelectedBatchIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -8168,7 +8248,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               {metricRow("Ingredient cost", (r) => r.batch.ingredientCost, (v) => `$${v.toFixed(2)}`)}
               {metricRow(
                 "Faults",
-                (r) => (r.batch.faults && r.batch.faults.length > 0 ? r.batch.faults : null),
+                (r) => (currentFaults(r.batch).length > 0 ? currentFaults(r.batch) : null),
                 (v) => v.map((f) => `${f.fault} (${f.severity})`).join(", ")
               )}
             </tbody>
@@ -8305,9 +8385,9 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                       {daysToDiacetylPass != null && <span>diacetyl {daysToDiacetylPass}d</span>}
                       {batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
                     </div>
-                    {batch.faults && batch.faults.length > 0 && (
+                    {currentFaults(batch).length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {batch.faults.map((f) => (
+                        {currentFaults(batch).map((f) => (
                           <span
                             key={f.fault}
                             style={{
@@ -9658,7 +9738,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-25";
+const APP_VERSION = "2026-07-31-27";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10968,16 +11048,20 @@ export default function TankLog() {
   const toggleBatchFault = async (id, faultName) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const existing = (batch.faults || []).find((f) => f.fault === faultName);
-    const currentSeverity = existing ? existing.severity : "none";
-    const nextSeverity = FAULT_SEVERITY_NEXT[currentSeverity];
+    const allEntries = batch.faults || [];
+    const todayStr = today();
+    const todaysEntry = allEntries.find((f) => f.fault === faultName && f.date === todayStr);
     let faults;
-    if (nextSeverity === null) {
-      faults = (batch.faults || []).filter((f) => f.fault !== faultName);
-    } else if (existing) {
-      faults = (batch.faults || []).map((f) => (f.fault === faultName ? { ...f, severity: nextSeverity } : f));
+    if (todaysEntry) {
+      // Same-day taps cycle through Low → Medium → High → off, same as before.
+      const nextSeverity = FAULT_SEVERITY_NEXT[todaysEntry.severity];
+      faults = nextSeverity === null
+        ? allEntries.filter((f) => !(f.fault === faultName && f.date === todayStr))
+        : allEntries.map((f) => (f.fault === faultName && f.date === todayStr ? { ...f, severity: nextSeverity } : f));
     } else {
-      faults = [...(batch.faults || []), { fault: faultName, severity: nextSeverity, date: today() }];
+      // First tap on a new day starts a fresh assessment at Low, regardless
+      // of what an earlier day recorded — that entry stays put as history.
+      faults = [...allEntries, { id: uid(), fault: faultName, severity: "Low", date: todayStr }];
     }
     const { error } = await supabase.from("batches").update({ faults }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -12643,9 +12727,18 @@ export default function TankLog() {
       {brewDayFieldTarget && (
         <EditBrewDayFieldModal target={brewDayFieldTarget} onClose={() => setBrewDayFieldTarget(null)} onSave={updateBrewDayField} />
       )}
-      {packagingTarget && (
-        <PackagingModal batch={packagingTarget} onClose={() => setPackagingTarget(null)} onSave={logPackagingSession} packageTypes={packageTypes} />
-      )}
+      {packagingTarget && (() => {
+        const liveBatch = batches.find((b) => b.id === packagingTarget.id) || packagingTarget;
+        return (
+          <PackagingModal
+            batch={liveBatch}
+            onClose={() => setPackagingTarget(null)}
+            onSave={logPackagingSession}
+            packageTypes={packageTypes}
+            onToggleFault={toggleBatchFault}
+          />
+        );
+      })()}
       {discardTarget && (
         <DiscardRemainingModal batch={discardTarget} onClose={() => setDiscardTarget(null)} onConfirm={discardRemaining} />
       )}
