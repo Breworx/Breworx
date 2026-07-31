@@ -139,6 +139,21 @@ function compareTankNames(a, b) {
 }
 const sortedTanks = (tanks) => [...tanks].sort((a, b) => compareTankNames(a.name, b.name));
 
+const COMMON_FAULTS = [
+  "Diacetyl",
+  "DMS",
+  "Acetaldehyde",
+  "Oxidation",
+  "Infection/Sour",
+  "Phenolic (band-aid)",
+  "Astringency",
+  "Hop creep",
+  "Sulfur",
+  "Yeast bite",
+];
+const FAULT_SEVERITY_COLOR = { Low: "#D9A441", Medium: "#E08A3C", High: "#B5502F" };
+const FAULT_SEVERITY_NEXT = { none: "Low", Low: "Medium", Medium: "High", High: null };
+
 function batchTankIds(batch) {
   if (batch.splitTanks && batch.splitTanks.length > 0) return batch.splitTanks.map((t) => t.tankId);
   if (batch.tankId) return [batch.tankId];
@@ -6188,7 +6203,7 @@ function DeleteCompanyModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -6698,6 +6713,50 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                 No tests logged yet — needs at least one pass before this batch can move to Cooling.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {(["Brewing", "Primary", "Cooling"].includes(batch.stage) || (batch.faults && batch.faults.length > 0)) && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Quality checklist — common faults
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {COMMON_FAULTS.map((fault) => {
+              const existing = (batch.faults || []).find((f) => f.fault === fault);
+              const severity = existing ? existing.severity : null;
+              const color = severity ? FAULT_SEVERITY_COLOR[severity] : "#9BA88A";
+              return (
+                <button
+                  key={fault}
+                  onClick={() => onToggleFault(batch.id, fault)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: severity ? `${color}22` : "#FFFFFF",
+                    border: `1px solid ${severity ? color : "#DDE0C8"}`,
+                    borderRadius: 20,
+                    padding: "6px 12px",
+                    cursor: "pointer",
+                    fontSize: 12.5,
+                    color: severity ? color : "#5C6B54",
+                    fontFamily: "'Inter', sans-serif",
+                  }}
+                >
+                  {fault}
+                  {severity && (
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: "0.03em" }}>
+                      {severity.toUpperCase()}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 8 }}>
+            Tap a fault to cycle Low → Medium → High → off.
           </div>
         </div>
       )}
@@ -8017,8 +8076,10 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const avgMashPh = avg(rows.map((r) => r.batch.mashPh));
   const avgMashTemp = avg(rows.map((r) => r.batch.mashTemp));
   const avgDiacetylDays = avg(rows.map((r) => r.daysToDiacetylPass));
+  const faultFreeCount = rows.filter((r) => !r.batch.faults || r.batch.faults.length === 0).length;
+  const faultFreePct = rows.length ? Math.round((faultFreeCount / rows.length) * 100) : null;
 
-  const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn) }));
+  const chartData = [...rows].reverse().map((r) => ({ date: r.batch.startDate.slice(5), Attenuation: Math.round(r.attn), Faults: (r.batch.faults || []).length }));
 
   const toggleCompare = (id) =>
     setSelectedBatchIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -8105,6 +8166,11 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               {metricRow("Days in tank", (r) => r.days, (v) => `${v}d`)}
               {metricRow("Days to diacetyl pass", (r) => r.daysToDiacetylPass, (v) => `${v}d`)}
               {metricRow("Ingredient cost", (r) => r.batch.ingredientCost, (v) => `$${v.toFixed(2)}`)}
+              {metricRow(
+                "Faults",
+                (r) => (r.batch.faults && r.batch.faults.length > 0 ? r.batch.faults : null),
+                (v) => v.map((f) => `${f.fault} (${f.severity})`).join(", ")
+              )}
             </tbody>
           </table>
         </div>
@@ -8128,10 +8194,11 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               </div>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
             {[
               ["Avg days in tank", avgDays?.toFixed(0), "#D4A24C"],
               ["Avg days to diacetyl pass", avgDiacetylDays != null ? avgDiacetylDays.toFixed(1) : "No passes logged yet", "#5C9A3C"],
+              ["Fault-free batches", faultFreePct != null ? `${faultFreePct}%` : "—", "#4FB83D"],
               ["Avg ingredient cost", avgCost != null ? `$${avgCost.toFixed(0)}` : "—", "#9BA88A"],
             ].map(([label, value, color]) => (
               <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 10px" }}>
@@ -8155,6 +8222,24 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                   <Line type="monotone" dataKey="Attenuation" stroke="#D9A441" strokeWidth={2} dot={{ r: 3, fill: "#D9A441" }} />
                 </LineChart>
               </ResponsiveContainer>
+            </div>
+          )}
+
+          {chartData.length > 1 && chartData.some((d) => d.Faults > 0) && (
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 20 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <AlertTriangle size={13} /> Faults logged per batch over time
+              </div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+                  <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+                  <YAxis stroke="#9BA88A" fontSize={11} allowDecimals={false} />
+                  <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
+                  <Bar dataKey="Faults" fill="#B5502F" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ color: "#9BA88A", fontSize: 11, padding: "0 8px 8px" }}>Falling toward zero over time is what you're looking for here.</div>
             </div>
           )}
 
@@ -8220,6 +8305,26 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                       {daysToDiacetylPass != null && <span>diacetyl {daysToDiacetylPass}d</span>}
                       {batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
                     </div>
+                    {batch.faults && batch.faults.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {batch.faults.map((f) => (
+                          <span
+                            key={f.fault}
+                            style={{
+                              fontSize: 10.5,
+                              fontFamily: "'Inter', sans-serif",
+                              color: FAULT_SEVERITY_COLOR[f.severity],
+                              background: `${FAULT_SEVERITY_COLOR[f.severity]}1A`,
+                              border: `1px solid ${FAULT_SEVERITY_COLOR[f.severity]}`,
+                              borderRadius: 12,
+                              padding: "2px 8px",
+                            }}
+                          >
+                            {f.fault} · {f.severity}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -9553,7 +9658,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-24";
+const APP_VERSION = "2026-07-31-25";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10858,6 +10963,25 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, diacetylTests } : b)));
     showToast("success", `Diacetyl test logged: ${test.result}.`);
+  };
+
+  const toggleBatchFault = async (id, faultName) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const existing = (batch.faults || []).find((f) => f.fault === faultName);
+    const currentSeverity = existing ? existing.severity : "none";
+    const nextSeverity = FAULT_SEVERITY_NEXT[currentSeverity];
+    let faults;
+    if (nextSeverity === null) {
+      faults = (batch.faults || []).filter((f) => f.fault !== faultName);
+    } else if (existing) {
+      faults = (batch.faults || []).map((f) => (f.fault === faultName ? { ...f, severity: nextSeverity } : f));
+    } else {
+      faults = [...(batch.faults || []), { fault: faultName, severity: nextSeverity, date: today() }];
+    }
+    const { error } = await supabase.from("batches").update({ faults }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, faults } : b)));
   };
 
   const logReading = async (id, reading) => {
@@ -12209,6 +12333,7 @@ export default function TankLog() {
             onDeleteBatch={setDeleteBatchTarget}
             stages={stages}
             onLogDiacetylTest={setDiacetylTestTarget}
+            onToggleFault={toggleBatchFault}
           />
         )}
 
