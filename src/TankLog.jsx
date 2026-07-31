@@ -6166,6 +6166,46 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </div>
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 22, padding: "0 4px" }}>
+        {stages.map((s, i) => {
+          const done = i < stageIdx;
+          const current = i === stageIdx;
+          const color = done || current ? STAGE_COLOR[s] || "#5C9A3C" : "#DDE0C8";
+          return (
+            <React.Fragment key={s}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: current ? 16 : 12,
+                    height: current ? 16 : 12,
+                    borderRadius: "50%",
+                    background: done || current ? color : "#FFFFFF",
+                    border: `2px solid ${color}`,
+                    boxShadow: current ? `0 0 0 4px ${color}33` : "none",
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    letterSpacing: "0.03em",
+                    textTransform: "uppercase",
+                    color: done || current ? color : "#C9D1AC",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {s}
+                </span>
+              </div>
+              {i < stages.length - 1 && (
+                <div style={{ flex: 1, height: 2, background: i < stageIdx ? STAGE_COLOR[stages[i]] || "#5C9A3C" : "#DDE0C8", margin: "0 4px 16px" }} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         {[
           ["OG", batch.og.toFixed(3)],
@@ -6641,6 +6681,28 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       </div>
 
       <button
+        onClick={() => window.print()}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          background: "none",
+          border: "1px solid #DDE0C8",
+          borderRadius: 5,
+          padding: "11px",
+          color: "#5C6B54",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          cursor: "pointer",
+          marginTop: 26,
+        }}
+      >
+        <FileText size={14} /> Print / Save as PDF
+      </button>
+
+      <button
         onClick={() => onDeleteBatch(batch)}
         style={{
           width: "100%",
@@ -6652,11 +6714,81 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           fontFamily: "'Inter', sans-serif",
           fontSize: 13,
           cursor: "pointer",
-          marginTop: 26,
+          marginTop: 10,
         }}
       >
         Delete batch
       </button>
+
+      <div className="bp-print-sheet" style={{ display: "none" }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, margin: "0 0 2px" }}>{batch.name}</h1>
+        <div style={{ color: "#555", fontSize: 13, marginBottom: 16 }}>
+          Batch #{batch.number} · {batch.style} · {batch.volume}L · {batchTankSummary(batch) || "No tank assigned"}
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 13 }}>
+          <tbody>
+            <tr><td style={{ padding: "4px 0", color: "#555", width: "40%" }}>Brew date</td><td>{batch.startDate}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Recipe</td><td>{batch.recipeName || "—"}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Target OG / FG</td><td>{batch.og.toFixed(3)} / {batch.fg.toFixed(3)}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Actual FG (latest reading)</td><td>{latest.gravity.toFixed(3)}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Attenuation</td><td>{pct.toFixed(0)}%</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>ABV (current)</td><td>{calcABV(batch.og, latest.gravity).toFixed(1)}%</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Days in tank</td><td>{days}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Ingredient cost</td><td>{batch.ingredientCost ? `$${batch.ingredientCost.toFixed(2)}` : "—"}</td></tr>
+          </tbody>
+        </table>
+
+        {batch.ingredients && batch.ingredients.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Ingredients</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 12.5 }}>
+              <tbody>
+                {batch.ingredients.map((ing, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: "4px 0" }}>{ing.name}</td>
+                    <td style={{ padding: "4px 0", textAlign: "right" }}>{ing.qty} {ing.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {batch.readings && batch.readings.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Gravity log</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 12.5 }}>
+              <tbody>
+                {batch.readings.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: "4px 0" }}>{r.date}</td>
+                    <td style={{ padding: "4px 0" }}>{r.gravity.toFixed(3)}</td>
+                    <td style={{ padding: "4px 0" }}>{r.temp}°C</td>
+                    <td style={{ padding: "4px 0", color: "#555" }}>{r.note || ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {batch.packaging && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Packaging</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <tbody>
+                {CONTAINERS.filter((c) => aggregatePackagingCounts(batch)[c.key] > 0).map((c) => (
+                  <tr key={c.key}>
+                    <td style={{ padding: "4px 0" }}>{c.label}</td>
+                    <td style={{ padding: "4px 0", textAlign: "right" }}>{aggregatePackagingCounts(batch)[c.key]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -9181,7 +9313,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-12";
+const APP_VERSION = "2026-07-31-13";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -9263,11 +9395,17 @@ function ToastStack({ toasts, onDismiss }) {
             animation: "bp-toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
-          <style>{`@keyframes bp-toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+          <style>{`
+            @keyframes bp-toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+            @keyframes bp-check-pop { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
+            @media (prefers-reduced-motion: reduce) {
+              .bp-check-pop { animation: none !important; }
+            }
+          `}</style>
           {t.type === "error" ? (
             <AlertTriangle size={16} color="#E3B04A" style={{ flexShrink: 0 }} />
           ) : (
-            <CheckCircle2 size={16} color="#8FCB6C" style={{ flexShrink: 0 }} />
+            <CheckCircle2 size={16} color="#8FCB6C" className="bp-check-pop" style={{ flexShrink: 0, animation: "bp-check-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1)" }} />
           )}
           <span style={{ color: "#F5F1E4", fontSize: 13, fontFamily: "'Inter', sans-serif", lineHeight: 1.4, flex: 1 }}>{t.message}</span>
           {t.action && (
@@ -10616,6 +10754,11 @@ export default function TankLog() {
         button { transition: transform 90ms ease, border-color 0.15s, background 0.15s; }
         @media (prefers-reduced-motion: reduce) {
           button:not(:disabled):active { transform: none; }
+        }
+        @media print {
+          body * { visibility: hidden; }
+          .bp-print-sheet, .bp-print-sheet * { visibility: visible; }
+          .bp-print-sheet { position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
         }
       `}</style>
       {updateAvailable && <UpdateBanner onRefresh={() => window.location.reload()} />}
