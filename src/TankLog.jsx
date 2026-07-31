@@ -2356,6 +2356,11 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
 }
 
 function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = suppliers.filter(
+    (s) => !q || s.name.toLowerCase().includes(q) || (s.contactName || "").toLowerCase().includes(q) || (s.email || "").toLowerCase().includes(q)
+  );
   return (
     <Modal title="Suppliers" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -2378,8 +2383,30 @@ function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
         >
           <Plus size={14} /> Add supplier
         </button>
+        {suppliers.length > 3 && (
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search suppliers…"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "10px 12px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 14,
+            }}
+          />
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {suppliers.map((s) => (
+          {filtered.length === 0 && q && (
+            <div style={{ color: "#9BA88A", fontSize: 13, padding: "12px 4px" }}>No suppliers match "{query}".</div>
+          )}
+          {filtered.map((s) => (
             <div
               key={s.id}
               style={{
@@ -9699,8 +9726,16 @@ function HomeView({
 
       {totalTasks > 0 && (
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
-            <AlertTriangle size={12} /> Needs doing ({totalTasks})
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C" }}>
+              <AlertTriangle size={12} /> Needs doing ({totalTasks})
+            </div>
+            <button
+              onClick={() => window.print()}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              Print day sheet
+            </button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {brewTasks.map(({ batch, next }) => (
@@ -9752,6 +9787,80 @@ function HomeView({
         </div>
       )}
 
+      <div className="bp-print-sheet" style={{ display: "none" }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, margin: "0 0 2px" }}>{companyName || "Brewery"} — Day Sheet</h1>
+        <div style={{ color: "#555", fontSize: 13, marginBottom: 16 }}>{today()}</div>
+
+        {brewTasks.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Brewing tasks</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 12.5 }}>
+              <tbody>
+                {brewTasks.map(({ batch, next }, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: "4px 0" }}>☐</td>
+                    <td style={{ padding: "4px 8px" }}>{batch.name}</td>
+                    <td style={{ padding: "4px 0" }}>{next.label} ({next.amount} {next.unit})</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {foodSafetyTasks.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Food safety</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 12.5 }}>
+              <tbody>
+                {foodSafetyTasks.map((t, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: "4px 0" }}>☐</td>
+                    <td style={{ padding: "4px 8px" }}>{t.label}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {lowStock.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Running low</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 16, fontSize: 12.5 }}>
+              <tbody>
+                {lowStock.map((it) => (
+                  <tr key={it.id} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: "4px 0" }}>{it.name}</td>
+                    <td style={{ padding: "4px 0", textAlign: "right" }}>{it.qty} {it.unit} left</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {openOrders.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Purchase orders awaiting delivery</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <tbody>
+                {openOrders.map((po) => (
+                  <tr key={po.id} style={{ borderBottom: "1px solid #ddd" }}>
+                    <td style={{ padding: "4px 0" }}>{po.poNumber}</td>
+                    <td style={{ padding: "4px 0", textAlign: "right" }}>{po.supplier}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {brewTasks.length === 0 && foodSafetyTasks.length === 0 && lowStock.length === 0 && openOrders.length === 0 && (
+          <div style={{ color: "#555", fontSize: 13 }}>Nothing outstanding today.</div>
+        )}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
         {stats.map(([label, count, color, goTo]) => (
           <button
@@ -9798,6 +9907,37 @@ function HomeView({
                 <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
                 <Bar dataKey="Batches" fill="#4FB83D" radius={[3, 3, 0, 0]} />
               </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
+
+      {(() => {
+        const groups = {};
+        batches.forEach((b) => {
+          const key = monthKeyFromDate(b.startDate);
+          if (!groups[key]) groups[key] = { cost: 0, count: 0 };
+          groups[key].cost += b.ingredientCost || 0;
+          groups[key].count += 1;
+        });
+        const monthlyData = Object.keys(groups)
+          .sort()
+          .slice(-6)
+          .map((key) => ({ date: monthLabelFromKey(key).slice(0, 3), "Avg cost": groups[key].count ? Math.round(groups[key].cost / groups[key].count) : 0 }));
+        if (monthlyData.length < 2 || !monthlyData.some((d) => d["Avg cost"] > 0)) return null;
+        return (
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <TrendingUp size={13} /> Avg ingredient cost per batch — last 6 months
+            </div>
+            <ResponsiveContainer width="100%" height={150}>
+              <LineChart data={monthlyData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+                <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+                <YAxis stroke="#9BA88A" fontSize={11} unit="$" />
+                <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
+                <Line type="monotone" dataKey="Avg cost" stroke="#D9A441" strokeWidth={2} dot={{ r: 3, fill: "#D9A441" }} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         );
@@ -10400,7 +10540,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-43";
+const APP_VERSION = "2026-07-31-44";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13302,9 +13442,14 @@ export default function TankLog() {
                           {t.name}
                           {t.id === user.id ? " (you)" : ""}
                         </span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
-                          {t.role}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          {t.createdAt && (
+                            <span style={{ color: "#9BA88A", fontSize: 11 }}>Joined {t.createdAt.slice(0, 10)}</span>
+                          )}
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
+                            {t.role}
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
