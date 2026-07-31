@@ -2161,7 +2161,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -2365,6 +2365,26 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           </div>
         )}
       </div>
+
+      {onDelete && (
+        <button
+          onClick={() => onDelete(item)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "1px solid #E3D3A0",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#5C9A3C",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+            marginTop: 26,
+          }}
+        >
+          Delete {item.name}
+        </button>
+      )}
     </div>
   );
 }
@@ -8876,6 +8896,37 @@ function HomeView({
         ))}
       </div>
 
+      {(() => {
+        const groups = {};
+        batches.forEach((b) => {
+          const key = monthKeyFromDate(b.startDate);
+          if (!groups[key]) groups[key] = { batches: 0, cost: 0 };
+          groups[key].batches += 1;
+          groups[key].cost += b.ingredientCost || 0;
+        });
+        const monthlyData = Object.keys(groups)
+          .sort()
+          .slice(-6)
+          .map((key) => ({ date: monthLabelFromKey(key).slice(0, 3), Batches: groups[key].batches, Cost: Math.round(groups[key].cost) }));
+        if (monthlyData.length < 2) return null;
+        return (
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <TrendingUp size={13} /> Brewing activity — last 6 months
+            </div>
+            <ResponsiveContainer width="100%" height={150}>
+              <BarChart data={monthlyData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+                <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+                <YAxis stroke="#9BA88A" fontSize={11} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
+                <Bar dataKey="Batches" fill="#4FB83D" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
+
       {inProgressBatches.length > 0 && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C", marginBottom: 10 }}>
@@ -9473,7 +9524,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-17";
+const APP_VERSION = "2026-07-31-18";
 
 function UpdateBanner({ onRefresh }) {
   return (
@@ -9675,6 +9726,7 @@ export default function TankLog() {
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
   const [batchQuery, setBatchQuery] = useState("");
+  const [poQuery, setPoQuery] = useState("");
   const [showAddConsumable, setShowAddConsumable] = useState(false);
   const [selectedConsumableId, setSelectedConsumableId] = useState(null);
   const [consumableQuery, setConsumableQuery] = useState("");
@@ -10492,6 +10544,26 @@ export default function TankLog() {
     showToast("success", `${item.name} added to inventory.`);
   };
 
+  const deleteInventoryItem = (item) => {
+    if (!window.confirm(`Delete ${item.name}? Any stock and history logged against it will be lost.`)) return;
+    setInventory((prev) => prev.filter((it) => it.id !== item.id));
+    setSelectedInventoryId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[item.id];
+      const { error } = await supabase.from("inventory_items").delete().eq("id", item.id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[item.id] = timeoutId;
+    showToast("success", `${item.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[item.id]);
+        delete pendingDeletesRef.current[item.id];
+        setInventory((prev) => [item, ...prev]);
+      },
+    });
+  };
+
   const updateInventorySupplier = async (id, supplierId) => {
     const { error } = await supabase.from("inventory_items").update({ supplier_id: supplierId }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -10534,6 +10606,26 @@ export default function TankLog() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setConsumables((prev) => [rowToConsumable(data), ...prev]);
     showToast("success", `${item.name} added to consumables.`);
+  };
+
+  const deleteConsumable = (item) => {
+    if (!window.confirm(`Delete ${item.name}? Any stock and history logged against it will be lost.`)) return;
+    setConsumables((prev) => prev.filter((it) => it.id !== item.id));
+    setSelectedConsumableId(null);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[item.id];
+      const { error } = await supabase.from("consumables").delete().eq("id", item.id);
+      if (error) showToast("error", "Something didn't save — check your connection and try again.");
+    }, 5000);
+    pendingDeletesRef.current[item.id] = timeoutId;
+    showToast("success", `${item.name} deleted.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[item.id]);
+        delete pendingDeletesRef.current[item.id];
+        setConsumables((prev) => [item, ...prev]);
+      },
+    });
   };
 
   const updateConsumableSupplier = async (id, supplierId) => {
@@ -11511,14 +11603,37 @@ export default function TankLog() {
             )}
 
             {!loadingData && view === "orders" && (() => {
-              const draftPOs = purchaseOrders.filter((po) => po.status === "Draft");
-              const sentPOs = purchaseOrders.filter((po) => po.status === "Sent");
-              const receivedPOs = purchaseOrders.filter((po) => po.status === "Received");
+              const q = poQuery.trim().toLowerCase();
+              const matchesPO = (po) => !q || po.poNumber.toLowerCase().includes(q) || po.supplier.toLowerCase().includes(q);
+              const draftPOs = purchaseOrders.filter((po) => po.status === "Draft" && matchesPO(po));
+              const sentPOs = purchaseOrders.filter((po) => po.status === "Sent" && matchesPO(po));
+              const receivedPOs = purchaseOrders.filter((po) => po.status === "Received" && matchesPO(po));
+              const noMatches = q && draftPOs.length === 0 && sentPOs.length === 0 && receivedPOs.length === 0;
               return (
                 <>
                   <FirstVisitTip tipKey="orders">
                     Create purchase orders to bring ingredients in from suppliers. Receiving one adds the stock straight into Inventory with proper lot tracking and cost per unit.
                   </FirstVisitTip>
+                  {purchaseOrders.length > 0 && (
+                    <input
+                      type="text"
+                      value={poQuery}
+                      onChange={(e) => setPoQuery(e.target.value)}
+                      placeholder="Search orders by number or supplier…"
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        background: "#F5F1E4",
+                        border: "1px solid #DDE0C8",
+                        borderRadius: 5,
+                        padding: "10px 12px",
+                        color: "#2A3324",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 14,
+                        marginBottom: 16,
+                      }}
+                    />
+                  )}
                   <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Draft ({draftPOs.length})
                   </div>
@@ -11526,7 +11641,7 @@ export default function TankLog() {
                     {draftPOs.map((po) => (
                       <POCard key={po.id} po={po} onOpen={setSelectedPOId} />
                     ))}
-                    {draftPOs.length === 0 && (
+                    {draftPOs.length === 0 && !noMatches && purchaseOrders.length > 0 && (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
                         No drafts. Start a new order to build one out before sending it to a supplier.
                       </div>
@@ -11561,6 +11676,9 @@ export default function TankLog() {
 
                   {purchaseOrders.length === 0 && (
                     <EmptyState icon={Truck} title="No purchase orders yet" subtitle="Create one to bring in ingredients with proper lot tracking from day one." action={{ label: "New order", onClick: () => setShowAddPO(true) }} />
+                  )}
+                  {noMatches && (
+                    <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No orders match "{poQuery}".</div>
                   )}
                 </>
               );
@@ -12054,6 +12172,7 @@ export default function TankLog() {
             onLogAdjustment={setAdjustTarget}
             suppliers={suppliers}
             onChangeSupplier={updateInventorySupplier}
+            onDelete={deleteInventoryItem}
           />
         )}
 
@@ -12068,6 +12187,7 @@ export default function TankLog() {
             backLabel="All consumables"
             showCost
             onChangeCost={updateConsumableCost}
+            onDelete={deleteConsumable}
           />
         )}
 
