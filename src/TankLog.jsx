@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
@@ -454,6 +454,45 @@ const HELP_ARTICLES = [
   },
 ];
 
+// A printable QR code linking straight to a tank — scan it (e.g. stuck on
+// the side of the tank) to jump right to whatever's currently in it.
+function TankQRModal({ tank, onClose }) {
+  const url = `${window.location.origin}${window.location.pathname}?tank=${tank.id}`;
+  const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(url)}`;
+  return (
+    <Modal title={`QR code — ${tank.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, textAlign: "center" }}>
+          Print this and stick it on the tank — scanning it opens whatever's currently in {tank.name}.
+        </div>
+        <img src={qrImg} alt={`QR code for ${tank.name}`} width={220} height={220} style={{ border: "1px solid #DDE0C8", borderRadius: 6, background: "#FFFFFF", padding: 10 }} />
+        <button
+          onClick={() => window.print()}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            background: "none",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "10px 16px",
+            color: "#5C6B54",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <FileText size={14} /> Print
+        </button>
+        <div className="bp-print-sheet" style={{ display: "none", textAlign: "center" }}>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, margin: "0 0 16px" }}>{tank.name}</h1>
+          <img src={qrImg} alt={`QR code for ${tank.name}`} width={260} height={260} />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function HelpGuideModal({ onClose }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -604,6 +643,18 @@ function downloadCSV(filename, headers, rows) {
   };
   const csv = [headers.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -6872,7 +6923,8 @@ function DeleteCompanyModal({ onClose, onConfirm }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto }) {
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -7140,6 +7192,67 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </div>
         </details>
       )}
+
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+            Photos ({(batch.photos || []).length})
+          </div>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "none",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "6px 10px",
+              color: "#5C6B54",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12,
+              cursor: uploadingPhoto ? "default" : "pointer",
+            }}
+          >
+            <Plus size={12} /> {uploadingPhoto ? "Uploading…" : "Add photo"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              disabled={uploadingPhoto}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                setUploadingPhoto(true);
+                await onUploadPhoto(batch.id, file);
+                setUploadingPhoto(false);
+              }}
+              style={{ display: "none" }}
+            />
+          </label>
+        </div>
+        {(batch.photos || []).length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))", gap: 8 }}>
+            {batch.photos.map((url, i) => (
+              <div key={i} style={{ position: "relative" }}>
+                <button
+                  onClick={() => window.open(url, "_blank")}
+                  style={{ display: "block", width: "100%", aspectRatio: "1", padding: 0, border: "1px solid #DDE0C8", borderRadius: 6, overflow: "hidden", cursor: "pointer", background: "#F8F5EA" }}
+                >
+                  <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </button>
+                <button
+                  onClick={() => onDeletePhoto(batch.id, url)}
+                  aria-label="Delete photo"
+                  style={{ position: "absolute", top: 4, right: 4, background: "rgba(10,12,11,0.6)", border: "none", borderRadius: 4, padding: 4, cursor: "pointer" }}
+                >
+                  <X size={11} color="#FFFFFF" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "center" }}>
         {stages.map((s, i) => (
@@ -10545,7 +10658,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-47";
+const APP_VERSION = "2026-07-31-48";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -10734,6 +10847,8 @@ export default function TankLog() {
     return params.get("view") === "settings" ? "settings" : "home";
   });
   const [inviteToken] = useState(() => new URLSearchParams(window.location.search).get("invite"));
+  const [tankParam] = useState(() => new URLSearchParams(window.location.search).get("tank"));
+  const [qrTankTarget, setQrTankTarget] = useState(null);
 
   useEffect(() => {
     if (window.location.search) {
@@ -10993,6 +11108,21 @@ export default function TankLog() {
     };
   }, [user?.id]);
 
+  // If the app was opened via a tank's QR code, jump straight to whatever's
+  // currently in it (or the Brewery list if it's empty) once data is ready.
+  useEffect(() => {
+    if (!tankParam || loadingData || tanks.length === 0) return;
+    const tank = tanks.find((t) => t.id === tankParam);
+    if (!tank) return;
+    const occupant = occupyingBatch(batches, tank.id);
+    if (occupant) {
+      setSelectedId(occupant.id);
+      setView("batches");
+    } else {
+      setView("brewery");
+    }
+  }, [tankParam, loadingData]);
+
   const selected = useMemo(() => batches.find((b) => b.id === selectedId) || null, [batches, selectedId]);
 
   // Tracks the last few batches opened, purely for the "Recently viewed"
@@ -11064,6 +11194,36 @@ export default function TankLog() {
     setCreatingInvite(false);
     if (error) { console.error(error); showToast("error", `Couldn't create an invite link: ${error.message || "unknown error"}`); return; }
     setInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data}`);
+  };
+
+  const removeTeammate = async (teammate) => {
+    if (!window.confirm(`Remove ${teammate.name} from the team? They'll lose access to this company immediately.`)) return;
+    const { error } = await supabase.rpc("remove_teammate", { member_id: teammate.id });
+    if (error) { showToast("error", `Couldn't remove ${teammate.name}: ${error.message || "unknown error"}`); return; }
+    setTeammates((prev) => prev.filter((t) => t.id !== teammate.id));
+    showToast("success", `${teammate.name} removed from the team.`);
+  };
+
+  const uploadBatchPhoto = async (batchId, file) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    const path = `${profile.companyId}/${batchId}/${Date.now()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage.from("batch-photos").upload(path, file);
+    if (uploadError) { showToast("error", `Couldn't upload photo: ${uploadError.message || "unknown error"}`); return; }
+    const { data } = supabase.storage.from("batch-photos").getPublicUrl(path);
+    const photos = [...(batch.photos || []), data.publicUrl];
+    const { error } = await supabase.from("batches").update({ photos }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, photos } : b)));
+  };
+
+  const deleteBatchPhoto = async (batchId, url) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    const photos = (batch.photos || []).filter((p) => p !== url);
+    const { error } = await supabase.from("batches").update({ photos }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, photos } : b)));
   };
 
   const addBatch = async (b) => {
@@ -13171,6 +13331,13 @@ export default function TankLog() {
                       </div>
                       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                         <button
+                          onClick={() => setQrTankTarget(t)}
+                          aria-label={`QR code for ${t.name}`}
+                          style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, color: "#5C6B54", cursor: "pointer", padding: 6 }}
+                        >
+                          <QrCode size={14} />
+                        </button>
+                        <button
                           onClick={() => setEditTankTarget(t)}
                           style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, color: "#5C6B54", cursor: "pointer", padding: 6 }}
                         >
@@ -13531,6 +13698,15 @@ export default function TankLog() {
                           <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
                             {t.role}
                           </span>
+                          {profile?.role === "owner" && t.id !== user.id && (
+                            <button
+                              onClick={() => removeTeammate(t)}
+                              aria-label={`Remove ${t.name}`}
+                              style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -13541,6 +13717,40 @@ export default function TankLog() {
                       : "Only the account owner can invite new teammates."}
                   </div>
                 </div>
+
+                <button
+                  onClick={() =>
+                    downloadJSON(`brewpoint-backup-${today()}.json`, {
+                      exportedAt: new Date().toISOString(),
+                      company: companyName,
+                      batches,
+                      recipes,
+                      inventory,
+                      consumables,
+                      packageTypes,
+                      purchaseOrders,
+                      tanks,
+                      suppliers,
+                      foodSafetyRecords,
+                    })
+                  }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 7,
+                    background: "none",
+                    border: "1px solid #DDE0C8",
+                    borderRadius: 5,
+                    padding: "12px",
+                    color: "#5C6B54",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  <FileText size={15} /> Download full backup
+                </button>
 
                 <button
                   onClick={() => supabase.auth.signOut()}
@@ -13577,20 +13787,22 @@ export default function TankLog() {
                   Delete account
                 </button>
 
-                <button
-                  onClick={() => setShowDeleteCompany(true)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#E3D3A0",
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 12.5,
-                    cursor: "pointer",
-                    padding: "4px 0",
-                  }}
-                >
-                  Delete company (removes everything for everyone)
-                </button>
+                {profile?.role === "owner" && (
+                  <button
+                    onClick={() => setShowDeleteCompany(true)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#E3D3A0",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                      padding: "4px 0",
+                    }}
+                  >
+                    Delete company (removes everything for everyone)
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -13614,6 +13826,8 @@ export default function TankLog() {
             stages={stages}
             onLogDiacetylTest={setDiacetylTestTarget}
             onToggleFault={toggleBatchFault}
+            onUploadPhoto={uploadBatchPhoto}
+            onDeletePhoto={deleteBatchPhoto}
           />
         )}
 
@@ -13713,6 +13927,7 @@ export default function TankLog() {
           />
         );
       })()}
+      {qrTankTarget && <TankQRModal tank={qrTankTarget} onClose={() => setQrTankTarget(null)} />}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
