@@ -12190,7 +12190,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-74";
+const APP_VERSION = "2026-07-31-75";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15210,6 +15210,12 @@ export default function TankLog() {
                     style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0, marginTop: 10 }}
                   >
                     What's new in Brewpoint
+                  </button>
+                  <button
+                    onClick={() => setShowWelcomeTour(true)}
+                    style={{ display: "block", background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0, marginTop: 8 }}
+                  >
+                    Take the getting-started tour again
                   </button>
                 </div>
 
