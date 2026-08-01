@@ -391,7 +391,7 @@ const HELP_ARTICLES = [
   {
     category: "Getting started",
     question: "How do I add a recipe?",
-    answer: "Go to Recipes → New recipe, or use Recipe Builder for live OG/FG/ABV/IBU/SRM calculators while you build it out. \"Save & brew this recipe\" saves it and jumps straight into New Batch pre-filled.",
+    answer: "Go to Recipes → New recipe. Fill in your ingredients and schedule, and it calculates OG/FG/ABV/IBU/SRM live as you go. \"Save & brew this recipe\" saves it and jumps straight into New Batch pre-filled.",
   },
   {
     category: "Getting started",
@@ -12190,7 +12190,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-73";
+const APP_VERSION = "2026-07-31-74";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14248,7 +14248,9 @@ export default function TankLog() {
                 label: "Recipes",
                 items: [
                   ["recipes", "Recipes", Beaker],
-                  ["recipeBuilder", "Recipe Builder", FlaskConical],
+                  // Recipe Builder hidden from nav for now — the view and
+                  // its code are untouched, just re-add this line to bring
+                  // it back: ["recipeBuilder", "Recipe Builder", FlaskConical],
                   ["recipeAnalytics", "Recipe Analytics", TrendingUp],
                 ],
               },
@@ -14987,7 +14989,7 @@ export default function TankLog() {
               return (
                 <>
                   <FirstVisitTip tipKey="recipes">
-                    Save your recipes here to reuse on brew day — ingredients pull in automatically. Build and test a new one first in Recipe Builder.
+                    Save your recipes here to reuse on brew day — ingredients pull in automatically, and OG/FG/ABV/IBU/SRM calculate live as you build one.
                   </FirstVisitTip>
                   <input
                     type="text"
