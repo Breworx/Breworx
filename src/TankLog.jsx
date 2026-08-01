@@ -3657,11 +3657,27 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
                 {total}L of {target}L allocated
               </div>
             )}
-            {underAllocated && (
-              <div style={{ color: "#B5502F", fontSize: 12.5, background: "#FBE5DC", border: "1px solid #E3B3A0", borderRadius: 5, padding: "8px 12px" }}>
-                {shortBy}L still needs a fermenter — this batch won't fit in what's chosen so far. Add another fermenter to cover the rest.
-              </div>
-            )}
+            {underAllocated && (() => {
+              const lastRow = rows[rows.length - 1];
+              const lastTank = fermenters.find((t) => t.id === lastRow?.tankId);
+              const topUpValue = Math.round(((Number(lastRow?.volume) || 0) + shortBy) * 10) / 10;
+              const canTopUp = lastRow && lastTank && topUpValue <= lastTank.capacity;
+              return (
+                <div style={{ color: "#B5502F", fontSize: 12.5, background: "#FBE5DC", border: "1px solid #E3B3A0", borderRadius: 5, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span>{shortBy}L still needs a fermenter — this batch won't fit in what's chosen so far.</span>
+                  {canTopUp ? (
+                    <button
+                      onClick={() => updateRow(lastRow.id, { volume: topUpValue })}
+                      style={{ alignSelf: "flex-start", background: "#B5502F", border: "none", borderRadius: 4, padding: "6px 12px", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+                    >
+                      Add the extra {shortBy}L to {lastTank.name}
+                    </button>
+                  ) : (
+                    <span>Add another fermenter to cover the rest.</span>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
         <button
@@ -11802,7 +11818,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-65";
+const APP_VERSION = "2026-07-31-66";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
