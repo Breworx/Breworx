@@ -3387,6 +3387,133 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   );
 }
 
+// The split-batch equivalent of AssignTankModal — a batch spread across
+// several tanks doesn't fit a single tankId, so it gets its own editor for
+// changing which tanks (and volumes) it's actually sitting in.
+function EditSplitTanksModal({ batch, tanks, batches, onClose, onSave }) {
+  const [rows, setRows] = useState(
+    (batch.splitTanks || []).map((t) => ({ id: uid(), tankId: t.tankId, volume: t.volume }))
+  );
+
+  const addRow = () => setRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }]);
+  const updateRow = (id, patch) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeRow = (id) => setRows((prev) => prev.filter((r) => r.id !== id));
+
+  const submit = () => {
+    const final = rows
+      .filter((r) => r.tankId && Number(r.volume) > 0)
+      .map((r) => {
+        const t = tanks.find((tk) => tk.id === r.tankId);
+        return { tankId: r.tankId, tankName: t ? t.name : "", volume: Number(r.volume) || 0 };
+      });
+    onSave(batch.id, final);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Change tanks — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {rows.map((row) => (
+          <div key={row.id} style={{ display: "flex", gap: 6 }}>
+            <select
+              value={row.tankId}
+              onChange={(e) => updateRow(row.id, { tankId: e.target.value })}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                boxSizing: "border-box",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "8px 8px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+              }}
+            >
+              <option value="">Choose tank</option>
+              {sortedTanks(tanks).map((t) => {
+                const usedAbove = rows.some((r) => r.id !== row.id && r.tankId === t.id);
+                const occupied = tankIsOccupied(batches, t.id, batch.id) || usedAbove;
+                const occupant = occupyingBatch(batches, t.id, batch.id);
+                return (
+                  <option key={t.id} value={t.id} disabled={occupied}>
+                    {t.name} ({t.type}, {t.capacity}L)
+                    {usedAbove ? " — already used above" : occupant ? ` — occupied by ${occupant.name}` : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <input
+              type="number"
+              step="0.1"
+              value={row.volume}
+              onChange={(e) => updateRow(row.id, { volume: e.target.value })}
+              placeholder="Litres"
+              style={{
+                width: 84,
+                flexShrink: 0,
+                boxSizing: "border-box",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "8px 8px",
+                color: "#2A3324",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 13,
+                textAlign: "right",
+              }}
+            />
+            <button
+              onClick={() => removeRow(row.id)}
+              aria-label="Remove tank"
+              style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8, flexShrink: 0 }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={addRow}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            background: "none",
+            border: "1px dashed #C9D1AC",
+            borderRadius: 5,
+            padding: "8px",
+            color: "#5C6B54",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 12.5,
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={13} /> Add another tank
+        </button>
+        <button
+          onClick={submit}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // Reused for both "transfer to kettle" and "transfer to fermenter" — only
 // shows tanks of the target type, and blocks any that are already occupied.
 function VesselTransferModal({ batch, tanks, batches, toType, actionLabel, onClose, onSave }) {
@@ -7215,7 +7342,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -7268,14 +7395,12 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <span>
               {batch.style} · {batch.volume}L{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : " · No tank assigned"}
             </span>
-            {!(batch.splitTanks && batch.splitTanks.length > 0) && (
-              <button
-                onClick={() => onAssignTank(batch)}
-                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
-              >
-                Change
-              </button>
-            )}
+            <button
+              onClick={() => (batch.splitTanks && batch.splitTanks.length > 0 ? onEditSplitTanks(batch) : onAssignTank(batch))}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              Change
+            </button>
           </div>
           {(inMashTun || inKettle) && batch.brewStage && BREW_STAGE_INFO[batch.brewStage] && (
             <div
@@ -11254,7 +11379,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-56";
+const APP_VERSION = "2026-07-31-57";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11557,6 +11682,7 @@ export default function TankLog() {
   const [deleteBatchTarget, setDeleteBatchTarget] = useState(null);
   const [assignTankTarget, setAssignTankTarget] = useState(null);
   const [vesselTransferTarget, setVesselTransferTarget] = useState(null);
+  const [editSplitTanksTarget, setEditSplitTanksTarget] = useState(null);
   const [diacetylTestTarget, setDiacetylTestTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -12432,6 +12558,12 @@ export default function TankLog() {
     setBatches((prev) =>
       prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null, brewStage: brewStage ?? null } : b))
     );
+  };
+
+  const updateBatchSplitTanks = async (batchId, splitTanks) => {
+    const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, splitTanks } : b)));
   };
 
   const addInventoryItem = async (item) => {
@@ -14540,6 +14672,7 @@ export default function TankLog() {
             tanks={tanks}
             onStartRecirculation={startRecirculation}
             onOpenVesselTransfer={setVesselTransferTarget}
+            onEditSplitTanks={setEditSplitTanksTarget}
           />
         )}
 
@@ -14880,6 +15013,15 @@ export default function TankLog() {
           actionLabel={vesselTransferTarget.actionLabel}
           onClose={() => setVesselTransferTarget(null)}
           onSave={(tank) => transferBatchVessel(vesselTransferTarget.batch.id, tank, vesselTransferTarget.brewStage, vesselTransferTarget.newStage)}
+        />
+      )}
+      {editSplitTanksTarget && (
+        <EditSplitTanksModal
+          batch={editSplitTanksTarget}
+          tanks={tanks}
+          batches={batches}
+          onClose={() => setEditSplitTanksTarget(null)}
+          onSave={updateBatchSplitTanks}
         />
       )}
       {logTarget && (
