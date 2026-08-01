@@ -32,6 +32,7 @@ export function rowToBatch(row) {
     faults: row.faults || [],
     photos: row.photos || [],
     timers: row.timers || [],
+    brewStage: row.brew_stage || null,
     ingredientCost: row.ingredient_cost ?? 0,
     plannedDays: row.planned_days ?? null,
   };
@@ -69,6 +70,7 @@ export function batchToRow(batch, userId, companyId) {
     faults: batch.faults || [],
     photos: batch.photos || [],
     timers: batch.timers || [],
+    brew_stage: batch.brewStage || null,
     ingredient_cost: batch.ingredientCost ?? 0,
     planned_days: batch.plannedDays ?? null,
   };
