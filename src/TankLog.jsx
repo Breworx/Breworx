@@ -8874,11 +8874,20 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const clipId = `tankwall-clip-${tank.id}`;
   const gradId = `tankwall-grad-${tank.id}`;
   const steelId = `tankwall-steel-${tank.id}`;
-  const active = batch && (batch.stage === "Brewing" || batch.stage === "Primary");
+  const fermenting = batch && (batch.stage === "Brewing" || batch.stage === "Primary");
+  const cooling = batch && batch.stage === "Cooling";
+  const brite = batch && batch.stage === "Brite Tank";
+  const frostId = `tankwall-frost-${tank.id}`;
   // Body: x10–110, shoulders taper into a cone from y140 to the point at y190.
   const bodyPath = "M10 10 H110 V140 L60 190 L10 140 Z";
   const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
-  const bubbles = active ? [22, 45, 68, 91].map((x, i) => ({ x, delay: i * 0.7, dur: 2.6 + (i % 2) * 0.5 })) : [];
+  const bubbles = fermenting
+    ? [22, 45, 68, 91].map((x, i) => ({ x, delay: i * 0.7, dur: 2.6 + (i % 2) * 0.5, r: i % 2 ? 2 : 1.4 }))
+    : brite
+    ? [18, 32, 46, 60, 74, 88, 102].map((x, i) => ({ x, delay: i * 0.35, dur: 1.6 + (i % 3) * 0.2, r: 0.9 }))
+    : [];
+  const droplets = cooling ? [30, 55, 80].map((x, i) => ({ x, delay: i * 1.1 })) : [];
+
 
   return (
     <div
@@ -8958,6 +8967,10 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
               <stop offset="55%" stopColor="#FDFCF7" />
               <stop offset="100%" stopColor="#DDD8C4" />
             </linearGradient>
+            <radialGradient id={frostId} cx="50%" cy="0%" r="90%">
+              <stop offset="0%" stopColor="#BFE0F0" stopOpacity="0.55" />
+              <stop offset="100%" stopColor="#BFE0F0" stopOpacity="0" />
+            </radialGradient>
           </defs>
 
           {/* Manway lid collar — a small real-tank detail */}
@@ -8977,12 +8990,30 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
                 />
               </g>
               {bubbles.map((b, i) => (
-                <circle key={i} cx={b.x} cy="185" r={i % 2 ? "2" : "1.4"} fill="#FFFFFF" opacity="0.6">
+                <circle key={i} cx={b.x} cy="185" r={b.r} fill="#FFFFFF" opacity="0.6">
                   <animate attributeName="cy" from="185" to={surfaceY + 6} dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
                   <animate attributeName="opacity" values="0;0.65;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
                 </circle>
               ))}
+              {brite &&
+                [40, 75].map((x, i) => (
+                  <rect key={`glint-${i}`} x={x} y="20" width="3" height="14" fill="#FFFFFF" opacity="0">
+                    <animate attributeName="opacity" values="0;0.8;0" dur="2.2s" begin={`${i * 1.3}s`} repeatCount="indefinite" />
+                  </rect>
+                ))}
             </g>
+          )}
+
+          {cooling && (
+            <>
+              <rect x="10" y="10" width="100" height="60" fill={`url(#${frostId})`} clipPath={`url(#${clipId})`} />
+              {droplets.map((d, i) => (
+                <circle key={i} cx={d.x} cy="20" r="1.6" fill="#8FBFD6" opacity="0">
+                  <animate attributeName="cy" from="20" to="130" dur="3.2s" begin={`${d.delay}s`} repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0;0.7;0.7;0" dur="3.2s" begin={`${d.delay}s`} repeatCount="indefinite" />
+                </circle>
+              ))}
+            </>
           )}
 
           {/* Weld seam rings — tiny detail that reads as "real vessel" */}
@@ -10981,7 +11012,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-53";
+const APP_VERSION = "2026-07-31-54";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
