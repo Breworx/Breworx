@@ -12201,7 +12201,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-76";
+const APP_VERSION = "2026-07-31-77";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14134,11 +14134,24 @@ export default function TankLog() {
       `}</style>
       {updateAvailable && (
         <UpdateBanner
-          onRefresh={() => {
-            // A plain reload() isn't always enough to escape iOS's aggressive
-            // caching for installed home-screen apps — navigating to a
-            // cache-busted URL forces a genuinely fresh fetch instead.
-            window.location.href = window.location.pathname + "?v=" + Date.now();
+          onRefresh={async () => {
+            // Installed home-screen apps on iOS can hang onto a cached copy
+            // even when the server says not to — this throws everything we
+            // can at it: clear any Cache Storage entries (harmless if none
+            // exist), confirm a fresh copy is actually fetchable, then force
+            // a hard navigation (replace, not href — less likely to resolve
+            // from any in-memory/back-forward cache) to a cache-busted URL.
+            try {
+              if (window.caches) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map((k) => caches.delete(k)));
+              }
+            } catch {}
+            const url = window.location.pathname + "?v=" + Date.now();
+            try {
+              await fetch(url, { cache: "no-store" });
+            } catch {}
+            window.location.replace(url);
           }}
         />
       )}
