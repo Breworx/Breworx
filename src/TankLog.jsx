@@ -1,6 +1,17 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode } from "lucide-react";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+// Charts are lazy-loaded — recharts is one of the heaviest dependencies in
+// the app and most people never open a screen with a chart on it in a given
+// session, so there's no reason to make everyone download it upfront.
+const LineChart = React.lazy(() => import("recharts").then((m) => ({ default: m.LineChart })));
+const Line = React.lazy(() => import("recharts").then((m) => ({ default: m.Line })));
+const BarChart = React.lazy(() => import("recharts").then((m) => ({ default: m.BarChart })));
+const Bar = React.lazy(() => import("recharts").then((m) => ({ default: m.Bar })));
+const XAxis = React.lazy(() => import("recharts").then((m) => ({ default: m.XAxis })));
+const YAxis = React.lazy(() => import("recharts").then((m) => ({ default: m.YAxis })));
+const CartesianGrid = React.lazy(() => import("recharts").then((m) => ({ default: m.CartesianGrid })));
+const Tooltip = React.lazy(() => import("recharts").then((m) => ({ default: m.Tooltip })));
+const ResponsiveContainer = React.lazy(() => import("recharts").then((m) => ({ default: m.ResponsiveContainer })));
 import { supabase } from "./supabaseClient";
 import {
   rowToBatch,
@@ -7775,6 +7786,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
             <TrendingDown size={13} /> Gravity trend
           </div>
+          <Suspense fallback={<div style={{ height: 160 }} />}>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
               <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
@@ -7787,6 +7799,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               <Line type="monotone" dataKey="gravity" stroke="#5C9A3C" strokeWidth={2} dot={{ r: 3, fill: "#5C9A3C" }} />
             </LineChart>
           </ResponsiveContainer>
+          </Suspense>
         </div>
       )}
 
@@ -8692,6 +8705,7 @@ function PackagedView({ batches, onOpenBatch }) {
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8 }}>
             Volume packaged by month (L)
           </div>
+          <Suspense fallback={<div style={{ height: 160 }} />}>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={[...allMonths].reverse()} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
               <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
@@ -8704,6 +8718,7 @@ function PackagedView({ batches, onOpenBatch }) {
               <Bar dataKey="volume" fill="#5C9A3C" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </Suspense>
         </div>
       )}
 
@@ -9236,6 +9251,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
                 <TrendingUp size={13} /> Attenuation across batches
               </div>
+              <Suspense fallback={<div style={{ height: 160 }} />}>
               <ResponsiveContainer width="100%" height={160}>
                 <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
                   <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
@@ -9245,6 +9261,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                   <Line type="monotone" dataKey="Attenuation" stroke="#D9A441" strokeWidth={2} dot={{ r: 3, fill: "#D9A441" }} />
                 </LineChart>
               </ResponsiveContainer>
+              </Suspense>
             </div>
           )}
 
@@ -9253,6 +9270,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
                 <AlertTriangle size={13} /> Faults logged per batch over time
               </div>
+              <Suspense fallback={<div style={{ height: 140 }} />}>
               <ResponsiveContainer width="100%" height={140}>
                 <BarChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
                   <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
@@ -9262,6 +9280,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                   <Bar dataKey="Faults" fill="#B5502F" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              </Suspense>
               <div style={{ color: "#9BA88A", fontSize: 11, padding: "0 8px 8px" }}>Falling toward zero over time is what you're looking for here.</div>
             </div>
           )}
@@ -9359,7 +9378,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   );
 }
 
-function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank }) {
+function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inventory, consumables, suppliers, foodSafetyRecords, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank, onOpenInventory, onOpenConsumable, onOpenSupplier, onOpenFoodSafety }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
 
@@ -9367,7 +9386,22 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, onOp
   const matchedRecipes = q ? activeRecipesByFamily(recipes).filter((r) => r.name.toLowerCase().includes(q) || (r.style || "").toLowerCase().includes(q)).slice(0, 6) : [];
   const matchedPOs = q ? purchaseOrders.filter((po) => po.poNumber.toLowerCase().includes(q) || po.supplier.toLowerCase().includes(q)).slice(0, 6) : [];
   const matchedTanks = q ? tanks.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 4) : [];
-  const noResults = q && matchedBatches.length === 0 && matchedRecipes.length === 0 && matchedPOs.length === 0 && matchedTanks.length === 0;
+  const matchedInventory = q ? inventory.filter((it) => it.name.toLowerCase().includes(q) || (it.category || "").toLowerCase().includes(q)).slice(0, 6) : [];
+  const matchedConsumables = q ? consumables.filter((it) => it.name.toLowerCase().includes(q) || (it.category || "").toLowerCase().includes(q)).slice(0, 6) : [];
+  const matchedSuppliers = q ? suppliers.filter((s) => s.name.toLowerCase().includes(q) || (s.contactName || "").toLowerCase().includes(q)).slice(0, 6) : [];
+  const matchedFoodSafety = q
+    ? foodSafetyRecords.filter((r) => (r.staffName || "").toLowerCase().includes(q) || (r.topic || "").toLowerCase().includes(q) || (r.equipmentName || "").toLowerCase().includes(q) || (r.notes || "").toLowerCase().includes(q)).slice(0, 6)
+    : [];
+  const noResults =
+    q &&
+    matchedBatches.length === 0 &&
+    matchedRecipes.length === 0 &&
+    matchedPOs.length === 0 &&
+    matchedTanks.length === 0 &&
+    matchedInventory.length === 0 &&
+    matchedConsumables.length === 0 &&
+    matchedSuppliers.length === 0 &&
+    matchedFoodSafety.length === 0;
 
   const sectionLabel = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", margin: "14px 0 8px" };
   const resultRow = {
@@ -9401,7 +9435,7 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, onOp
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search batches, recipes, orders, tanks…"
+            placeholder="Search everything…"
             style={{ flex: 1, border: "none", outline: "none", background: "none", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
           />
         </div>
@@ -9452,6 +9486,54 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, onOp
               <button key={t.id} onClick={() => onOpenTank(t.id)} style={resultRow}>
                 <span style={{ color: "#2A3324", fontSize: 14 }}>{t.name}</span>
                 <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{t.type}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedInventory.length > 0 && (
+          <>
+            <div style={sectionLabel}>Inventory</div>
+            {matchedInventory.map((it) => (
+              <button key={it.id} onClick={() => onOpenInventory(it.id)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{it.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{it.category}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedConsumables.length > 0 && (
+          <>
+            <div style={sectionLabel}>Consumables</div>
+            {matchedConsumables.map((it) => (
+              <button key={it.id} onClick={() => onOpenConsumable(it.id)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{it.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{it.category}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedSuppliers.length > 0 && (
+          <>
+            <div style={sectionLabel}>Suppliers</div>
+            {matchedSuppliers.map((s) => (
+              <button key={s.id} onClick={() => onOpenSupplier(s)} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{s.name}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{s.contactName || ""}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {matchedFoodSafety.length > 0 && (
+          <>
+            <div style={sectionLabel}>Food safety</div>
+            {matchedFoodSafety.map((r) => (
+              <button key={r.id} onClick={() => onOpenFoodSafety()} style={resultRow}>
+                <span style={{ color: "#2A3324", fontSize: 14 }}>{r.staffName || r.topic || r.equipmentName || r.category}</span>
+                <span style={{ color: "#9BA88A", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>{r.date}</span>
               </button>
             ))}
           </>
@@ -9860,12 +9942,32 @@ function HomeView({
       <FirstVisitTip tipKey="home">
         Welcome to Brewpoint. This Home screen is your at-a-glance view — your tanks and what's in them, tasks that need doing, and anything running low. Use the checklist below to get set up, and check out Production in the menu when you're ready to schedule brews ahead of time.
       </FirstVisitTip>
-      <div>
-        <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 2 }}>Welcome back to</div>
+      <div
+        style={{
+          position: "relative",
+          padding: "18px 20px",
+          borderRadius: 10,
+          background: "linear-gradient(120deg, rgba(92,154,60,0.10), rgba(217,164,65,0.10))",
+          border: "1px solid rgba(92,154,60,0.14)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: -30,
+            right: -30,
+            width: 140,
+            height: 140,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(217,164,65,0.16), transparent 70%)",
+          }}
+        />
+        <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 2, position: "relative" }}>Welcome back to</div>
         {companyLogo ? (
-          <img src={companyLogo} alt={companyName || "Company logo"} style={{ maxWidth: 200, maxHeight: 72, objectFit: "contain" }} />
+          <img src={companyLogo} alt={companyName || "Company logo"} style={{ maxWidth: 200, maxHeight: 72, objectFit: "contain", position: "relative" }} />
         ) : (
-          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, color: "#2A3324", margin: 0, fontWeight: 500 }}>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 28, color: "#2A3324", margin: 0, fontWeight: 500, position: "relative" }}>
             {companyName || "your brewery"}
           </h1>
         )}
@@ -9940,7 +10042,7 @@ function HomeView({
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Recent activity
           </div>
-          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "4px 0" }}>
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 6, padding: "4px 0" }}>
             {activityLog.slice(0, 8).map((entry, i) => (
               <div
                 key={entry.id}
@@ -9969,7 +10071,7 @@ function HomeView({
       )}
 
       {!setupComplete && !setupDismissed && (
-        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 8, padding: "16px 18px" }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 8, padding: "16px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
             <div>
               <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 15, fontWeight: 500, color: "#2A3324" }}>
@@ -10157,14 +10259,16 @@ function HomeView({
             style={{
               background: "#FFFFFF",
               border: "1px solid #DDE0C8",
-              borderRadius: 6,
-              padding: "12px 10px",
+              borderTop: `3px solid ${color}`,
+              borderRadius: 8,
+              padding: "13px 12px 12px",
               cursor: "pointer",
               textAlign: "left",
+              boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)",
             }}
           >
             <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, color, marginTop: 4 }}>{count}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 23, color, marginTop: 4 }}>{count}</div>
           </button>
         ))}
       </div>
@@ -10183,10 +10287,11 @@ function HomeView({
           .map((key) => ({ date: monthLabelFromKey(key).slice(0, 3), Batches: groups[key].batches, Cost: Math.round(groups[key].cost) }));
         if (monthlyData.length < 2) return null;
         return (
-          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px" }}>
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 6, padding: "16px 12px 6px" }}>
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
               <TrendingUp size={13} /> Brewing activity — last 6 months
             </div>
+            <Suspense fallback={<div style={{ height: 150 }} />}>
             <ResponsiveContainer width="100%" height={150}>
               <BarChart data={monthlyData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
                 <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
@@ -10196,6 +10301,7 @@ function HomeView({
                 <Bar dataKey="Batches" fill="#4FB83D" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </Suspense>
           </div>
         );
       })()}
@@ -10214,10 +10320,11 @@ function HomeView({
           .map((key) => ({ date: monthLabelFromKey(key).slice(0, 3), "Avg cost": groups[key].count ? Math.round(groups[key].cost / groups[key].count) : 0 }));
         if (monthlyData.length < 2 || !monthlyData.some((d) => d["Avg cost"] > 0)) return null;
         return (
-          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px" }}>
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 6, padding: "16px 12px 6px" }}>
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
               <TrendingUp size={13} /> Avg ingredient cost per batch — last 6 months
             </div>
+            <Suspense fallback={<div style={{ height: 150 }} />}>
             <ResponsiveContainer width="100%" height={150}>
               <LineChart data={monthlyData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
                 <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
@@ -10227,6 +10334,7 @@ function HomeView({
                 <Line type="monotone" dataKey="Avg cost" stroke="#D9A441" strokeWidth={2} dot={{ r: 3, fill: "#D9A441" }} />
               </LineChart>
             </ResponsiveContainer>
+            </Suspense>
           </div>
         );
       })()}
@@ -10833,7 +10941,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-49";
+const APP_VERSION = "2026-07-31-51";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11371,12 +11479,23 @@ export default function TankLog() {
     setInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data}`);
   };
 
-  const removeTeammate = async (teammate) => {
+  const removeTeammate = (teammate) => {
     if (!window.confirm(`Remove ${teammate.name} from the team? They'll lose access to this company immediately.`)) return;
-    const { error } = await supabase.rpc("remove_teammate", { member_id: teammate.id });
-    if (error) { showToast("error", `Couldn't remove ${teammate.name}: ${error.message || "unknown error"}`); return; }
     setTeammates((prev) => prev.filter((t) => t.id !== teammate.id));
-    showToast("success", `${teammate.name} removed from the team.`);
+    const timeoutId = setTimeout(async () => {
+      delete pendingDeletesRef.current[teammate.id];
+      const { error } = await supabase.rpc("remove_teammate", { member_id: teammate.id });
+      if (error) { showToast("error", `Couldn't remove ${teammate.name}: ${error.message || "unknown error"}`); setTeammates((prev) => [teammate, ...prev]); }
+    }, 5000);
+    pendingDeletesRef.current[teammate.id] = timeoutId;
+    showToast("success", `${teammate.name} removed from the team.`, {
+      label: "Undo",
+      onClick: () => {
+        clearTimeout(pendingDeletesRef.current[teammate.id]);
+        delete pendingDeletesRef.current[teammate.id];
+        setTeammates((prev) => [teammate, ...prev]);
+      },
+    });
   };
 
   const uploadBatchPhoto = async (batchId, file) => {
@@ -14166,6 +14285,10 @@ export default function TankLog() {
           recipes={recipes}
           purchaseOrders={purchaseOrders}
           tanks={tanks}
+          inventory={inventory}
+          consumables={consumables}
+          suppliers={suppliers}
+          foodSafetyRecords={foodSafetyRecords}
           onOpenBatch={(id) => {
             setSelectedId(id);
             setView("batches");
@@ -14183,6 +14306,24 @@ export default function TankLog() {
           }}
           onOpenTank={() => {
             setView("brewery");
+            setShowQuickJump(false);
+          }}
+          onOpenInventory={(id) => {
+            setSelectedInventoryId(id);
+            setView("inventory");
+            setShowQuickJump(false);
+          }}
+          onOpenConsumable={(id) => {
+            setSelectedConsumableId(id);
+            setView("consumables");
+            setShowQuickJump(false);
+          }}
+          onOpenSupplier={(s) => {
+            setViewingSupplierDocs(s);
+            setShowQuickJump(false);
+          }}
+          onOpenFoodSafety={() => {
+            setView("foodsafety");
             setShowQuickJump(false);
           }}
         />
