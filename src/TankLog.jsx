@@ -8118,9 +8118,24 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         return (
           <button
             onClick={() => onOpenVesselTransfer({ batch, toType: "Kettle", brewStage: "Kettle", newStage: "Brewing", actionLabel: "Move back to kettle" })}
-            style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: "0 0 8px" }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              width: "100%",
+              background: "#EBE8D6",
+              border: "1px solid #C9D1AC",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13.5,
+              cursor: "pointer",
+              marginBottom: 8,
+            }}
           >
-            Transferred too early? Move back to kettle
+            <ChevronLeft size={15} /> Transferred too early? Move back to kettle
           </button>
         );
       })()}
@@ -9482,6 +9497,34 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const steamWisps = boiling ? [40, 65, 90].map((x, i) => ({ x, delay: i * 0.8 })) : [];
   const droplets = cooling ? [30, 55, 80].map((x, i) => ({ x, delay: i * 1.1 })) : [];
 
+  if (empty) {
+    return (
+      <button
+        onClick={() => {}}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 4,
+          background: "none",
+          border: "1px dashed #DDE0C8",
+          borderRadius: 8,
+          padding: "12px 10px",
+          cursor: "default",
+          textAlign: "center",
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+      >
+        <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#9BA88A" }}>{tank.name}</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.05em", textTransform: "uppercase", color: "#C9D1AC" }}>
+          {tank.type} · {tank.capacity}L
+        </span>
+        <span style={{ color: "#C9D1AC", fontSize: 11, fontFamily: "'Inter', sans-serif", marginTop: 2 }}>Empty</span>
+      </button>
+    );
+  }
 
   return (
     <div
@@ -10765,10 +10808,16 @@ function HomeView({
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Your tanks
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
-            {sortedTanks(tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle")).map((t) => (
-              <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} />
-            ))}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12, alignItems: "start" }}>
+            {[...sortedTanks(tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle"))]
+              .sort((a, b) => {
+                const aOcc = occupyingBatch(batches, a.id) ? 0 : 1;
+                const bOcc = occupyingBatch(batches, b.id) ? 0 : 1;
+                return aOcc - bOcc;
+              })
+              .map((t) => (
+                <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} />
+              ))}
           </div>
         </div>
       )}
@@ -11722,7 +11771,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-62";
+const APP_VERSION = "2026-07-31-63";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
