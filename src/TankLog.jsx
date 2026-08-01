@@ -7997,9 +7997,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
 
       {inMashTun && (
         <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-          {batch.brewStage !== "Recirculating" && (
+          {batch.brewStage !== "Recirculating" ? (
             <button
-              onClick={() => onStartRecirculation(batch.id)}
+              onClick={() => onStartRecirculation(batch.id, "Recirculating")}
               style={{
                 flex: 1,
                 display: "flex",
@@ -8017,6 +8017,27 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               }}
             >
               <RotateCcw size={15} /> Start recirculation
+            </button>
+          ) : (
+            <button
+              onClick={() => onStartRecirculation(batch.id, "Mashing")}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                background: "#EBE8D6",
+                border: "1px solid #C9D1AC",
+                borderRadius: 5,
+                padding: "11px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13.5,
+                cursor: "pointer",
+              }}
+            >
+              <ChevronLeft size={15} /> Back to mashing
             </button>
           )}
           <button
@@ -8045,11 +8066,31 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       )}
 
       {inKettle && (
-        <div style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+          <button
+            onClick={() => onOpenVesselTransfer({ batch, toType: "Mash Tun", brewStage: "Mashing", newStage: null, actionLabel: "Move back to mash tun" })}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              background: "#EBE8D6",
+              border: "1px solid #C9D1AC",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13.5,
+              cursor: "pointer",
+            }}
+          >
+            <ChevronLeft size={15} /> Back to mash tun
+          </button>
           <button
             onClick={() => onOpenFermenterTransfer(batch)}
             style={{
-              width: "100%",
+              flex: 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -8066,10 +8107,23 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               cursor: "pointer",
             }}
           >
-            Transfer to fermenter — starts Primary
+            Transfer to fermenter
           </button>
         </div>
       )}
+
+      {batch.stage === "Primary" && currentTank?.type !== "Kettle" && (() => {
+        const kettles = tanks.filter((t) => t.type === "Kettle");
+        if (kettles.length === 0) return null;
+        return (
+          <button
+            onClick={() => onOpenVesselTransfer({ batch, toType: "Kettle", brewStage: "Kettle", newStage: "Brewing", actionLabel: "Move back to kettle" })}
+            style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: "0 0 8px" }}
+          >
+            Transferred too early? Move back to kettle
+          </button>
+        );
+      })()}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
         <button
@@ -9347,7 +9401,7 @@ function PackagedView({ batches, onOpenBatch }) {
 // A compact vessel graphic for the Brew Day cards — same steel-and-fill
 // visual language as the full tank cards, just squat and flat-bottomed
 // (mash tuns/kettles aren't conical) and small enough to sit as an icon.
-function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed }) {
+function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) {
   const steelId = `bdv-steel-${idSeed}`;
   const fillId = `bdv-fill-${idSeed}`;
   const fillColor = isKettle ? "#E08A3C" : "#C68A3C";
@@ -9355,7 +9409,7 @@ function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed }) {
   const bubbles = isKettle ? [14, 22, 30, 38].map((x, i) => ({ x, delay: i * 0.18 })) : [];
 
   return (
-    <svg width="42" height="46" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
+    <svg width={size} height={size} viewBox="0 0 50 50" style={{ flexShrink: 0, overflow: "visible" }}>
       <defs>
         <linearGradient id={steelId} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="#E4E0D0" />
@@ -10177,6 +10231,7 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inve
 }
 
 function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled }) {
+  const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
   const daysBack = 7;
   const daysForward = 35;
   const rangeStart = addDays(today(), -daysBack);
@@ -10201,8 +10256,8 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
 
   return (
     <div>
-      {tanks.length === 0 ? (
-        <EmptyState icon={Calendar} title="No tanks yet" subtitle="Set up tanks in Brewery first, then you can schedule batches against them here." />
+      {calendarTanks.length === 0 ? (
+        <EmptyState icon={Calendar} title="No fermenters yet" subtitle="Set up a fermenter in Brewery first, then you can schedule batches against it here." />
       ) : (
         <div style={{ overflowX: "auto", paddingBottom: 8 }}>
           <div style={{ minWidth: totalDays * dayWidth + 120, width: "fit-content" }}>
@@ -10234,7 +10289,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
               })}
             </div>
 
-            {sortedTanks(tanks).map((tank) => {
+            {sortedTanks(calendarTanks).map((tank) => {
               const occ = occupancyForTank(tank.id);
               return (
                 <div key={tank.id} style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", minHeight: 48 }}>
@@ -10334,6 +10389,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
 // brewing yet — lets the details, tank, and timing be changed freely, or the
 // whole thing removed, since nothing real has happened to it yet.
 function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDelete, onClose }) {
+  const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
   const [name, setName] = useState(batch.name);
   const [style, setStyle] = useState(batch.style || "");
   const [volume, setVolume] = useState(batch.volume);
@@ -10431,7 +10487,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDel
             style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
           >
             <option value="">Unassigned</option>
-            {sortedTanks(tanks).map((t) => {
+            {sortedTanks(calendarTanks).map((t) => {
               const currentlyOccupied = tankIsOccupied(batches, t.id, batch.id);
               const occupied = currentlyOccupied && startDate <= today();
               const occupant = currentlyOccupied ? occupyingBatch(batches, t.id, batch.id) : null;
@@ -10625,49 +10681,69 @@ function HomeView({
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
               Brew day
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
               {brewDayBatches.map((b) => {
                 const t = tanks.find((tk) => tk.id === b.tankId);
                 const isKettle = t.type === "Kettle";
-                const bg = isKettle ? "linear-gradient(135deg, #FBE5D2, #FCEFD8)" : "linear-gradient(135deg, #F5E6C4, #FBF1DC)";
                 const border = isKettle ? "#E3B37A" : "#E3D3A0";
                 const iconBg = isKettle ? "#E08A3C" : "#C68A3C";
-                const label = b.brewStage === "Recirculating" ? "Recirculating" : isKettle ? "In the kettle — boiling" : "Mashing in";
+                const label = b.brewStage === "Recirculating" ? "Recirculating" : isKettle ? "In the kettle" : "Mashing in";
                 return (
                   <button
                     key={b.id}
                     onClick={() => onOpenBatch(b.id)}
                     style={{
+                      position: "relative",
                       display: "flex",
+                      flexDirection: "column",
                       alignItems: "center",
-                      gap: 12,
-                      background: bg,
+                      gap: 10,
+                      background: "#FFFFFF",
                       border: `1px solid ${border}`,
                       borderRadius: 10,
-                      padding: "14px",
+                      padding: "16px 12px 14px",
+                      boxSizing: "border-box",
                       cursor: "pointer",
-                      textAlign: "left",
+                      textAlign: "center",
                       animation: "bp-brewday-pulse 3s ease-in-out infinite",
                     }}
                   >
-                    <div
-                      style={{
-                        width: 42,
-                        height: 46,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <BrewDayVesselIcon isKettle={isKettle} recirculating={b.brewStage === "Recirculating"} uid={b.id} />
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                      <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>{t.name}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>
+                        {t.type}
+                      </span>
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <BrewDayVesselIcon isKettle={isKettle} recirculating={b.brewStage === "Recirculating"} uid={b.id} size={92} />
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%" }}>
+                      <div
+                        style={{
+                          fontFamily: "'Oswald', sans-serif",
+                          fontWeight: 500,
+                          fontSize: 13.5,
+                          color: "#2A3324",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          maxWidth: "100%",
+                        }}
+                      >
                         {b.name}
                       </div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#5C6B54", marginTop: 1 }}>{t.name}</div>
-                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: iconBg, marginTop: 3, fontWeight: 500 }}>{label}</div>
+                      <div
+                        style={{
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 11,
+                          color: iconBg,
+                          fontWeight: 500,
+                          background: `${iconBg}1A`,
+                          border: `1px solid ${iconBg}`,
+                          borderRadius: 20,
+                          padding: "3px 10px",
+                        }}
+                      >
+                        {label}
+                      </div>
                     </div>
                   </button>
                 );
@@ -11646,7 +11722,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-60";
+const APP_VERSION = "2026-07-31-62";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13139,10 +13215,10 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: prevStage } : b)));
   };
 
-  const startRecirculation = async (id) => {
-    const { error } = await supabase.from("batches").update({ brew_stage: "Recirculating" }).eq("id", id);
+  const setBrewSubStage = async (id, brewStage) => {
+    const { error } = await supabase.from("batches").update({ brew_stage: brewStage }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, brewStage: "Recirculating" } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, brewStage } : b)));
   };
 
   // Moves a batch to a different vessel mid-brew-day (Mash Tun → Kettle →
@@ -14963,7 +15039,7 @@ export default function TankLog() {
             onStartTimer={startBrewTimer}
             onStopTimer={stopBrewTimer}
             tanks={tanks}
-            onStartRecirculation={startRecirculation}
+            onStartRecirculation={setBrewSubStage}
             onOpenVesselTransfer={setVesselTransferTarget}
             onEditSplitTanks={setEditSplitTanksTarget}
             onOpenFermenterTransfer={setFermenterTransferTarget}
