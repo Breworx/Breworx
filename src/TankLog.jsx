@@ -3293,11 +3293,13 @@ function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
 
 function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
   const [tankId, setTankId] = useState(batch.tankId || "");
+  const [brewStage, setBrewStage] = useState(batch.brewStage || "");
+  const selectedTank = tanks.find((t) => t.id === tankId) || null;
 
   const submit = () => {
-    const tank = tanks.find((t) => t.id === tankId) || null;
-    if (tank && tankIsOccupied(batches, tank.id, batch.id)) return;
-    onSave(batch.id, tank);
+    if (selectedTank && tankIsOccupied(batches, selectedTank.id, batch.id)) return;
+    const finalBrewStage = selectedTank?.type === "Mash Tun" ? brewStage || "Mashing" : selectedTank?.type === "Kettle" ? "Kettle" : null;
+    onSave(batch.id, selectedTank, finalBrewStage);
     onClose();
   };
 
@@ -3308,7 +3310,11 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
           <select
             value={tankId}
-            onChange={(e) => setTankId(e.target.value)}
+            onChange={(e) => {
+              setTankId(e.target.value);
+              const t = tanks.find((tk) => tk.id === e.target.value);
+              if (t?.type === "Mash Tun") setBrewStage("Mashing");
+            }}
             style={{
               width: "100%",
               boxSizing: "border-box",
@@ -3327,12 +3333,38 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
               const occupant = occupied ? occupyingBatch(batches, t.id, batch.id) : null;
               return (
                 <option key={t.id} value={t.id} disabled={occupied}>
-                  {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                  {t.name} ({t.type}, {t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
                 </option>
               );
             })}
           </select>
         </label>
+        {selectedTank?.type === "Mash Tun" && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Brew stage</span>
+            <select
+              value={brewStage || "Mashing"}
+              onChange={(e) => setBrewStage(e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            >
+              <option value="Mashing">Mashing in</option>
+              <option value="Recirculating">Recirculating</option>
+            </select>
+          </label>
+        )}
+        {selectedTank?.type === "Kettle" && (
+          <div style={{ color: "#9BA88A", fontSize: 12 }}>Will be marked "In the kettle."</div>
+        )}
         <button
           onClick={submit}
           style={{
@@ -11222,7 +11254,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-55";
+const APP_VERSION = "2026-07-31-56";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -12391,14 +12423,14 @@ export default function TankLog() {
     });
   };
 
-  const assignBatchTank = async (batchId, tank) => {
+  const assignBatchTank = async (batchId, tank, brewStage) => {
     const { error } = await supabase
       .from("batches")
-      .update({ tank_id: tank ? tank.id : null, tank_name: tank ? tank.name : null })
+      .update({ tank_id: tank ? tank.id : null, tank_name: tank ? tank.name : null, brew_stage: brewStage ?? null })
       .eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) =>
-      prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null } : b))
+      prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null, brewStage: brewStage ?? null } : b))
     );
   };
 
