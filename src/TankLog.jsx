@@ -10552,7 +10552,79 @@ function HomeView({
         )}
       </div>
 
-      {tanks.length > 0 && (
+      {(() => {
+        const brewDayBatches = batches.filter((b) => {
+          if (b.stage !== "Brewing") return false;
+          const t = tanks.find((tk) => tk.id === b.tankId);
+          return t && (t.type === "Mash Tun" || t.type === "Kettle");
+        });
+        if (brewDayBatches.length === 0) return null;
+        return (
+          <div>
+            <style>{`
+              @keyframes bp-brewday-pulse { 0%, 100% { box-shadow: 0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06); } 50% { box-shadow: 0 1px 2px rgba(42,51,36,0.05), 0 4px 20px rgba(217,164,65,0.25); } }
+              @media (prefers-reduced-motion: reduce) {
+                [style*="bp-brewday-pulse"] { animation: none !important; }
+              }
+            `}</style>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+              Brew day
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+              {brewDayBatches.map((b) => {
+                const t = tanks.find((tk) => tk.id === b.tankId);
+                const isKettle = t.type === "Kettle";
+                const bg = isKettle ? "linear-gradient(135deg, #FBE5D2, #FCEFD8)" : "linear-gradient(135deg, #F5E6C4, #FBF1DC)";
+                const border = isKettle ? "#E3B37A" : "#E3D3A0";
+                const iconBg = isKettle ? "#E08A3C" : "#C68A3C";
+                const label = b.brewStage === "Recirculating" ? "Recirculating" : isKettle ? "In the kettle — boiling" : "Mashing in";
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => onOpenBatch(b.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      background: bg,
+                      border: `1px solid ${border}`,
+                      borderRadius: 10,
+                      padding: "14px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      animation: "bp-brewday-pulse 3s ease-in-out infinite",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: "50%",
+                        background: iconBg,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {isKettle ? <FlaskConical size={20} color="#FFFFFF" /> : <Beaker size={20} color="#FFFFFF" />}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {b.name}
+                      </div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#5C6B54", marginTop: 1 }}>{t.name}</div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: iconBg, marginTop: 3, fontWeight: 500 }}>{label}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {tanks.length > 0 && tanks.some((t) => t.type !== "Mash Tun" && t.type !== "Kettle") && (
         <div>
           <style>{`
             @keyframes bp-wave-drift { from { transform: translateX(0); } to { transform: translateX(-60px); } }
@@ -10565,7 +10637,7 @@ function HomeView({
             Your tanks
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
-            {sortedTanks(tanks).map((t) => (
+            {sortedTanks(tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle")).map((t) => (
               <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} />
             ))}
           </div>
@@ -11521,7 +11593,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-58";
+const APP_VERSION = "2026-07-31-59";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
