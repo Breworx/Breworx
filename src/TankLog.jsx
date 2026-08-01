@@ -532,19 +532,30 @@ const TOUR_STEPS = [
   },
   {
     title: "Start in Brewery",
-    body: "Set up your fermenters and brite tanks here — and a mash tun and kettle too, if you want brew day tracked from the very start.",
+    body: "Set up your fermenters and brite tanks here — plus a mash tun and kettle too, if you want brew day tracked from the very start, right through mashing, boiling, and transferring to a fermenter.",
     target: "nav-brewery",
     needsSidebar: true,
   },
   {
     title: "Then brew a batch",
-    body: "On Fermentation, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself.",
+    body: "On Fermentation, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself. Brew day timers for mash, boil, and whirlpool are right there on the batch page.",
     target: "nav-batches",
     needsSidebar: true,
   },
   {
-    title: "Everything else lives here",
-    body: "Production is for scheduling ahead of time. Recipes is your library and calculator. Stock covers ingredients, packaging, and orders. Compliance covers food safety records.",
+    title: "Watch it happen on Home",
+    body: "Once you're brewing, Home becomes your real-time picture of the brewery — tanks show color-coded stages (bubbling while fermenting, frosty while cooling), and once a tank empties out, it walks through a cleaning cycle right there before it's marked ready again.",
+    target: null,
+  },
+  {
+    title: "Production & Recipes",
+    body: "Production is for scheduling brews ahead of time across your tanks. Recipes is your library — save one to reuse on brew day, or check Recipe Analytics to compare batches of the same beer over time.",
+    target: "nav-groups",
+    needsSidebar: true,
+  },
+  {
+    title: "Stock & Compliance",
+    body: "Stock covers ingredients, packaging materials, and purchase orders — with low-stock warnings and reorder shortcuts. Compliance covers food safety checklists, staff training, and records.",
     target: "nav-groups",
     needsSidebar: true,
   },
@@ -556,7 +567,7 @@ const TOUR_STEPS = [
   },
   {
     title: "If you get stuck",
-    body: "The Help guide has quick answers for how to do almost everything in here.",
+    body: "The Help guide has quick answers for almost everything in here. And keep an eye on the \"Getting set up\" checklist back on Home — it tracks exactly what's left before you're fully up and running.",
     target: "help-guide-btn",
     needsSidebar: true,
   },
@@ -12190,7 +12201,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-75";
+const APP_VERSION = "2026-07-31-76";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
