@@ -9344,6 +9344,60 @@ function PackagedView({ batches, onOpenBatch }) {
 // Big, at-a-glance tank visualization for the Home page — same fermenter
 // silhouette as the small Tank component used in batch cards, scaled up with
 // a gradient fill and an animated liquid surface for a "real tank" feel.
+// A compact vessel graphic for the Brew Day cards — same steel-and-fill
+// visual language as the full tank cards, just squat and flat-bottomed
+// (mash tuns/kettles aren't conical) and small enough to sit as an icon.
+function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed }) {
+  const steelId = `bdv-steel-${idSeed}`;
+  const fillId = `bdv-fill-${idSeed}`;
+  const fillColor = isKettle ? "#E08A3C" : "#C68A3C";
+  const bodyPath = "M6 6 Q6 3 9 3 H41 Q44 3 44 6 V44 Q44 47 41 47 H9 Q6 47 6 44 Z";
+  const bubbles = isKettle ? [14, 22, 30, 38].map((x, i) => ({ x, delay: i * 0.18 })) : [];
+
+  return (
+    <svg width="42" height="46" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id={steelId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#E4E0D0" />
+          <stop offset="50%" stopColor="#FDFCF7" />
+          <stop offset="100%" stopColor="#DDD8C4" />
+        </linearGradient>
+        <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={fillColor} stopOpacity="0.6" />
+          <stop offset="100%" stopColor={fillColor} stopOpacity="0.92" />
+        </linearGradient>
+        <clipPath id={`bdv-clip-${idSeed}`}>
+          <path d={bodyPath} />
+        </clipPath>
+      </defs>
+      <path d={bodyPath} fill={`url(#${steelId})`} stroke="#C9A876" strokeWidth="2" />
+      <g clipPath={`url(#bdv-clip-${idSeed})`}>
+        <rect x="6" y="20" width="38" height="27" fill={`url(#${fillId})`} />
+        {isKettle &&
+          bubbles.map((b, i) => (
+            <circle key={i} cx={b.x} cy="44" r="1.3" fill="#FFFFFF" opacity="0.7">
+              <animate attributeName="cy" from="44" to="20" dur="1.1s" begin={`${b.delay}s`} repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0;0.75;0" dur="1.1s" begin={`${b.delay}s`} repeatCount="indefinite" />
+            </circle>
+          ))}
+        {recirculating && (
+          <g style={{ animation: "bp-swirl-spin 1.8s linear infinite", transformOrigin: "25px 33px" }}>
+            <path d="M17 25 A10 10 0 1 1 17 41" stroke="#FFFFFF" strokeWidth="2.5" fill="none" opacity="0.75" strokeLinecap="round" />
+            <path d="M17 21 L17 29 L25 25 Z" fill="#FFFFFF" opacity="0.75" />
+          </g>
+        )}
+      </g>
+      {isKettle &&
+        [17, 33].map((x, i) => (
+          <path key={`s-${i}`} d={`M${x} 2 Q${x - 3} -3 ${x} -7 Q${x + 3} -11 ${x} -15`} stroke="#E08A3C" strokeWidth="1.6" fill="none" strokeLinecap="round" opacity="0">
+            <animate attributeName="opacity" values="0;0.5;0" dur="1.6s" begin={`${i * 0.8}s`} repeatCount="indefinite" />
+          </path>
+        ))}
+      <path d={bodyPath} fill="none" stroke="#C9A876" strokeWidth="2" />
+    </svg>
+  );
+}
+
 function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const empty = !batch;
   const latest = batch ? latestReading(batch) : null;
@@ -10563,8 +10617,9 @@ function HomeView({
           <div>
             <style>{`
               @keyframes bp-brewday-pulse { 0%, 100% { box-shadow: 0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06); } 50% { box-shadow: 0 1px 2px rgba(42,51,36,0.05), 0 4px 20px rgba(217,164,65,0.25); } }
+              @keyframes bp-swirl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
               @media (prefers-reduced-motion: reduce) {
-                [style*="bp-brewday-pulse"] { animation: none !important; }
+                [style*="bp-brewday-pulse"], [style*="bp-swirl-spin"] { animation: none !important; }
               }
             `}</style>
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
@@ -10598,16 +10653,14 @@ function HomeView({
                     <div
                       style={{
                         width: 42,
-                        height: 42,
-                        borderRadius: "50%",
-                        background: iconBg,
+                        height: 46,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         flexShrink: 0,
                       }}
                     >
-                      {isKettle ? <FlaskConical size={20} color="#FFFFFF" /> : <Beaker size={20} color="#FFFFFF" />}
+                      <BrewDayVesselIcon isKettle={isKettle} recirculating={b.brewStage === "Recirculating"} uid={b.id} />
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -11593,7 +11646,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-59";
+const APP_VERSION = "2026-07-31-60";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
