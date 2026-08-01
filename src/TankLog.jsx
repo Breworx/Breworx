@@ -504,137 +504,195 @@ function TankQRModal({ tank, onClose }) {
   );
 }
 
-const WELCOME_TOUR_SLIDES = [
+const TOUR_STEPS = [
   {
     title: "Welcome to Brewpoint",
-    body: "This is your brewery's home base — tanks, batches, recipes, stock, and compliance, all in one place. Let's take a quick look around before you dive in.",
+    body: "This is your brewery's home base — tanks, batches, recipes, stock, and compliance, all in one place. Let's take a quick, guided look around.",
+    target: null,
   },
   {
     title: "Start in Brewery",
-    body: "First stop: set up your tanks under Brewery in the sidebar. Add your fermenters and brite tanks — and a mash tun and kettle too, if you want brew-day tracked from the very start.",
+    body: "Set up your fermenters and brite tanks here — and a mash tun and kettle too, if you want brew day tracked from the very start.",
+    target: "nav-brewery",
+    needsSidebar: true,
   },
   {
     title: "Then brew a batch",
-    body: "On Fermentation, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself. Pick a tank, and you're brewing.",
+    body: "On Fermentation, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself.",
+    target: "nav-batches",
+    needsSidebar: true,
   },
   {
-    title: "Everything else lives in the sidebar",
-    body: "Production is for scheduling ahead of time. Recipes is your library and calculator. Stock covers ingredients, packaging materials, and orders. Compliance covers food safety records.",
+    title: "Everything else lives here",
+    body: "Production is for scheduling ahead of time. Recipes is your library and calculator. Stock covers ingredients, packaging, and orders. Compliance covers food safety records.",
+    target: "nav-groups",
+    needsSidebar: true,
+  },
+  {
+    title: "Find anything instantly",
+    body: "Tap Search any time to jump straight to a batch, recipe, order, or tank by name — no digging through menus.",
+    target: "search-btn",
+    needsSidebar: true,
   },
   {
     title: "If you get stuck",
-    body: "Tap \"Help guide\" in the sidebar any time for how-to answers, or \"Search…\" to jump straight to any batch, recipe, order, or tank by name.",
+    body: "The Help guide has quick answers for how to do almost everything in here.",
+    target: "help-guide-btn",
+    needsSidebar: true,
+  },
+  {
+    title: "You're all set",
+    body: "That's the tour. Head to Brewery to set up your first tank, then start brewing whenever you're ready.",
+    target: null,
   },
 ];
 
-function WelcomeTourModal({ onClose }) {
+// Highlights a live element on screen by its data-tour attribute — finds
+// it, measures its real position, and dims everything else via a single
+// box-shadow trick (a huge spread radius on a transparent box acts as a
+// full-screen overlay with a "hole" cut exactly where the box is). Opens
+// the mobile sidebar drawer itself for steps that need it visible, and
+// closes it again once the tour moves past those steps or ends.
+function SpotlightTour({ onClose, setSidebarOpen }) {
   const [step, setStep] = useState(0);
-  const slide = WELCOME_TOUR_SLIDES[step];
-  const isLast = step === WELCOME_TOUR_SLIDES.length - 1;
+  const [rect, setRect] = useState(null);
+  const slide = TOUR_STEPS[step];
+  const isLast = step === TOUR_STEPS.length - 1;
+
+  useEffect(() => {
+    setSidebarOpen(!!slide.needsSidebar);
+  }, [step]);
+
+  useEffect(() => {
+    if (!slide.target) {
+      setRect(null);
+      return;
+    }
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      const el = document.querySelector(`[data-tour="${slide.target}"]`);
+      setRect(el ? el.getBoundingClientRect() : null);
+    };
+    measure();
+    const timeoutId = setTimeout(measure, 280);
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      window.removeEventListener("resize", measure);
+    };
+  }, [step]);
+
+  useEffect(() => () => setSidebarOpen(false), []);
+
+  const pad = 8;
+  const narrow = window.innerWidth < 560;
+  const cardWidth = 300;
+  let cardStyle;
+  if (rect && !narrow) {
+    const top = Math.max(20, Math.min(rect.top, window.innerHeight - 260));
+    const left = Math.min(rect.right + 20, window.innerWidth - cardWidth - 20);
+    cardStyle = { position: "fixed", top, left, width: cardWidth };
+  } else if (rect && narrow) {
+    cardStyle = { position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", width: "calc(100% - 40px)", maxWidth: cardWidth };
+  } else {
+    cardStyle = { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "calc(100% - 40px)", maxWidth: cardWidth + 60 };
+  }
 
   return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(10,12,11,0.65)", zIndex: 98, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-    >
+    <>
+      {rect && (
+        <div
+          style={{
+            position: "fixed",
+            top: rect.top - pad,
+            left: rect.left - pad,
+            width: rect.width + pad * 2,
+            height: rect.height + pad * 2,
+            borderRadius: 10,
+            border: "2px solid #5C9A3C",
+            boxShadow: "0 0 0 4px rgba(92,154,60,0.3), 0 0 0 9999px rgba(10,12,11,0.72)",
+            pointerEvents: "none",
+            zIndex: 99,
+            transition: "top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease",
+          }}
+        />
+      )}
+      {!rect && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,12,11,0.65)", zIndex: 98 }} />
+      )}
       <div
         style={{
+          ...cardStyle,
+          zIndex: 100,
           background: "#F8F5EA",
           border: "1px solid #DDE0C8",
-          borderRadius: 14,
-          width: "100%",
-          maxWidth: 420,
-          padding: "32px 28px 24px",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-          position: "relative",
+          borderRadius: 12,
+          padding: "22px 20px 18px",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+          boxSizing: "border-box",
         }}
       >
         <button
           onClick={onClose}
           aria-label="Close"
-          style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+          style={{ position: "absolute", top: 12, right: 12, background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
         >
-          <X size={18} />
+          <X size={16} />
         </button>
 
         {step === 0 && (
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-            <BreworxMark size={44} />
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+            <BreworxMark size={38} />
           </div>
         )}
 
-        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, fontWeight: 500, color: "#2A3324", margin: "0 0 10px", textAlign: step === 0 ? "center" : "left" }}>
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, fontWeight: 500, color: "#2A3324", margin: "0 0 8px", textAlign: step === 0 || isLast ? "center" : "left" }}>
           {slide.title}
         </h2>
-        <p style={{ color: "#5C6B54", fontSize: 14.5, lineHeight: 1.55, margin: "0 0 24px", textAlign: step === 0 ? "center" : "left" }}>
+        <p style={{ color: "#5C6B54", fontSize: 13.5, lineHeight: 1.5, margin: "0 0 18px", textAlign: step === 0 || isLast ? "center" : "left" }}>
           {slide.body}
         </p>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 20 }}>
-          {WELCOME_TOUR_SLIDES.map((_, i) => (
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 16 }}>
+          {TOUR_STEPS.map((_, i) => (
             <div
               key={i}
-              style={{
-                width: i === step ? 18 : 6,
-                height: 6,
-                borderRadius: 3,
-                background: i === step ? "#5C9A3C" : "#DDE0C8",
-                transition: "width 0.2s",
-              }}
+              style={{ width: i === step ? 16 : 6, height: 6, borderRadius: 3, background: i === step ? "#5C9A3C" : "#DDE0C8", transition: "width 0.2s" }}
             />
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8 }}>
           {step > 0 && (
             <button
               onClick={() => setStep((s) => s - 1)}
-              style={{
-                flex: 1,
-                background: "none",
-                border: "1px solid #C9D1AC",
-                borderRadius: 5,
-                padding: "12px",
-                color: "#5C6B54",
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13.5,
-                cursor: "pointer",
-              }}
+              style={{ flex: 1, background: "none", border: "1px solid #C9D1AC", borderRadius: 5, padding: "10px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" }}
             >
               Back
             </button>
           )}
           <button
             onClick={() => (isLast ? onClose() : setStep((s) => s + 1))}
-            style={{
-              flex: step > 0 ? 1 : "unset",
-              width: step === 0 ? "100%" : "auto",
-              background: "#5C9A3C",
-              border: "none",
-              borderRadius: 5,
-              padding: "12px",
-              color: "#16191A",
-              fontFamily: "'Oswald', sans-serif",
-              fontWeight: 500,
-              fontSize: 14,
-              letterSpacing: "0.02em",
-              cursor: "pointer",
-            }}
+            style={{ flex: step > 0 ? 1 : "unset", width: step === 0 ? "100%" : "auto", background: "#5C9A3C", border: "none", borderRadius: 5, padding: "10px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
           >
-            {isLast ? "Let's brew" : "Next"}
+            {isLast ? "Got it" : "Next"}
           </button>
         </div>
         {!isLast && (
           <button
             onClick={onClose}
-            style={{ display: "block", margin: "14px auto 0", background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}
+            style={{ display: "block", margin: "12px auto 0", background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif" }}
           >
             Skip tour
           </button>
         )}
       </div>
-    </div>
+    </>
   );
 }
+
 
 function HelpGuideModal({ onClose }) {
   const [query, setQuery] = useState("");
@@ -11953,7 +12011,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-69";
+const APP_VERSION = "2026-07-31-70";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13918,6 +13976,7 @@ export default function TankLog() {
           </div>
 
           <button
+            data-tour="search-btn"
             onClick={() => setShowQuickJump(true)}
             style={{
               display: "flex",
@@ -13938,6 +13997,7 @@ export default function TankLog() {
           </button>
 
           <button
+            data-tour="help-guide-btn"
             onClick={() => setShowHelpGuide(true)}
             style={{
               display: "flex",
@@ -13957,7 +14017,7 @@ export default function TankLog() {
             <Info size={13} /> Help guide
           </button>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
+          <div data-tour="nav-groups" style={{ display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
             {[
               { items: [["home", "Home", Home]] },
               {
@@ -14011,6 +14071,7 @@ export default function TankLog() {
                   return (
                     <button
                       key={key}
+                      data-tour={`nav-${key}`}
                       onClick={() => {
                         setView(key);
                         setSelectedId(null);
@@ -15426,7 +15487,7 @@ export default function TankLog() {
       })()}
       {qrTankTarget && <TankQRModal tank={qrTankTarget} onClose={() => setQrTankTarget(null)} />}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
-      {showWelcomeTour && <WelcomeTourModal onClose={dismissWelcomeTour} />}
+      {showWelcomeTour && <SpotlightTour onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
         <QuickJumpModal
