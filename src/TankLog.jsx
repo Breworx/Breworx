@@ -504,6 +504,138 @@ function TankQRModal({ tank, onClose }) {
   );
 }
 
+const WELCOME_TOUR_SLIDES = [
+  {
+    title: "Welcome to Brewpoint",
+    body: "This is your brewery's home base — tanks, batches, recipes, stock, and compliance, all in one place. Let's take a quick look around before you dive in.",
+  },
+  {
+    title: "Start in Brewery",
+    body: "First stop: set up your tanks under Brewery in the sidebar. Add your fermenters and brite tanks — and a mash tun and kettle too, if you want brew-day tracked from the very start.",
+  },
+  {
+    title: "Then brew a batch",
+    body: "On Fermentation, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself. Pick a tank, and you're brewing.",
+  },
+  {
+    title: "Everything else lives in the sidebar",
+    body: "Production is for scheduling ahead of time. Recipes is your library and calculator. Stock covers ingredients, packaging materials, and orders. Compliance covers food safety records.",
+  },
+  {
+    title: "If you get stuck",
+    body: "Tap \"Help guide\" in the sidebar any time for how-to answers, or \"Search…\" to jump straight to any batch, recipe, order, or tank by name.",
+  },
+];
+
+function WelcomeTourModal({ onClose }) {
+  const [step, setStep] = useState(0);
+  const slide = WELCOME_TOUR_SLIDES[step];
+  const isLast = step === WELCOME_TOUR_SLIDES.length - 1;
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(10,12,11,0.65)", zIndex: 98, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+    >
+      <div
+        style={{
+          background: "#F8F5EA",
+          border: "1px solid #DDE0C8",
+          borderRadius: 14,
+          width: "100%",
+          maxWidth: 420,
+          padding: "32px 28px 24px",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+          position: "relative",
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+        >
+          <X size={18} />
+        </button>
+
+        {step === 0 && (
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+            <BreworxMark size={44} />
+          </div>
+        )}
+
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, fontWeight: 500, color: "#2A3324", margin: "0 0 10px", textAlign: step === 0 ? "center" : "left" }}>
+          {slide.title}
+        </h2>
+        <p style={{ color: "#5C6B54", fontSize: 14.5, lineHeight: 1.55, margin: "0 0 24px", textAlign: step === 0 ? "center" : "left" }}>
+          {slide.body}
+        </p>
+
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+          {WELCOME_TOUR_SLIDES.map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: i === step ? 18 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i === step ? "#5C9A3C" : "#DDE0C8",
+                transition: "width 0.2s",
+              }}
+            />
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          {step > 0 && (
+            <button
+              onClick={() => setStep((s) => s - 1)}
+              style={{
+                flex: 1,
+                background: "none",
+                border: "1px solid #C9D1AC",
+                borderRadius: 5,
+                padding: "12px",
+                color: "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13.5,
+                cursor: "pointer",
+              }}
+            >
+              Back
+            </button>
+          )}
+          <button
+            onClick={() => (isLast ? onClose() : setStep((s) => s + 1))}
+            style={{
+              flex: step > 0 ? 1 : "unset",
+              width: step === 0 ? "100%" : "auto",
+              background: "#5C9A3C",
+              border: "none",
+              borderRadius: 5,
+              padding: "12px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 14,
+              letterSpacing: "0.02em",
+              cursor: "pointer",
+            }}
+          >
+            {isLast ? "Let's brew" : "Next"}
+          </button>
+        </div>
+        {!isLast && (
+          <button
+            onClick={onClose}
+            style={{ display: "block", margin: "14px auto 0", background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}
+          >
+            Skip tour
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HelpGuideModal({ onClose }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -11821,7 +11953,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-68";
+const APP_VERSION = "2026-07-31-69";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -12056,9 +12188,27 @@ export default function TankLog() {
   const [showQuickJump, setShowQuickJump] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showWelcomeTour, setShowWelcomeTour] = useState(false);
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem("brewpoint-welcome-tour-done")) setShowWelcomeTour(true);
+    } catch {}
+  }, []);
+  const dismissWelcomeTour = () => {
+    setShowWelcomeTour(false);
+    try {
+      localStorage.setItem("brewpoint-welcome-tour-done", "1");
+      // A brand-new account doesn't need a "what changed" recap on top of
+      // the tour it just saw — mark the changelog seen too.
+      localStorage.setItem("brewpoint-changelog-seen", String(LATEST_CHANGELOG_ID));
+    } catch {}
+  };
+
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   useEffect(() => {
     try {
+      const isFirstVisit = !localStorage.getItem("brewpoint-welcome-tour-done");
+      if (isFirstVisit) return;
       const lastSeen = Number(localStorage.getItem("brewpoint-changelog-seen") || "0");
       if (lastSeen < LATEST_CHANGELOG_ID) setShowWhatsNew(true);
     } catch {}
@@ -15276,6 +15426,7 @@ export default function TankLog() {
       })()}
       {qrTankTarget && <TankQRModal tank={qrTankTarget} onClose={() => setQrTankTarget(null)} />}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
+      {showWelcomeTour && <WelcomeTourModal onClose={dismissWelcomeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
         <QuickJumpModal
