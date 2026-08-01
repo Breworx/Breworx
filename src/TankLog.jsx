@@ -3071,7 +3071,7 @@ function AddTankModal({ onClose, onAdd }) {
                 label="Type"
                 value={row.type || "Fermenter"}
                 onChange={(v) => updateRow(row.id, { type: v })}
-                options={["Fermenter", "Brite Tank"]}
+                options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank"]}
               />
             </div>
           ))}
@@ -3117,7 +3117,7 @@ function EditTankModal({ tank, onClose, onSave }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Tank ID" value={name} onChange={setName} />
         <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
-        <SelectField label="Type" value={type} onChange={setType} options={["Fermenter", "Brite Tank"]} />
+        <SelectField label="Type" value={type} onChange={setType} options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank"]} />
         <div style={{ color: "#9BA88A", fontSize: 12 }}>
           Renaming won't retroactively update batches already assigned to this tank — reassign them from the batch's page if needed.
         </div>
@@ -3349,6 +3349,80 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
           }}
         >
           Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Reused for both "transfer to kettle" and "transfer to fermenter" — only
+// shows tanks of the target type, and blocks any that are already occupied.
+function VesselTransferModal({ batch, tanks, batches, toType, actionLabel, onClose, onSave }) {
+  const available = tanks.filter((t) => t.type === toType);
+  const [tankId, setTankId] = useState("");
+
+  const submit = () => {
+    const tank = available.find((t) => t.id === tankId);
+    if (!tank || tankIsOccupied(batches, tank.id, batch.id)) return;
+    onSave(tank);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Transfer to ${toType.toLowerCase()} — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {available.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>
+            No {toType.toLowerCase()} set up yet — add one in Brewery first.
+          </div>
+        ) : (
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>{toType}</span>
+            <select
+              value={tankId}
+              onChange={(e) => setTankId(e.target.value)}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14,
+              }}
+            >
+              <option value="">Choose one…</option>
+              {sortedTanks(available).map((t) => {
+                const occupied = tankIsOccupied(batches, t.id, batch.id);
+                const occupant = occupied ? occupyingBatch(batches, t.id, batch.id) : null;
+                return (
+                  <option key={t.id} value={t.id} disabled={occupied}>
+                    {t.name} ({t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        )}
+        <button
+          onClick={submit}
+          disabled={!tankId}
+          style={{
+            background: tankId ? "#5C9A3C" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: tankId ? "#16191A" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: tankId ? "pointer" : "default",
+          }}
+        >
+          {actionLabel}
         </button>
       </div>
     </Modal>
@@ -5703,6 +5777,8 @@ function Modal({ title, onClose, children }) {
 }
 
 function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate }) {
+  const mashTuns = tanks.filter((t) => t.type === "Mash Tun");
+  const tankChoices = mashTuns.length > 0 ? mashTuns : tanks;
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
@@ -5850,6 +5926,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       recipeName: activeRecipe ? activeRecipe.name : null,
       tankId: splitMode ? null : tank ? tank.id : null,
       tankName: splitMode ? null : tank ? tank.name : null,
+      brewStage: !splitMode && tank && tank.type === "Mash Tun" ? "Mashing" : null,
       splitTanks: splitMode ? finalSplitTanks : [],
       ingredients: cleanBatchIngredients,
       schedule: [...mashSteps, ...batchSchedule],
@@ -5931,7 +6008,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
               <>
                 <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
-                    Tank (optional)
+                    {mashTuns.length > 0 ? "Mash tun (optional)" : "Tank (optional)"}
                   </span>
                   <select
                     value={tankId}
@@ -5949,7 +6026,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     }}
                   >
                     <option value="">Unassigned</option>
-                    {sortedTanks(tanks).map((t) => {
+                    {sortedTanks(tankChoices).map((t) => {
                       const currentlyOccupied = tankIsOccupied(batches, t.id);
                       const occupied = currentlyOccupied && startDate <= today();
                       const occupant = currentlyOccupied ? occupyingBatch(batches, t.id) : null;
@@ -7106,12 +7183,20 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
   const stageIdx = stages.indexOf(batch.stage);
+  const currentTank = tanks ? tanks.find((t) => t.id === batch.tankId) : null;
+  const inMashTun = batch.stage === "Brewing" && currentTank?.type === "Mash Tun";
+  const inKettle = batch.stage === "Brewing" && currentTank?.type === "Kettle";
+  const BREW_STAGE_INFO = {
+    Mashing: { label: "Mashing in", color: "#D9A441" },
+    Recirculating: { label: "Recirculating", color: "#D9A441" },
+    Kettle: { label: "In the kettle", color: "#E08A3C" },
+  };
   const chartData = batch.readings.map((r) => ({
     date: r.date.slice(5),
     gravity: r.gravity,
@@ -7160,6 +7245,26 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               </button>
             )}
           </div>
+          {(inMashTun || inKettle) && batch.brewStage && BREW_STAGE_INFO[batch.brewStage] && (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 8,
+                background: `${BREW_STAGE_INFO[batch.brewStage].color}22`,
+                border: `1px solid ${BREW_STAGE_INFO[batch.brewStage].color}`,
+                borderRadius: 20,
+                padding: "5px 12px",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                color: BREW_STAGE_INFO[batch.brewStage].color,
+              }}
+            >
+              {inKettle ? <FlaskConical size={13} /> : <RotateCcw size={13} />}
+              {BREW_STAGE_INFO[batch.brewStage].label} — {currentTank?.name}
+            </div>
+          )}
         </div>
       </div>
 
@@ -7591,6 +7696,82 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         );
       })()}
 
+      {inMashTun && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+          {batch.brewStage !== "Recirculating" && (
+            <button
+              onClick={() => onStartRecirculation(batch.id)}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                background: "#EBE8D6",
+                border: "1px solid #C9D1AC",
+                borderRadius: 5,
+                padding: "11px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13.5,
+                cursor: "pointer",
+              }}
+            >
+              <RotateCcw size={15} /> Start recirculation
+            </button>
+          )}
+          <button
+            onClick={() => onOpenVesselTransfer({ batch, toType: "Kettle", brewStage: "Kettle", newStage: null, actionLabel: "Transfer to kettle" })}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              background: "#5C9A3C",
+              border: "none",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 13.5,
+              letterSpacing: "0.02em",
+              cursor: "pointer",
+            }}
+          >
+            Transfer to kettle
+          </button>
+        </div>
+      )}
+
+      {inKettle && (
+        <div style={{ marginBottom: 8 }}>
+          <button
+            onClick={() => onOpenVesselTransfer({ batch, toType: "Fermenter", brewStage: null, newStage: "Primary", actionLabel: "Transfer to fermenter" })}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              background: "#5C9A3C",
+              border: "none",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 13.5,
+              letterSpacing: "0.02em",
+              cursor: "pointer",
+            }}
+          >
+            Transfer to fermenter — starts Primary
+          </button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
         <button
           onClick={() => onLogReading(batch)}
@@ -7612,7 +7793,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         >
           <Droplet size={15} /> Log reading
         </button>
-        {stageIdx < stages.length - 1 && (() => {
+        {!inMashTun && !inKettle && stageIdx < stages.length - 1 && (() => {
           const nextStage = stages[stageIdx + 1];
           const needsDiacetylPass = batch.stage === "Primary" && nextStage === "Cooling";
           const hasDiacetylPass = (batch.diacetylTests || []).some((t) => t.result === "pass");
@@ -8874,18 +9055,24 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const clipId = `tankwall-clip-${tank.id}`;
   const gradId = `tankwall-grad-${tank.id}`;
   const steelId = `tankwall-steel-${tank.id}`;
-  const fermenting = batch && (batch.stage === "Brewing" || batch.stage === "Primary");
-  const cooling = batch && batch.stage === "Cooling";
-  const brite = batch && batch.stage === "Brite Tank";
+  const isMashTun = tank.type === "Mash Tun";
+  const isKettle = tank.type === "Kettle";
+  const boiling = batch && isKettle && batch.stage === "Brewing";
+  const recirculating = batch && isMashTun && batch.brewStage === "Recirculating";
+  const vesselColor = boiling ? "#E08A3C" : isMashTun && batch ? "#C68A3C" : color;
+  const fermenting = batch && !isMashTun && !isKettle && (batch.stage === "Brewing" || batch.stage === "Primary");
+  const cooling = batch && !isMashTun && !isKettle && batch.stage === "Cooling";
+  const brite = batch && !isMashTun && !isKettle && batch.stage === "Brite Tank";
   const frostId = `tankwall-frost-${tank.id}`;
   // Body: x10–110, shoulders taper into a cone from y140 to the point at y190.
   const bodyPath = "M10 10 H110 V140 L60 190 L10 140 Z";
   const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
   const bubbles = fermenting
     ? [22, 45, 68, 91].map((x, i) => ({ x, delay: i * 0.7, dur: 2.6 + (i % 2) * 0.5, r: i % 2 ? 2 : 1.4 }))
-    : brite
-    ? [18, 32, 46, 60, 74, 88, 102].map((x, i) => ({ x, delay: i * 0.35, dur: 1.6 + (i % 3) * 0.2, r: 0.9 }))
+    : brite || boiling
+    ? [18, 32, 46, 60, 74, 88, 102].map((x, i) => ({ x, delay: i * (boiling ? 0.2 : 0.35), dur: (boiling ? 1.1 : 1.6) + (i % 3) * 0.2, r: boiling ? 1.3 : 0.9 }))
     : [];
+  const steamWisps = boiling ? [40, 65, 90].map((x, i) => ({ x, delay: i * 0.8 })) : [];
   const droplets = cooling ? [30, 55, 80].map((x, i) => ({ x, delay: i * 1.1 })) : [];
 
 
@@ -8958,8 +9145,8 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
               <path d={bodyPath} />
             </clipPath>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity="0.55" />
-              <stop offset="100%" stopColor={color} stopOpacity="0.9" />
+              <stop offset="0%" stopColor={vesselColor} stopOpacity="0.55" />
+              <stop offset="100%" stopColor={vesselColor} stopOpacity="0.9" />
             </linearGradient>
             <linearGradient id={steelId} x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%" stopColor="#E4E0D0" />
@@ -8985,7 +9172,7 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
                 <path
                   d="M-60,0 C-45,-6 -35,6 -20,0 C-5,-6 5,6 20,0 C35,-6 45,6 60,0 C75,-6 85,6 100,0 C115,-6 125,6 140,0 C155,-6 165,6 180,0 V16 H-60 Z"
                   transform={`translate(0, ${surfaceY - 4})`}
-                  fill={color}
+                  fill={vesselColor}
                   opacity="0.5"
                 />
               </g>
@@ -9001,8 +9188,30 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
                     <animate attributeName="opacity" values="0;0.8;0" dur="2.2s" begin={`${i * 1.3}s`} repeatCount="indefinite" />
                   </rect>
                 ))}
+              {recirculating && (
+                <g style={{ animation: "bp-swirl-spin 2.4s linear infinite", transformOrigin: "60px 100px" }}>
+                  <path d="M40 90 A22 22 0 1 1 40 112" stroke="#FFFFFF" strokeWidth="3" fill="none" opacity="0.6" strokeLinecap="round" />
+                  <path d="M40 84 L40 96 L52 90 Z" fill="#FFFFFF" opacity="0.6" />
+                </g>
+              )}
             </g>
           )}
+
+          {boiling &&
+            steamWisps.map((s, i) => (
+              <path
+                key={`steam-${i}`}
+                d={`M${s.x} 6 Q${s.x - 4} -2 ${s.x} -8 Q${s.x + 4} -14 ${s.x} -20`}
+                stroke="#FFFFFF"
+                strokeWidth="2"
+                fill="none"
+                strokeLinecap="round"
+                opacity="0"
+              >
+                <animate attributeName="opacity" values="0;0.55;0" dur="1.8s" begin={`${s.delay}s`} repeatCount="indefinite" />
+                <animateTransform attributeName="transform" type="translate" from="0 8" to="0 -10" dur="1.8s" begin={`${s.delay}s`} repeatCount="indefinite" />
+              </path>
+            ))}
 
           {cooling && (
             <>
@@ -10048,8 +10257,9 @@ function HomeView({
         <div>
           <style>{`
             @keyframes bp-wave-drift { from { transform: translateX(0); } to { transform: translateX(-60px); } }
+            @keyframes bp-swirl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             @media (prefers-reduced-motion: reduce) {
-              [style*="bp-wave-drift"] { animation: none !important; }
+              [style*="bp-wave-drift"], [style*="bp-swirl-spin"] { animation: none !important; }
             }
           `}</style>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
@@ -11012,7 +11222,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-54";
+const APP_VERSION = "2026-07-31-55";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11314,6 +11524,7 @@ export default function TankLog() {
   const [editRecipeTarget, setEditRecipeTarget] = useState(null);
   const [deleteBatchTarget, setDeleteBatchTarget] = useState(null);
   const [assignTankTarget, setAssignTankTarget] = useState(null);
+  const [vesselTransferTarget, setVesselTransferTarget] = useState(null);
   const [diacetylTestTarget, setDiacetylTestTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -12494,6 +12705,30 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ stage: prevStage }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: prevStage } : b)));
+  };
+
+  const startRecirculation = async (id) => {
+    const { error } = await supabase.from("batches").update({ brew_stage: "Recirculating" }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, brewStage: "Recirculating" } : b)));
+  };
+
+  // Moves a batch to a different vessel mid-brew-day (Mash Tun → Kettle →
+  // Fermenter). Because occupancy is just "which batch currently has this
+  // tank_id," simply changing tank_id automatically frees the old vessel —
+  // no separate release step needed. Reaching a Fermenter is what actually
+  // advances the batch's real stage to Primary.
+  const transferBatchVessel = async (id, tank, brewStage, newStage) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const patch = { tank_id: tank.id, tank_name: tank.name, brew_stage: brewStage };
+    if (newStage) patch.stage = newStage;
+    const { error } = await supabase.from("batches").update(patch).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, tankId: tank.id, tankName: tank.name, brewStage, ...(newStage ? { stage: newStage } : {}) } : b))
+    );
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.name}${newStage ? ` — ${newStage}` : ""}`);
   };
 
   const logDiacetylTest = async (id, test) => {
@@ -14270,6 +14505,9 @@ export default function TankLog() {
             onDeletePhoto={deleteBatchPhoto}
             onStartTimer={startBrewTimer}
             onStopTimer={stopBrewTimer}
+            tanks={tanks}
+            onStartRecirculation={startRecirculation}
+            onOpenVesselTransfer={setVesselTransferTarget}
           />
         )}
 
@@ -14600,6 +14838,17 @@ export default function TankLog() {
       )}
       {assignTankTarget && (
         <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
+      )}
+      {vesselTransferTarget && (
+        <VesselTransferModal
+          batch={vesselTransferTarget.batch}
+          tanks={tanks}
+          batches={batches}
+          toType={vesselTransferTarget.toType}
+          actionLabel={vesselTransferTarget.actionLabel}
+          onClose={() => setVesselTransferTarget(null)}
+          onSave={(tank) => transferBatchVessel(vesselTransferTarget.batch.id, tank, vesselTransferTarget.brewStage, vesselTransferTarget.newStage)}
+        />
       )}
       {logTarget && (
         <LogReadingModal batch={logTarget} onClose={() => setLogTarget(null)} onLog={logReading} />
