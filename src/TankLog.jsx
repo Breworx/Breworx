@@ -62,13 +62,22 @@ const STAGE_COLOR = {
 
 // A tank's CIP cycle once it's empty — null/unset is treated as "Needs CIP"
 // by default, since assuming a tank is dirty until proven otherwise is the
-// safer default for a food-safety-adjacent status.
-const CLEAN_STAGES = ["Needs CIP", "Rinsed", "Caustic clean", "Sanitised"];
+// safer default for a food-safety-adjacent status. Brite tanks branch after
+// "Rinsed" — acid and caustic are alternatives, not both required — so
+// stages are advanced via a map rather than a fixed sequence.
 const CLEAN_STAGE_COLOR = {
   "Needs CIP": "#B5502F",
   Rinsed: "#D9A441",
+  "Acid clean": "#8E6FB5",
   "Caustic clean": "#4AA8C9",
   Sanitised: "#5C9A3C",
+};
+const NEXT_CLEAN_STAGE = {
+  "Needs CIP": "Rinsed",
+  Rinsed: "Caustic clean",
+  "Caustic clean": "Sanitised",
+  "Acid clean": "Sanitised",
+  Sanitised: "Needs CIP",
 };
 
 const CONTAINERS = [
@@ -9718,7 +9727,7 @@ function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) 
   );
 }
 
-function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean }) {
+function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetCleanStage }) {
   const empty = !batch;
   const latest = batch ? latestReading(batch) : null;
   const color = batch ? STAGE_COLOR[batch.stage] || "#5C9A3C" : "#C9D1AC";
@@ -9867,26 +9876,69 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean }) {
           <path d={bodyPath} fill="none" stroke={cleanColor} strokeWidth="2.5" />
         </svg>
 
-        <button
-          onClick={() => onCycleClean(tank.id)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: `${cleanColor}1A`,
-            border: `1px solid ${cleanColor}`,
-            borderRadius: 20,
-            padding: "5px 12px",
-            color: cleanColor,
-            fontFamily: "'Inter', sans-serif",
-            fontWeight: 500,
-            fontSize: 11.5,
-            cursor: "pointer",
-          }}
-        >
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: cleanColor, flexShrink: 0 }} />
-          {cleanStage}
-        </button>
+        {tank.type === "Brite Tank" && cleanStage === "Rinsed" ? (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => onSetCleanStage(tank.id, "Acid clean")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: `${CLEAN_STAGE_COLOR["Acid clean"]}1A`,
+                border: `1px solid ${CLEAN_STAGE_COLOR["Acid clean"]}`,
+                borderRadius: 20,
+                padding: "5px 11px",
+                color: CLEAN_STAGE_COLOR["Acid clean"],
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 500,
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              Acid clean
+            </button>
+            <button
+              onClick={() => onSetCleanStage(tank.id, "Caustic clean")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: `${CLEAN_STAGE_COLOR["Caustic clean"]}1A`,
+                border: `1px solid ${CLEAN_STAGE_COLOR["Caustic clean"]}`,
+                borderRadius: 20,
+                padding: "5px 11px",
+                color: CLEAN_STAGE_COLOR["Caustic clean"],
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 500,
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              Caustic clean
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => onCycleClean(tank.id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: `${cleanColor}1A`,
+              border: `1px solid ${cleanColor}`,
+              borderRadius: 20,
+              padding: "5px 12px",
+              color: cleanColor,
+              fontFamily: "'Inter', sans-serif",
+              fontWeight: 500,
+              fontSize: 11.5,
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: cleanColor, flexShrink: 0 }} />
+            {cleanStage}
+          </button>
+        )}
       </div>
     );
   }
@@ -10972,6 +11024,7 @@ function HomeView({
   onQuickLog,
   activityLog,
   onCycleClean,
+  onSetCleanStage,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -11182,7 +11235,7 @@ function HomeView({
                 return aOcc - bOcc;
               })
               .map((t) => (
-                <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} onCycleClean={onCycleClean} />
+                <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} onCycleClean={onCycleClean} onSetCleanStage={onSetCleanStage} />
               ))}
           </div>
         </div>
@@ -12137,7 +12190,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-72";
+const APP_VERSION = "2026-07-31-73";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13313,11 +13366,18 @@ export default function TankLog() {
   const cycleTankClean = async (id) => {
     const tank = tanks.find((t) => t.id === id);
     if (!tank) return;
-    const idx = CLEAN_STAGES.indexOf(tank.cleanStatus);
-    const next = CLEAN_STAGES[(idx + 1) % CLEAN_STAGES.length];
+    const next = NEXT_CLEAN_STAGE[tank.cleanStatus || "Needs CIP"] || "Needs CIP";
     const { error } = await supabase.from("tanks").update({ clean_status: next }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: next } : t)));
+  };
+
+  // For Brite tanks choosing between acid and caustic clean — sets the
+  // stage directly rather than just advancing to "next."
+  const setTankCleanStage = async (id, stage) => {
+    const { error } = await supabase.from("tanks").update({ clean_status: stage }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: stage } : t)));
   };
 
   // Whenever a tank starts being used by a batch, its clean status resets —
@@ -14367,6 +14427,7 @@ export default function TankLog() {
                 onQuickLog={setLogTarget}
                 activityLog={activityLog}
                 onCycleClean={cycleTankClean}
+                onSetCleanStage={setTankCleanStage}
               />
             )}
 
