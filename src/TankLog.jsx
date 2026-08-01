@@ -6953,8 +6953,7 @@ const BREW_TIMER_PRESETS = [
   { label: "Whirlpool / recirc", minutes: 15 },
 ];
 
-function BrewDayTimers() {
-  const [timers, setTimers] = useState([]);
+function BrewDayTimers({ timers, onStart, onStop }) {
   const [customMinutes, setCustomMinutes] = useState(10);
   const [customLabel, setCustomLabel] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -6988,13 +6987,13 @@ function BrewDayTimers() {
 
   const startTimer = (label, minutes) => {
     if (!minutes || minutes <= 0) return;
-    setTimers((prev) => [...prev, { id: uid(), label, endTime: Date.now() + minutes * 60000 }]);
+    onStart(label, minutes);
     setNow(Date.now());
   };
 
   const stopTimer = (id) => {
     dingedRef.current.delete(id);
-    setTimers((prev) => prev.filter((t) => t.id !== id));
+    onStop(id);
   };
 
   const formatRemaining = (ms) => {
@@ -7107,7 +7106,7 @@ function BrewDayTimers() {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -7218,7 +7217,13 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         ))}
       </div>
 
-      {batch.stage === "Brewing" && <BrewDayTimers />}
+      {batch.stage === "Brewing" && (
+        <BrewDayTimers
+          timers={batch.timers || []}
+          onStart={(label, minutes) => onStartTimer(batch.id, label, minutes)}
+          onStop={(id) => onStopTimer(batch.id, id)}
+        />
+      )}
 
       {batch.schedule && batch.schedule.length > 0 && (() => {
         const next = batch.schedule.find((s) => !s.done);
@@ -10941,7 +10946,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-51";
+const APP_VERSION = "2026-07-31-52";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11518,6 +11523,27 @@ export default function TankLog() {
     const { error } = await supabase.from("batches").update({ photos }).eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, photos } : b)));
+  };
+
+  // Timers store an absolute end time (not a countdown), so any device that
+  // loads the batch computes the correct time remaining on its own — no
+  // live sync needed, just a shared source of truth.
+  const startBrewTimer = async (batchId, label, minutes) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    const timers = [...(batch.timers || []), { id: uid(), label, endTime: Date.now() + minutes * 60000 }];
+    const { error } = await supabase.from("batches").update({ timers }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, timers } : b)));
+  };
+
+  const stopBrewTimer = async (batchId, timerId) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    const timers = (batch.timers || []).filter((t) => t.id !== timerId);
+    const { error } = await supabase.from("batches").update({ timers }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, timers } : b)));
   };
 
   const addBatch = async (b) => {
@@ -14176,6 +14202,8 @@ export default function TankLog() {
             onToggleFault={toggleBatchFault}
             onUploadPhoto={uploadBatchPhoto}
             onDeletePhoto={deleteBatchPhoto}
+            onStartTimer={startBrewTimer}
+            onStopTimer={stopBrewTimer}
           />
         )}
 
