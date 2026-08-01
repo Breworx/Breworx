@@ -3514,8 +3514,150 @@ function EditSplitTanksModal({ batch, tanks, batches, onClose, onSave }) {
   );
 }
 
-// Reused for both "transfer to kettle" and "transfer to fermenter" — only
-// shows tanks of the target type, and blocks any that are already occupied.
+// The kettle always empties into a single shared vessel — but from there
+// it's very common to split into more than one fermenter, so this step
+// gets its own multi-row picker instead of the plain single-tank one.
+function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
+  const fermenters = tanks.filter((t) => t.type === "Fermenter");
+  const [rows, setRows] = useState([{ id: uid(), tankId: "", volume: batch.volume }]);
+
+  const addRow = () => setRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }]);
+  const updateRow = (id, patch) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeRow = (id) => setRows((prev) => prev.filter((r) => r.id !== id));
+  const total = rows.reduce((sum, r) => sum + (Number(r.volume) || 0), 0);
+
+  const submit = () => {
+    const final = rows
+      .filter((r) => r.tankId && Number(r.volume) > 0)
+      .map((r) => {
+        const t = fermenters.find((tk) => tk.id === r.tankId);
+        return { tankId: r.tankId, tankName: t ? t.name : "", volume: Number(r.volume) || 0 };
+      });
+    if (final.length === 0) return;
+    onSave(final);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Transfer to fermenter — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {fermenters.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No fermenters set up yet — add one in Brewery first.</div>
+        ) : (
+          <>
+            <div style={{ color: "#9BA88A", fontSize: 12 }}>Splitting across more than one fermenter? Add another row.</div>
+            {rows.map((row) => (
+              <div key={row.id} style={{ display: "flex", gap: 6 }}>
+                <select
+                  value={row.tankId}
+                  onChange={(e) => updateRow(row.id, { tankId: e.target.value })}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    background: "#F5F1E4",
+                    border: "1px solid #DDE0C8",
+                    borderRadius: 4,
+                    padding: "8px 8px",
+                    color: "#2A3324",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                  }}
+                >
+                  <option value="">Choose fermenter</option>
+                  {sortedTanks(fermenters).map((t) => {
+                    const usedAbove = rows.some((r) => r.id !== row.id && r.tankId === t.id);
+                    const occupied = tankIsOccupied(batches, t.id, batch.id) || usedAbove;
+                    const occupant = occupyingBatch(batches, t.id, batch.id);
+                    return (
+                      <option key={t.id} value={t.id} disabled={occupied}>
+                        {t.name} ({t.capacity}L)
+                        {usedAbove ? " — already used above" : occupant ? ` — occupied by ${occupant.name}` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={row.volume}
+                  onChange={(e) => updateRow(row.id, { volume: e.target.value })}
+                  placeholder="Litres"
+                  style={{
+                    width: 84,
+                    flexShrink: 0,
+                    boxSizing: "border-box",
+                    background: "#F5F1E4",
+                    border: "1px solid #DDE0C8",
+                    borderRadius: 4,
+                    padding: "8px 8px",
+                    color: "#2A3324",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 13,
+                    textAlign: "right",
+                  }}
+                />
+                {rows.length > 1 && (
+                  <button
+                    onClick={() => removeRow(row.id)}
+                    aria-label="Remove fermenter"
+                    style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8, flexShrink: 0 }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={addRow}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                background: "none",
+                border: "1px dashed #C9D1AC",
+                borderRadius: 5,
+                padding: "8px",
+                color: "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: "pointer",
+              }}
+            >
+              <Plus size={13} /> Split into another fermenter
+            </button>
+            {rows.length > 1 && (
+              <div style={{ fontSize: 12, color: total !== batch.volume ? "#B5502F" : "#9BA88A" }}>
+                {total}L of {batch.volume}L allocated
+              </div>
+            )}
+          </>
+        )}
+        <button
+          onClick={submit}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Transfer to fermenter — starts Primary
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Used for "transfer to kettle" — the kettle is always a single shared
+// vessel, so a plain one-tank picker is all that's needed there.
 function VesselTransferModal({ batch, tanks, batches, toType, actionLabel, onClose, onSave }) {
   const available = tanks.filter((t) => t.type === toType);
   const [tankId, setTankId] = useState("");
@@ -7342,7 +7484,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -7905,7 +8047,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       {inKettle && (
         <div style={{ marginBottom: 8 }}>
           <button
-            onClick={() => onOpenVesselTransfer({ batch, toType: "Fermenter", brewStage: null, newStage: "Primary", actionLabel: "Transfer to fermenter" })}
+            onClick={() => onOpenFermenterTransfer(batch)}
             style={{
               width: "100%",
               display: "flex",
@@ -11379,7 +11521,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-57";
+const APP_VERSION = "2026-07-31-58";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -11683,6 +11825,7 @@ export default function TankLog() {
   const [assignTankTarget, setAssignTankTarget] = useState(null);
   const [vesselTransferTarget, setVesselTransferTarget] = useState(null);
   const [editSplitTanksTarget, setEditSplitTanksTarget] = useState(null);
+  const [fermenterTransferTarget, setFermenterTransferTarget] = useState(null);
   const [diacetylTestTarget, setDiacetylTestTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -12893,6 +13036,31 @@ export default function TankLog() {
       prev.map((b) => (b.id === id ? { ...b, tankId: tank.id, tankName: tank.name, brewStage, ...(newStage ? { stage: newStage } : {}) } : b))
     );
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.name}${newStage ? ` — ${newStage}` : ""}`);
+  };
+
+  // From the kettle, a batch can go into one fermenter or split across
+  // several — this handles both, and either way it's what actually moves
+  // the batch's real stage into Primary.
+  const transferToFermenter = async (id, tanksChosen) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const single = tanksChosen.length === 1;
+    const patch = single
+      ? { tank_id: tanksChosen[0].tankId, tank_name: tanksChosen[0].tankName, split_tanks: [], brew_stage: null, stage: "Primary" }
+      : { tank_id: null, tank_name: null, split_tanks: tanksChosen, brew_stage: null, stage: "Primary" };
+    const { error } = await supabase.from("batches").update(patch).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) =>
+      prev.map((b) =>
+        b.id === id
+          ? single
+            ? { ...b, tankId: tanksChosen[0].tankId, tankName: tanksChosen[0].tankName, splitTanks: [], brewStage: null, stage: "Primary" }
+            : { ...b, tankId: null, tankName: null, splitTanks: tanksChosen, brewStage: null, stage: "Primary" }
+          : b
+      )
+    );
+    const summary = tanksChosen.map((t) => `${t.tankName} (${t.volume}L)`).join(" + ");
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${summary} — Primary`);
   };
 
   const logDiacetylTest = async (id, test) => {
@@ -14673,6 +14841,7 @@ export default function TankLog() {
             onStartRecirculation={startRecirculation}
             onOpenVesselTransfer={setVesselTransferTarget}
             onEditSplitTanks={setEditSplitTanksTarget}
+            onOpenFermenterTransfer={setFermenterTransferTarget}
           />
         )}
 
@@ -15022,6 +15191,15 @@ export default function TankLog() {
           batches={batches}
           onClose={() => setEditSplitTanksTarget(null)}
           onSave={updateBatchSplitTanks}
+        />
+      )}
+      {fermenterTransferTarget && (
+        <TransferToFermenterModal
+          batch={fermenterTransferTarget}
+          tanks={tanks}
+          batches={batches}
+          onClose={() => setFermenterTransferTarget(null)}
+          onSave={(tanksChosen) => transferToFermenter(fermenterTransferTarget.id, tanksChosen)}
         />
       )}
       {logTarget && (
