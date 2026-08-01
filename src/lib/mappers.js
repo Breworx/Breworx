@@ -191,6 +191,7 @@ export function rowToTank(row) {
     name: row.name,
     capacity: row.capacity,
     type: row.type || "Fermenter",
+    cleanStatus: row.clean_status || null,
   };
 }
 
@@ -201,6 +202,7 @@ export function tankToRow(tank, companyId) {
     name: tank.name,
     capacity: tank.capacity,
     type: tank.type || "Fermenter",
+    clean_status: tank.cleanStatus ?? null,
   };
 }
 
