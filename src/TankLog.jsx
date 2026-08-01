@@ -8873,9 +8873,12 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const fillPct = batch && tank.capacity > 0 ? Math.max(4, Math.min(100, Math.round((rem / tank.capacity) * 100))) : 0;
   const clipId = `tankwall-clip-${tank.id}`;
   const gradId = `tankwall-grad-${tank.id}`;
+  const steelId = `tankwall-steel-${tank.id}`;
+  const active = batch && (batch.stage === "Brewing" || batch.stage === "Primary");
   // Body: x10–110, shoulders taper into a cone from y140 to the point at y190.
   const bodyPath = "M10 10 H110 V140 L60 190 L10 140 Z";
   const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
+  const bubbles = active ? [22, 45, 68, 91].map((x, i) => ({ x, delay: i * 0.7, dur: 2.6 + (i % 2) * 0.5 })) : [];
 
   return (
     <div
@@ -8883,9 +8886,10 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
         position: "relative",
         background: "#FFFFFF",
         border: "1px solid #DDE0C8",
-        borderRadius: 8,
+        borderRadius: 10,
         padding: "16px 12px 14px",
         boxSizing: "border-box",
+        boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)",
       }}
     >
       {!empty && (
@@ -8939,7 +8943,7 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
           </span>
         </div>
 
-        <svg width="88" height="140" viewBox="0 0 120 200">
+        <svg width="92" height="146" viewBox="0 0 120 200">
           <defs>
             <clipPath id={clipId}>
               <path d={bodyPath} />
@@ -8948,9 +8952,18 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
               <stop offset="0%" stopColor={color} stopOpacity="0.55" />
               <stop offset="100%" stopColor={color} stopOpacity="0.9" />
             </linearGradient>
+            <linearGradient id={steelId} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#E4E0D0" />
+              <stop offset="35%" stopColor="#F8F6EE" />
+              <stop offset="55%" stopColor="#FDFCF7" />
+              <stop offset="100%" stopColor="#DDD8C4" />
+            </linearGradient>
           </defs>
 
-          <path d={bodyPath} fill="#F8F5EA" stroke="#C9D1AC" strokeWidth="2.5" />
+          {/* Manway lid collar — a small real-tank detail */}
+          <rect x="24" y="2" width="72" height="9" rx="4" fill={`url(#${steelId})`} stroke="#C9D1AC" strokeWidth="1.5" />
+
+          <path d={bodyPath} fill={`url(#${steelId})`} stroke="#C9D1AC" strokeWidth="2.5" />
 
           {!empty && (
             <g clipPath={`url(#${clipId})`}>
@@ -8963,13 +8976,23 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
                   opacity="0.5"
                 />
               </g>
+              {bubbles.map((b, i) => (
+                <circle key={i} cx={b.x} cy="185" r={i % 2 ? "2" : "1.4"} fill="#FFFFFF" opacity="0.6">
+                  <animate attributeName="cy" from="185" to={surfaceY + 6} dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0;0.65;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+                </circle>
+              ))}
             </g>
           )}
 
+          {/* Weld seam rings — tiny detail that reads as "real vessel" */}
+          <line x1="10" y1="60" x2="110" y2="60" stroke="#C9D1AC" strokeWidth="1" opacity="0.5" />
+          <line x1="10" y1="100" x2="110" y2="100" stroke="#C9D1AC" strokeWidth="1" opacity="0.5" />
+          {/* Sample valve nub */}
+          <rect x="104" y="150" width="10" height="6" rx="1.5" fill="#C9D1AC" />
+
           <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
-          {!empty && (
-            <rect x="16" y="16" width="6" height="118" rx="3" fill="#FFFFFF" opacity="0.35" />
-          )}
+          <rect x="18" y="16" width="7" height="118" rx="3.5" fill="#FFFFFF" opacity="0.5" />
         </svg>
 
         {empty ? (
@@ -8991,7 +9014,19 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
               {batch.name}
             </div>
             <StagePill stage={batch.stage} />
-            <div style={{ display: "flex", gap: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#5C6B54" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 11,
+                color: "#5C6B54",
+                background: "#F5F1E4",
+                border: "1px solid #EBE8D6",
+                borderRadius: 20,
+                padding: "3px 10px",
+              }}
+            >
               <span>{rem}L</span>
               {latest && <span>SG {latest.gravity.toFixed(3)}</span>}
               <span>{days}d</span>
@@ -10946,7 +10981,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-52";
+const APP_VERSION = "2026-07-31-53";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
