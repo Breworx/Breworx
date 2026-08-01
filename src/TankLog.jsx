@@ -3560,6 +3560,11 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
         ) : (
           <>
             <div style={{ color: "#9BA88A", fontSize: 12 }}>Splitting across more than one fermenter? Add another row.</div>
+            {rows.filter((r) => r.tankId).length > 1 && (
+              <div style={{ color: "#5C6B54", fontSize: 12, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 12px" }}>
+                Splitting creates separate batches — one per fermenter, named "— A", "— B", etc. Each one tracks its own stage and readings from here on.
+              </div>
+            )}
             {rows.map((row) => {
               const rowTank = fermenters.find((t) => t.id === row.tankId);
               const rowOverCapacity = rowTank && Number(row.volume) > rowTank.capacity;
@@ -11816,7 +11821,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-67";
+const APP_VERSION = "2026-07-31-68";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13339,23 +13344,56 @@ export default function TankLog() {
   const transferToFermenter = async (id, tanksChosen) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const single = tanksChosen.length === 1;
-    const patch = single
-      ? { tank_id: tanksChosen[0].tankId, tank_name: tanksChosen[0].tankName, split_tanks: [], brew_stage: null, stage: "Primary" }
-      : { tank_id: null, tank_name: null, split_tanks: tanksChosen, brew_stage: null, stage: "Primary" };
-    const { error } = await supabase.from("batches").update(patch).eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) =>
-      prev.map((b) =>
-        b.id === id
-          ? single
-            ? { ...b, tankId: tanksChosen[0].tankId, tankName: tanksChosen[0].tankName, splitTanks: [], brewStage: null, stage: "Primary" }
-            : { ...b, tankId: null, tankName: null, splitTanks: tanksChosen, brewStage: null, stage: "Primary" }
-          : b
-      )
-    );
-    const summary = tanksChosen.map((t) => `${t.tankName} (${t.volume}L)`).join(" + ");
-    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${summary} — Primary`);
+
+    if (tanksChosen.length === 1) {
+      const tank = tanksChosen[0];
+      const patch = { tank_id: tank.tankId, tank_name: tank.tankName, split_tanks: [], brew_stage: null, stage: "Primary" };
+      const { error } = await supabase.from("batches").update(patch).eq("id", id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, tankId: tank.tankId, tankName: tank.tankName, splitTanks: [], brewStage: null, stage: "Primary" } : b))
+      );
+      logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.tankName} — Primary`);
+      return;
+    }
+
+    // Splitting across several fermenters: from this point on each one needs
+    // its own stage, readings, and history — a shared splitTanks field on
+    // one record can't represent that once they diverge. So this creates a
+    // genuinely separate, lettered batch per fermenter (sharing the brew-day
+    // history up to now) and retires the original kettle-stage record.
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const totalSplitVolume = tanksChosen.reduce((sum, t) => sum + (Number(t.volume) || 0), 0);
+    const newBatches = tanksChosen.map((t, i) => {
+      const suffix = letters[i] || String(i + 1);
+      const share = totalSplitVolume > 0 ? t.volume / totalSplitVolume : 0;
+      return {
+        ...batch,
+        id: uid(),
+        number: `${batch.number}${suffix}`,
+        name: `${batch.name} — ${suffix}`,
+        volume: t.volume,
+        tankId: t.tankId,
+        tankName: t.tankName,
+        splitTanks: [],
+        brewStage: null,
+        stage: "Primary",
+        ingredientCost: batch.ingredientCost != null ? Math.round(batch.ingredientCost * share * 100) / 100 : null,
+      };
+    });
+
+    for (const nb of newBatches) {
+      const { error } = await supabase.from("batches").insert(batchToRow(nb, user.id, profile.companyId));
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    }
+    const { error: deleteError } = await supabase.from("batches").delete().eq("id", id);
+    if (deleteError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+
+    setBatches((prev) => [...newBatches, ...prev.filter((b) => b.id !== id)]);
+    setSelectedId(newBatches[0].id);
+    const summary = newBatches.map((b) => `${b.name} (${b.tankName})`).join(" + ");
+    showToast("success", `Split into ${newBatches.length} separate batches.`);
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) split into ${summary} — Primary`);
   };
 
   const logDiacetylTest = async (id, test) => {
