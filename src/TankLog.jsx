@@ -9751,42 +9751,136 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean }) {
   if (empty) {
     const cleanStage = tank.cleanStatus || "Needs CIP";
     const cleanColor = CLEAN_STAGE_COLOR[cleanStage];
+    const cipActive = cleanStage !== "Sanitised";
+
+    if (!cipActive) {
+      return (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            background: "none",
+            border: "1px dashed #DDE0C8",
+            borderRadius: 8,
+            padding: "12px 10px",
+            textAlign: "center",
+            width: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#9BA88A" }}>{tank.name}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.05em", textTransform: "uppercase", color: "#C9D1AC" }}>
+            {tank.type} · {tank.capacity}L
+          </span>
+          <button
+            onClick={() => onCycleClean(tank.id)}
+            style={{
+              marginTop: 4,
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              background: `${cleanColor}1A`,
+              border: `1px solid ${cleanColor}`,
+              borderRadius: 20,
+              padding: "4px 10px",
+              color: cleanColor,
+              fontFamily: "'Inter', sans-serif",
+              fontWeight: 500,
+              fontSize: 10.5,
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: cleanColor, flexShrink: 0 }} />
+            {cleanStage}
+          </button>
+        </div>
+      );
+    }
+
+    // Actively needs attention — same size and visual weight as a working
+    // tank, not tucked away as an afterthought.
+    const cipFillPct = { "Needs CIP": 30, Rinsed: 55, "Caustic clean": 80 }[cleanStage] || 30;
+    const cipSurfaceY = 10 + (180 - 10) * (1 - cipFillPct / 100);
+    const suds = [22, 45, 68, 91].map((x, i) => ({ x, delay: i * 0.5, dur: 2.2 + (i % 2) * 0.4, r: i % 2 ? 2 : 1.4 }));
     return (
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          justifyContent: "center",
-          gap: 4,
-          background: "none",
-          border: "1px dashed #DDE0C8",
-          borderRadius: 8,
-          padding: "12px 10px",
-          textAlign: "center",
-          width: "100%",
+          gap: 10,
+          background: "#FFFFFF",
+          border: `1px solid ${cleanColor}55`,
+          borderRadius: 10,
+          padding: "16px 12px 14px",
           boxSizing: "border-box",
+          boxShadow: `0 1px 2px rgba(42,51,36,0.05), 0 4px 14px ${cleanColor}22`,
         }}
       >
-        <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#9BA88A" }}>{tank.name}</span>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.05em", textTransform: "uppercase", color: "#C9D1AC" }}>
-          {tank.type} · {tank.capacity}L
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+          <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>{tank.name}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>
+            {tank.type} · {tank.capacity}L
+          </span>
+        </div>
+
+        <svg width="92" height="146" viewBox="0 0 120 200">
+          <defs>
+            <clipPath id={clipId}>
+              <path d={bodyPath} />
+            </clipPath>
+            <linearGradient id={steelId} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#E4E0D0" />
+              <stop offset="35%" stopColor="#F8F6EE" />
+              <stop offset="55%" stopColor="#FDFCF7" />
+              <stop offset="100%" stopColor="#DDD8C4" />
+            </linearGradient>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={cleanColor} stopOpacity="0.4" />
+              <stop offset="100%" stopColor={cleanColor} stopOpacity="0.7" />
+            </linearGradient>
+          </defs>
+
+          <rect x="24" y="2" width="72" height="9" rx="4" fill={`url(#${steelId})`} stroke={cleanColor} strokeWidth="1.5" />
+          <path d={bodyPath} fill={`url(#${steelId})`} stroke={cleanColor} strokeWidth="2.5" />
+
+          <g clipPath={`url(#${clipId})`}>
+            <rect x="0" y={cipSurfaceY} width="120" height="200" fill={`url(#${gradId})`} />
+            {suds.map((b, i) => (
+              <circle key={i} cx={b.x} cy="185" r={b.r} fill="#FFFFFF" opacity="0.7">
+                <animate attributeName="cy" from="185" to={cipSurfaceY + 6} dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0;0.75;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+              </circle>
+            ))}
+            <g style={{ animation: "bp-swirl-spin 2.8s linear infinite", transformOrigin: "60px 100px" }}>
+              <path d="M40 90 A22 22 0 1 1 40 112" stroke="#FFFFFF" strokeWidth="3" fill="none" opacity="0.5" strokeLinecap="round" />
+              <path d="M40 84 L40 96 L52 90 Z" fill="#FFFFFF" opacity="0.5" />
+            </g>
+          </g>
+
+          <line x1="10" y1="60" x2="110" y2="60" stroke={cleanColor} strokeWidth="1" opacity="0.4" />
+          <line x1="10" y1="100" x2="110" y2="100" stroke={cleanColor} strokeWidth="1" opacity="0.4" />
+          <rect x="104" y="150" width="10" height="6" rx="1.5" fill={cleanColor} opacity="0.5" />
+          <path d={bodyPath} fill="none" stroke={cleanColor} strokeWidth="2.5" />
+        </svg>
+
         <button
           onClick={() => onCycleClean(tank.id)}
           style={{
-            marginTop: 4,
             display: "flex",
             alignItems: "center",
-            gap: 5,
+            gap: 6,
             background: `${cleanColor}1A`,
             border: `1px solid ${cleanColor}`,
             borderRadius: 20,
-            padding: "4px 10px",
+            padding: "5px 12px",
             color: cleanColor,
             fontFamily: "'Inter', sans-serif",
             fontWeight: 500,
-            fontSize: 10.5,
+            fontSize: 11.5,
             cursor: "pointer",
           }}
         >
@@ -12043,7 +12137,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-71";
+const APP_VERSION = "2026-07-31-72";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
