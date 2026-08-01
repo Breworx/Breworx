@@ -3522,7 +3522,12 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
   const target = remainingVolume(batch);
   const [rows, setRows] = useState([{ id: uid(), tankId: "", volume: target }]);
 
-  const addRow = () => setRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }]);
+  const addRow = () =>
+    setRows((prev) => {
+      const allocated = prev.reduce((sum, r) => sum + (Number(r.volume) || 0), 0);
+      const remainder = Math.round((target - allocated) * 10) / 10;
+      return [...prev, { id: uid(), tankId: "", volume: remainder > 0 ? remainder : "" }];
+    });
   const updateRow = (id, patch) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const removeRow = (id) => setRows((prev) => prev.filter((r) => r.id !== id));
   const total = rows.reduce((sum, r) => sum + (Number(r.volume) || 0), 0);
@@ -11797,7 +11802,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-64";
+const APP_VERSION = "2026-07-31-65";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
