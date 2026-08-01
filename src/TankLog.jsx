@@ -3537,7 +3537,7 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
   });
   const shortBy = Math.round((target - total) * 10) / 10;
   const underAllocated = shortBy > 0.05;
-  const canSubmit = rows.some((r) => r.tankId && Number(r.volume) > 0) && !underAllocated && overCapacityRows.length === 0;
+  const canSubmit = rows.some((r) => r.tankId && Number(r.volume) > 0) && overCapacityRows.length === 0;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -3653,7 +3653,7 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
               <Plus size={13} /> Split into another fermenter
             </button>
             {rows.length > 1 && (
-              <div style={{ fontSize: 12, color: total !== target ? "#B5502F" : "#9BA88A" }}>
+              <div style={{ fontSize: 12, color: total > target + 0.05 ? "#B5502F" : "#9BA88A" }}>
                 {total}L of {target}L allocated
               </div>
             )}
@@ -3663,17 +3663,15 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
               const topUpValue = Math.round(((Number(lastRow?.volume) || 0) + shortBy) * 10) / 10;
               const canTopUp = lastRow && lastTank && topUpValue <= lastTank.capacity;
               return (
-                <div style={{ color: "#B5502F", fontSize: 12.5, background: "#FBE5DC", border: "1px solid #E3B3A0", borderRadius: 5, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-                  <span>{shortBy}L still needs a fermenter — this batch won't fit in what's chosen so far.</span>
-                  {canTopUp ? (
+                <div style={{ color: "#5C6B54", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span>{shortBy}L not going into a fermenter — normal if that's kettle trub, hop debris, or chiller loss.</span>
+                  {canTopUp && (
                     <button
                       onClick={() => updateRow(lastRow.id, { volume: topUpValue })}
-                      style={{ alignSelf: "flex-start", background: "#B5502F", border: "none", borderRadius: 4, padding: "6px 12px", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+                      style={{ alignSelf: "flex-start", background: "none", border: "1px solid #C9D1AC", borderRadius: 4, padding: "6px 12px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
                     >
-                      Add the extra {shortBy}L to {lastTank.name}
+                      Capture the extra {shortBy}L in {lastTank.name} instead
                     </button>
-                  ) : (
-                    <span>Add another fermenter to cover the rest.</span>
                   )}
                 </div>
               );
@@ -11818,7 +11816,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-66";
+const APP_VERSION = "2026-07-31-67";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
