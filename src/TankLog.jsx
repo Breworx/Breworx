@@ -3519,14 +3519,23 @@ function EditSplitTanksModal({ batch, tanks, batches, onClose, onSave }) {
 // gets its own multi-row picker instead of the plain single-tank one.
 function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
   const fermenters = tanks.filter((t) => t.type === "Fermenter");
-  const [rows, setRows] = useState([{ id: uid(), tankId: "", volume: batch.volume }]);
+  const target = remainingVolume(batch);
+  const [rows, setRows] = useState([{ id: uid(), tankId: "", volume: target }]);
 
   const addRow = () => setRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }]);
   const updateRow = (id, patch) => setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const removeRow = (id) => setRows((prev) => prev.filter((r) => r.id !== id));
   const total = rows.reduce((sum, r) => sum + (Number(r.volume) || 0), 0);
+  const overCapacityRows = rows.filter((r) => {
+    const t = fermenters.find((tk) => tk.id === r.tankId);
+    return t && Number(r.volume) > t.capacity;
+  });
+  const shortBy = Math.round((target - total) * 10) / 10;
+  const underAllocated = shortBy > 0.05;
+  const canSubmit = rows.some((r) => r.tankId && Number(r.volume) > 0) && !underAllocated && overCapacityRows.length === 0;
 
   const submit = () => {
+    if (!canSubmit) return;
     const final = rows
       .filter((r) => r.tankId && Number(r.volume) > 0)
       .map((r) => {
@@ -3546,68 +3555,79 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
         ) : (
           <>
             <div style={{ color: "#9BA88A", fontSize: 12 }}>Splitting across more than one fermenter? Add another row.</div>
-            {rows.map((row) => (
-              <div key={row.id} style={{ display: "flex", gap: 6 }}>
-                <select
-                  value={row.tankId}
-                  onChange={(e) => updateRow(row.id, { tankId: e.target.value })}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                    background: "#F5F1E4",
-                    border: "1px solid #DDE0C8",
-                    borderRadius: 4,
-                    padding: "8px 8px",
-                    color: "#2A3324",
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 13,
-                  }}
-                >
-                  <option value="">Choose fermenter</option>
-                  {sortedTanks(fermenters).map((t) => {
-                    const usedAbove = rows.some((r) => r.id !== row.id && r.tankId === t.id);
-                    const occupied = tankIsOccupied(batches, t.id, batch.id) || usedAbove;
-                    const occupant = occupyingBatch(batches, t.id, batch.id);
-                    return (
-                      <option key={t.id} value={t.id} disabled={occupied}>
-                        {t.name} ({t.capacity}L)
-                        {usedAbove ? " — already used above" : occupant ? ` — occupied by ${occupant.name}` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={row.volume}
-                  onChange={(e) => updateRow(row.id, { volume: e.target.value })}
-                  placeholder="Litres"
-                  style={{
-                    width: 84,
-                    flexShrink: 0,
-                    boxSizing: "border-box",
-                    background: "#F5F1E4",
-                    border: "1px solid #DDE0C8",
-                    borderRadius: 4,
-                    padding: "8px 8px",
-                    color: "#2A3324",
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 13,
-                    textAlign: "right",
-                  }}
-                />
-                {rows.length > 1 && (
-                  <button
-                    onClick={() => removeRow(row.id)}
-                    aria-label="Remove fermenter"
-                    style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8, flexShrink: 0 }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
+            {rows.map((row) => {
+              const rowTank = fermenters.find((t) => t.id === row.tankId);
+              const rowOverCapacity = rowTank && Number(row.volume) > rowTank.capacity;
+              return (
+                <div key={row.id}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <select
+                      value={row.tankId}
+                      onChange={(e) => updateRow(row.id, { tankId: e.target.value })}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                        background: "#F5F1E4",
+                        border: "1px solid #DDE0C8",
+                        borderRadius: 4,
+                        padding: "8px 8px",
+                        color: "#2A3324",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 13,
+                      }}
+                    >
+                      <option value="">Choose fermenter</option>
+                      {sortedTanks(fermenters).map((t) => {
+                        const usedAbove = rows.some((r) => r.id !== row.id && r.tankId === t.id);
+                        const occupied = tankIsOccupied(batches, t.id, batch.id) || usedAbove;
+                        const occupant = occupyingBatch(batches, t.id, batch.id);
+                        return (
+                          <option key={t.id} value={t.id} disabled={occupied}>
+                            {t.name} ({t.capacity}L)
+                            {usedAbove ? " — already used above" : occupant ? ` — occupied by ${occupant.name}` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={row.volume}
+                      onChange={(e) => updateRow(row.id, { volume: e.target.value })}
+                      placeholder="Litres"
+                      style={{
+                        width: 84,
+                        flexShrink: 0,
+                        boxSizing: "border-box",
+                        background: "#F5F1E4",
+                        border: `1px solid ${rowOverCapacity ? "#E3B37A" : "#DDE0C8"}`,
+                        borderRadius: 4,
+                        padding: "8px 8px",
+                        color: rowOverCapacity ? "#B5502F" : "#2A3324",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 13,
+                        textAlign: "right",
+                      }}
+                    />
+                    {rows.length > 1 && (
+                      <button
+                        onClick={() => removeRow(row.id)}
+                        aria-label="Remove fermenter"
+                        style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8, flexShrink: 0 }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                  {rowOverCapacity && (
+                    <div style={{ color: "#B5502F", fontSize: 11, marginTop: 3 }}>
+                      Exceeds {rowTank.name}'s {rowTank.capacity}L capacity.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             <button
               onClick={addRow}
               style={{
@@ -3628,25 +3648,31 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
               <Plus size={13} /> Split into another fermenter
             </button>
             {rows.length > 1 && (
-              <div style={{ fontSize: 12, color: total !== batch.volume ? "#B5502F" : "#9BA88A" }}>
-                {total}L of {batch.volume}L allocated
+              <div style={{ fontSize: 12, color: total !== target ? "#B5502F" : "#9BA88A" }}>
+                {total}L of {target}L allocated
+              </div>
+            )}
+            {underAllocated && (
+              <div style={{ color: "#B5502F", fontSize: 12.5, background: "#FBE5DC", border: "1px solid #E3B3A0", borderRadius: 5, padding: "8px 12px" }}>
+                {shortBy}L still needs a fermenter — this batch won't fit in what's chosen so far. Add another fermenter to cover the rest.
               </div>
             )}
           </>
         )}
         <button
           onClick={submit}
+          disabled={!canSubmit}
           style={{
-            background: "#5C9A3C",
+            background: canSubmit ? "#5C9A3C" : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: "#16191A",
+            color: canSubmit ? "#16191A" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: canSubmit ? "pointer" : "default",
           }}
         >
           Transfer to fermenter — starts Primary
@@ -11771,7 +11797,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-63";
+const APP_VERSION = "2026-07-31-64";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
