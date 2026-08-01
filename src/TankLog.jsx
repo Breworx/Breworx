@@ -60,6 +60,17 @@ const STAGE_COLOR = {
   Packaged: "#9BA88A",
 };
 
+// A tank's CIP cycle once it's empty — null/unset is treated as "Needs CIP"
+// by default, since assuming a tank is dirty until proven otherwise is the
+// safer default for a food-safety-adjacent status.
+const CLEAN_STAGES = ["Needs CIP", "Rinsed", "Caustic clean", "Sanitised"];
+const CLEAN_STAGE_COLOR = {
+  "Needs CIP": "#B5502F",
+  Rinsed: "#D9A441",
+  "Caustic clean": "#4AA8C9",
+  Sanitised: "#5C9A3C",
+};
+
 const CONTAINERS = [
   { key: "cans330", label: "330ml Can", shortLabel: "Can", volumeL: 0.33 },
   { key: "kegs20", label: "20L Keg", shortLabel: "20L Keg", volumeL: 20 },
@@ -9707,7 +9718,7 @@ function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) 
   );
 }
 
-function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
+function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean }) {
   const empty = !batch;
   const latest = batch ? latestReading(batch) : null;
   const color = batch ? STAGE_COLOR[batch.stage] || "#5C9A3C" : "#C9D1AC";
@@ -9738,9 +9749,10 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
   const droplets = cooling ? [30, 55, 80].map((x, i) => ({ x, delay: i * 1.1 })) : [];
 
   if (empty) {
+    const cleanStage = tank.cleanStatus || "Needs CIP";
+    const cleanColor = CLEAN_STAGE_COLOR[cleanStage];
     return (
-      <button
-        onClick={() => {}}
+      <div
         style={{
           display: "flex",
           flexDirection: "column",
@@ -9751,7 +9763,6 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
           border: "1px dashed #DDE0C8",
           borderRadius: 8,
           padding: "12px 10px",
-          cursor: "default",
           textAlign: "center",
           width: "100%",
           boxSizing: "border-box",
@@ -9761,8 +9772,28 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog }) {
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.05em", textTransform: "uppercase", color: "#C9D1AC" }}>
           {tank.type} · {tank.capacity}L
         </span>
-        <span style={{ color: "#C9D1AC", fontSize: 11, fontFamily: "'Inter', sans-serif", marginTop: 2 }}>Empty</span>
-      </button>
+        <button
+          onClick={() => onCycleClean(tank.id)}
+          style={{
+            marginTop: 4,
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            background: `${cleanColor}1A`,
+            border: `1px solid ${cleanColor}`,
+            borderRadius: 20,
+            padding: "4px 10px",
+            color: cleanColor,
+            fontFamily: "'Inter', sans-serif",
+            fontWeight: 500,
+            fontSize: 10.5,
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: cleanColor, flexShrink: 0 }} />
+          {cleanStage}
+        </button>
+      </div>
     );
   }
 
@@ -10846,6 +10877,7 @@ function HomeView({
   recentBatches,
   onQuickLog,
   activityLog,
+  onCycleClean,
 }) {
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
@@ -11056,7 +11088,7 @@ function HomeView({
                 return aOcc - bOcc;
               })
               .map((t) => (
-                <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} />
+                <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} onCycleClean={onCycleClean} />
               ))}
           </div>
         </div>
@@ -12011,7 +12043,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-70";
+const APP_VERSION = "2026-07-31-71";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -12673,6 +12705,8 @@ export default function TankLog() {
     setBatches((prev) => [rowToBatch(data), ...prev]);
     showToast("success", `${b.name} created.`);
     logActivity("created", "batch", b.name, `${b.startDate > today() ? "Scheduled" : "Started"} batch ${b.name} (#${b.number})`);
+    if (b.tankId) resetTankClean(b.tankId);
+    (b.splitTanks || []).forEach((t) => resetTankClean(t.tankId));
 
     for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
       const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => i.name.toLowerCase() === item.name.toLowerCase())?.qty || 0)) * 100) / 100);
@@ -13179,6 +13213,28 @@ export default function TankLog() {
     setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   };
 
+  // Cycles a tank through the CIP workflow — tapping the badge on an empty
+  // tank moves it to the next step. Sanitised loops back to Needs CIP if
+  // tapped again, in case that was a mistake.
+  const cycleTankClean = async (id) => {
+    const tank = tanks.find((t) => t.id === id);
+    if (!tank) return;
+    const idx = CLEAN_STAGES.indexOf(tank.cleanStatus);
+    const next = CLEAN_STAGES[(idx + 1) % CLEAN_STAGES.length];
+    const { error } = await supabase.from("tanks").update({ clean_status: next }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: next } : t)));
+  };
+
+  // Whenever a tank starts being used by a batch, its clean status resets —
+  // so the next time it empties out, it correctly starts a fresh CIP cycle
+  // instead of showing a stale "Sanitised" from before.
+  const resetTankClean = async (tankId) => {
+    if (!tankId) return;
+    await supabase.from("tanks").update({ clean_status: null }).eq("id", tankId);
+    setTanks((prev) => prev.map((t) => (t.id === tankId ? { ...t, cleanStatus: null } : t)));
+  };
+
   const deleteTank = async (id) => {
     const tank = tanks.find((t) => t.id === id);
     if (!tank) return;
@@ -13209,12 +13265,14 @@ export default function TankLog() {
     setBatches((prev) =>
       prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null, brewStage: brewStage ?? null } : b))
     );
+    if (tank) resetTankClean(tank.id);
   };
 
   const updateBatchSplitTanks = async (batchId, splitTanks) => {
     const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, splitTanks } : b)));
+    splitTanks.forEach((t) => resetTankClean(t.tankId));
   };
 
   const addInventoryItem = async (item) => {
@@ -13544,6 +13602,7 @@ export default function TankLog() {
       prev.map((b) => (b.id === id ? { ...b, tankId: tank.id, tankName: tank.name, brewStage, ...(newStage ? { stage: newStage } : {}) } : b))
     );
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.name}${newStage ? ` — ${newStage}` : ""}`);
+    resetTankClean(tank.id);
   };
 
   // From the kettle, a batch can go into one fermenter or split across
@@ -13562,6 +13621,7 @@ export default function TankLog() {
         prev.map((b) => (b.id === id ? { ...b, tankId: tank.tankId, tankName: tank.tankName, splitTanks: [], brewStage: null, stage: "Primary" } : b))
       );
       logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.tankName} — Primary`);
+      resetTankClean(tank.tankId);
       return;
     }
 
@@ -13602,6 +13662,7 @@ export default function TankLog() {
     const summary = newBatches.map((b) => `${b.name} (${b.tankName})`).join(" + ");
     showToast("success", `Split into ${newBatches.length} separate batches.`);
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) split into ${summary} — Primary`);
+    tanksChosen.forEach((t) => resetTankClean(t.tankId));
   };
 
   const logDiacetylTest = async (id, test) => {
@@ -14211,6 +14272,7 @@ export default function TankLog() {
                 recentBatches={recentBatches}
                 onQuickLog={setLogTarget}
                 activityLog={activityLog}
+                onCycleClean={cycleTankClean}
               />
             )}
 
