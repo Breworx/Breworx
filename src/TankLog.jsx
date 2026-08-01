@@ -7235,7 +7235,62 @@ function EditBrewDayFieldModal({ target, onClose, onSave }) {
   );
 }
 
+// The first half of a packaging run — just picking cans or kegs and marking
+// a start time. The actual counts get entered later, in PackagingModal,
+// once the run is genuinely finished.
+function StartPackagingModal({ batch, onClose, onSave }) {
+  return (
+    <Modal title={`Start packaging — ${batch.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5 }}>
+          What are you packaging into? You'll enter the actual counts once the run's finished.
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => onSave("cans")}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 8,
+              padding: "18px 10px",
+              cursor: "pointer",
+            }}
+          >
+            <Box size={26} color="#5C9A3C" />
+            <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>Cans</span>
+          </button>
+          <button
+            onClick={() => onSave("kegs")}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 8,
+              padding: "18px 10px",
+              cursor: "pointer",
+            }}
+          >
+            <Package size={26} color="#5C9A3C" />
+            <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, color: "#2A3324" }}>Kegs</span>
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault }) {
+  const containerFilter = batch.packagingRun?.containerType || null;
+  const relevantContainers = containerFilter ? CONTAINERS.filter((c) => c.key.startsWith(containerFilter === "cans" ? "cans" : "kegs")) : CONTAINERS;
   const [counts, setCounts] = useState(() => {
     const init = {};
     CONTAINERS.forEach((c) => (init[c.key] = 0));
@@ -7297,6 +7352,11 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
           </div>
         )}
 
+        {batch.packagingRun && (
+          <div style={{ color: "#9BA88A", fontSize: 11.5 }}>
+            Started {formatHistoryStamp(batch.packagingRun.startedAt)} — packaging into {containerFilter === "cans" ? "cans" : "kegs"}
+          </div>
+        )}
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           Remaining in tank: <span style={{ color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span>
           {" "}of {batch.volume} L batch
@@ -7305,7 +7365,7 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
           This packaging run
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {CONTAINERS.map((c) => (
+          {relevantContainers.map((c) => (
             <NumberField
               key={c.key}
               label={c.label}
@@ -7317,7 +7377,7 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
         </div>
 
         {packageTypes.length > 0 &&
-          CONTAINERS.filter((c) => Number(counts[c.key]) > 0).map((c) => (
+          relevantContainers.filter((c) => Number(counts[c.key]) > 0).map((c) => (
             <label key={c.key} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
                 Package type for {c.label} (optional — deducts consumables)
@@ -7755,7 +7815,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -8225,7 +8285,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             {remaining > 0 && (
               <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
                 <button
-                  onClick={() => onOpenPackaging(batch)}
+                  onClick={() => (batch.packagingRun ? onOpenPackaging(batch) : onStartPackaging(batch))}
                   style={{
                     flex: 1,
                     display: "flex",
@@ -8242,7 +8302,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     cursor: "pointer",
                   }}
                 >
-                  <Package size={14} /> Log more packaging
+                  <Package size={14} /> {batch.packagingRun ? "Finish packaging" : "Log more packaging"}
                 </button>
                 <button
                   onClick={() => onDiscardRemaining(batch)}
@@ -8437,11 +8497,14 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           const needsDiacetylPass = batch.stage === "Primary" && nextStage === "Cooling";
           const hasDiacetylPass = (batch.diacetylTests || []).some((t) => t.result === "pass");
           const blocked = needsDiacetylPass && !hasDiacetylPass;
+          const isPackagingStep = nextStage === "Packaged";
+          const packagingStarted = isPackagingStep && batch.packagingRun;
           return (
             <button
               onClick={() => {
                 if (blocked) return;
-                nextStage === "Packaged" ? onOpenPackaging(batch) : onAdvance(batch.id);
+                if (!isPackagingStep) { onAdvance(batch.id); return; }
+                packagingStarted ? onOpenPackaging(batch) : onStartPackaging(batch);
               }}
               disabled={blocked}
               style={{
@@ -8462,12 +8525,23 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                 cursor: blocked ? "default" : "pointer",
               }}
             >
-              {nextStage === "Packaged" && <Package size={15} />}
-              {blocked ? "Log a passing diacetyl test first" : nextStage === "Packaged" ? "Package batch" : `Advance to ${nextStage}`}
+              {isPackagingStep && <Package size={15} />}
+              {blocked
+                ? "Log a passing diacetyl test first"
+                : !isPackagingStep
+                ? `Advance to ${nextStage}`
+                : packagingStarted
+                ? "Finish packaging"
+                : "Start packaging"}
             </button>
           );
         })()}
       </div>
+      {batch.packagingRun && (
+        <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8 }}>
+          Packaging into {batch.packagingRun.containerType} — started {formatHistoryStamp(batch.packagingRun.startedAt)}
+        </div>
+      )}
 
       {stageIdx > 0 && batch.stage !== "Packaged" && (
         <button
@@ -9750,12 +9824,13 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
   const steelId = `tankwall-steel-${tank.id}`;
   const isMashTun = tank.type === "Mash Tun";
   const isKettle = tank.type === "Kettle";
+  const packaging = batch && !!batch.packagingRun;
   const boiling = batch && isKettle && batch.stage === "Brewing";
   const recirculating = batch && isMashTun && batch.brewStage === "Recirculating";
-  const vesselColor = boiling ? "#E08A3C" : isMashTun && batch ? "#C68A3C" : color;
-  const fermenting = batch && !isMashTun && !isKettle && (batch.stage === "Brewing" || batch.stage === "Primary");
-  const cooling = batch && !isMashTun && !isKettle && batch.stage === "Cooling";
-  const brite = batch && !isMashTun && !isKettle && batch.stage === "Brite Tank";
+  const vesselColor = packaging ? "#5B7FDE" : boiling ? "#E08A3C" : isMashTun && batch ? "#C68A3C" : color;
+  const fermenting = batch && !isMashTun && !isKettle && !packaging && (batch.stage === "Brewing" || batch.stage === "Primary");
+  const cooling = batch && !isMashTun && !isKettle && !packaging && batch.stage === "Cooling";
+  const brite = batch && !isMashTun && !isKettle && !packaging && batch.stage === "Brite Tank";
   const frostId = `tankwall-frost-${tank.id}`;
   // Body: x10–110, shoulders taper into a cone from y140 to the point at y190.
   const bodyPath = "M10 10 H110 V140 L60 190 L10 140 Z";
@@ -9767,6 +9842,7 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
     : [];
   const steamWisps = boiling ? [40, 65, 90].map((x, i) => ({ x, delay: i * 0.8 })) : [];
   const droplets = cooling ? [30, 55, 80].map((x, i) => ({ x, delay: i * 1.1 })) : [];
+  const boxes = packaging ? [0, 1, 2].map((i) => ({ delay: i * 1.1 })) : [];
 
   if (empty) {
     const cleanStage = tank.cleanStatus || "Needs CIP";
@@ -10091,6 +10167,14 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
               </path>
             ))}
 
+          {packaging &&
+            boxes.map((b, i) => (
+              <rect key={`box-${i}`} x="-14" y="170" width="12" height="12" rx="2" fill="#FFFFFF" opacity="0.85">
+                <animateTransform attributeName="transform" type="translate" from="0 0" to="150 0" dur="2.6s" begin={`${b.delay}s`} repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0;0.85;0.85;0" dur="2.6s" begin={`${b.delay}s`} repeatCount="indefinite" />
+              </rect>
+            ))}
+
           {cooling && (
             <>
               <rect x="10" y="10" width="100" height="60" fill={`url(#${frostId})`} clipPath={`url(#${clipId})`} />
@@ -10131,7 +10215,27 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
             >
               {batch.name}
             </div>
-            <StagePill stage={batch.stage} />
+            {packaging ? (
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  background: "#5B7FDE1A",
+                  border: "1px solid #5B7FDE",
+                  borderRadius: 20,
+                  padding: "3px 10px",
+                  color: "#5B7FDE",
+                  fontFamily: "'Inter', sans-serif",
+                  fontWeight: 500,
+                  fontSize: 11,
+                }}
+              >
+                <Package size={11} /> Packaging — {batch.packagingRun.containerType}
+              </span>
+            ) : (
+              <StagePill stage={batch.stage} />
+            )}
             <div
               style={{
                 display: "flex",
@@ -12201,10 +12305,41 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-77";
+const APP_VERSION = "2026-07-31-79";
 
-function UpdateBanner({ onRefresh }) {
+function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
+  if (refreshDidntWork) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 95,
+          background: "#1F2E18",
+          borderBottom: "1px solid #C9D1AC",
+          padding: "10px 16px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          textAlign: "center",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <AlertTriangle size={14} color="#E3B04A" />
+          <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
+            This app icon needs a quick reset to update
+          </span>
+        </div>
+        <span style={{ color: "#C9D1AC", fontSize: 11.5, fontFamily: "'Inter', sans-serif", maxWidth: 480, lineHeight: 1.4 }}>
+          Refreshing didn't pick up the latest version. Delete this app's icon from your Home Screen, then open Safari, go to the site again, and tap Share → "Add to Home Screen" to put it back — that clears it out for good.
+        </span>
+      </div>
+    );
+  }
   return (
     <div
       style={{
@@ -12355,13 +12490,30 @@ export default function TankLog() {
   // open — important for the installed PWA, which otherwise keeps showing a
   // stale cached version until the user manually reinstalls it.
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [refreshDidntWork, setRefreshDidntWork] = useState(false);
   useEffect(() => {
     const checkForUpdate = async () => {
       try {
         const res = await fetch(`/version.txt?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) return;
         const latest = (await res.text()).trim();
-        if (latest && latest !== APP_VERSION) setUpdateAvailable(true);
+        if (latest && latest !== APP_VERSION) {
+          setUpdateAvailable(true);
+          // If we're still on the same version we already tried refreshing
+          // away from, a plain reload genuinely isn't working for this
+          // device — most likely an installed home-screen icon stuck on
+          // old cached code. Surface plainer, actionable guidance instead
+          // of just repeating the same button that already didn't help.
+          try {
+            if (localStorage.getItem("brewpoint-refresh-attempt-version") === APP_VERSION) {
+              setRefreshDidntWork(true);
+            }
+          } catch {}
+        } else {
+          try {
+            localStorage.removeItem("brewpoint-refresh-attempt-version");
+          } catch {}
+        }
       } catch {
         // Network hiccup or offline — not worth surfacing, just skip this check.
       }
@@ -12524,6 +12676,7 @@ export default function TankLog() {
   const [vesselTransferTarget, setVesselTransferTarget] = useState(null);
   const [editSplitTanksTarget, setEditSplitTanksTarget] = useState(null);
   const [fermenterTransferTarget, setFermenterTransferTarget] = useState(null);
+  const [startPackagingTarget, setStartPackagingTarget] = useState(null);
   const [diacetylTestTarget, setDiacetylTestTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -13984,12 +14137,25 @@ export default function TankLog() {
     const events = packagingEvents(batch);
     const newEvent = { id: uid(), date: today(), ...sessionCounts, packageTypes: packageTypeSelections };
     const newPackaging = { events: [...events, newEvent], discarded: packagingDiscarded(batch) };
-    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged" }).eq("id", id);
+    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged", packaging_run: null }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged" } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged", packagingRun: null } : b)));
     syncPackagingToXero(batch, sessionCounts);
     await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections);
     logActivity("packaged", "batch", batch.name, `${batch.name} (#${batch.number}) packaged`);
+  };
+
+  // First half of a packaging run — just records what's being packaged
+  // into and when it started. The tank stays occupied and the batch's
+  // real stage doesn't change until logPackagingSession finishes it.
+  const startPackagingRun = async (id, containerType) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const packagingRun = { containerType, startedAt: new Date().toISOString() };
+    const { error } = await supabase.from("batches").update({ packaging_run: packagingRun }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packagingRun } : b)));
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) started packaging (${containerType})`);
   };
 
   const undoPackagingEvent = async (id, eventId) => {
@@ -14134,6 +14300,7 @@ export default function TankLog() {
       `}</style>
       {updateAvailable && (
         <UpdateBanner
+          refreshDidntWork={refreshDidntWork}
           onRefresh={async () => {
             // Installed home-screen apps on iOS can hang onto a cached copy
             // even when the server says not to — this throws everything we
@@ -14141,6 +14308,9 @@ export default function TankLog() {
             // exist), confirm a fresh copy is actually fetchable, then force
             // a hard navigation (replace, not href — less likely to resolve
             // from any in-memory/back-forward cache) to a cache-busted URL.
+            try {
+              localStorage.setItem("brewpoint-refresh-attempt-version", APP_VERSION);
+            } catch {}
             try {
               if (window.caches) {
                 const keys = await caches.keys();
@@ -14165,7 +14335,7 @@ export default function TankLog() {
         style={{
           display: "none",
           position: "fixed",
-          top: `calc(env(safe-area-inset-top, 0px) + ${14 + (updateAvailable ? 42 : 0) + (isOffline ? 42 : 0)}px)`,
+          top: `calc(env(safe-area-inset-top, 0px) + ${14 + (updateAvailable ? (refreshDidntWork ? 66 : 42) : 0) + (isOffline ? 42 : 0)}px)`,
           left: `calc(env(safe-area-inset-left, 0px) + 14px)`,
           zIndex: 97,
           alignItems: "center",
@@ -15635,6 +15805,7 @@ export default function TankLog() {
             onOpenVesselTransfer={setVesselTransferTarget}
             onEditSplitTanks={setEditSplitTanksTarget}
             onOpenFermenterTransfer={setFermenterTransferTarget}
+            onStartPackaging={setStartPackagingTarget}
           />
         )}
 
@@ -15994,6 +16165,16 @@ export default function TankLog() {
           batches={batches}
           onClose={() => setFermenterTransferTarget(null)}
           onSave={(tanksChosen) => transferToFermenter(fermenterTransferTarget.id, tanksChosen)}
+        />
+      )}
+      {startPackagingTarget && (
+        <StartPackagingModal
+          batch={startPackagingTarget}
+          onClose={() => setStartPackagingTarget(null)}
+          onSave={(containerType) => {
+            startPackagingRun(startPackagingTarget.id, containerType);
+            setStartPackagingTarget(null);
+          }}
         />
       )}
       {logTarget && (
