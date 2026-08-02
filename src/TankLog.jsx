@@ -13351,6 +13351,144 @@ function HomeView({
         )}
       </div>
 
+      {totalTasks > 0 && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C" }}>
+              <AlertTriangle size={12} /> Needs doing ({totalTasks})
+            </div>
+            <button
+              onClick={() => window.print()}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              Print day sheet
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {brewTasks.map(({ batch, next }) => (
+              <button
+                key={batch.id}
+                onClick={() => onOpenBatch(batch.id)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  background: "#FFFFFF",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ color: "#2A3324", fontSize: 13 }}>
+                  <span style={{ color: "#5C6B54" }}>{batch.name}: </span>
+                  {next.label}
+                </span>
+                <span style={{ color: "#5C9A3C", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>brew</span>
+              </button>
+            ))}
+            {foodSafetyTasks.map((t, i) => (
+              <button
+                key={i}
+                onClick={() => onGoTo("foodsafety")}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  background: "#FFFFFF",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ color: "#2A3324", fontSize: 13 }}>{t.label}</span>
+                <span style={{ color: "#D9A441", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>food safety</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(todayReminders.length > 0 || addingTodayReminder) && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Today</div>
+            <button
+              onClick={() => setAddingTodayReminder(true)}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              + Add
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: totalTasks > 0 ? 0 : undefined }}>
+            {todayReminders.map((r) => (
+              <div
+                key={r.id}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}
+              >
+                <button
+                  onClick={() => onToggleReminder(r.id, !r.done)}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 4,
+                    border: `1.5px solid ${r.done ? "#5C9A3C" : "#C9D1AC"}`,
+                    background: r.done ? "#5C9A3C" : "none",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    cursor: "pointer",
+                  }}
+                >
+                  {r.done && <CheckCircle2 size={12} color="#FFFFFF" />}
+                </button>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: "#2A3324", textDecoration: r.done ? "line-through" : "none", opacity: r.done ? 0.6 : 1 }}>
+                  {r.text}
+                </div>
+                <div style={{ width: 7, height: 7, borderRadius: 4, background: userColor(r.userName), flexShrink: 0 }} title={r.userName} />
+              </div>
+            ))}
+            {addingTodayReminder && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newTodayReminderText}
+                  onChange={(e) => setNewTodayReminderText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newTodayReminderText.trim()) {
+                      onAddReminder(newTodayReminderText.trim(), today());
+                      setNewTodayReminderText("");
+                      setAddingTodayReminder(false);
+                    }
+                    if (e.key === "Escape") setAddingTodayReminder(false);
+                  }}
+                  placeholder="Add a reminder for today…"
+                  style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+                />
+                <button
+                  onClick={() => {
+                    if (!newTodayReminderText.trim()) { setAddingTodayReminder(false); return; }
+                    onAddReminder(newTodayReminderText.trim(), today());
+                    setNewTodayReminderText("");
+                    setAddingTodayReminder(false);
+                  }}
+                  style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 14px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+                >
+                  Add
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {(() => {
         const brewDayBatches = batches.filter((b) => {
           if (b.stage !== "Brewing") return false;
@@ -13524,40 +13662,7 @@ function HomeView({
         </div>
       )}
 
-      {activityLog.length > 0 && (
-        <div>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-            Recent activity
-          </div>
-          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 6, padding: "4px 0" }}>
-            {activityLog.slice(0, 8).map((entry, i) => (
-              <div
-                key={entry.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 14px",
-                  borderBottom: i < Math.min(activityLog.length, 8) - 1 ? "1px solid #EBE8D6" : "none",
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ color: "#2A3324", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {entry.description}
-                  </div>
-                  <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>{entry.userName}</div>
-                </div>
-                <span style={{ color: "#9BA88A", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
-                  {formatHistoryStamp(entry.createdAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!setupComplete && !setupDismissed && (
+{!setupComplete && !setupDismissed && (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 8, padding: "16px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
             <div>
@@ -13601,140 +13706,35 @@ function HomeView({
         </div>
       )}
 
-      {totalTasks > 0 && (
+      {activityLog.length > 0 && (
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#D4A24C" }}>
-              <AlertTriangle size={12} /> Needs doing ({totalTasks})
-            </div>
-            <button
-              onClick={() => window.print()}
-              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
-            >
-              Print day sheet
-            </button>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Recent activity
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {brewTasks.map(({ batch, next }) => (
-              <button
-                key={batch.id}
-                onClick={() => onOpenBatch(batch.id)}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 14px",
-                  background: "#FFFFFF",
-                  border: "1px solid #DDE0C8",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ color: "#2A3324", fontSize: 13 }}>
-                  <span style={{ color: "#5C6B54" }}>{batch.name}: </span>
-                  {next.label}
-                </span>
-                <span style={{ color: "#5C9A3C", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>brew</span>
-              </button>
-            ))}
-            {foodSafetyTasks.map((t, i) => (
-              <button
-                key={i}
-                onClick={() => onGoTo("foodsafety")}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 14px",
-                  background: "#FFFFFF",
-                  border: "1px solid #DDE0C8",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ color: "#2A3324", fontSize: 13 }}>{t.label}</span>
-                <span style={{ color: "#D9A441", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>food safety</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(todayReminders.length > 0 || addingTodayReminder) && (
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Today</div>
-            <button
-              onClick={() => setAddingTodayReminder(true)}
-              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
-            >
-              + Add
-            </button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: totalTasks > 0 ? 0 : undefined }}>
-            {todayReminders.map((r) => (
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)", borderRadius: 6, padding: "4px 0" }}>
+            {activityLog.slice(0, 8).map((entry, i) => (
               <div
-                key={r.id}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}
+                key={entry.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i < Math.min(activityLog.length, 8) - 1 ? "1px solid #EBE8D6" : "none",
+                }}
               >
-                <button
-                  onClick={() => onToggleReminder(r.id, !r.done)}
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 4,
-                    border: `1.5px solid ${r.done ? "#5C9A3C" : "#C9D1AC"}`,
-                    background: r.done ? "#5C9A3C" : "none",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    cursor: "pointer",
-                  }}
-                >
-                  {r.done && <CheckCircle2 size={12} color="#FFFFFF" />}
-                </button>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: "#2A3324", textDecoration: r.done ? "line-through" : "none", opacity: r.done ? 0.6 : 1 }}>
-                  {r.text}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#2A3324", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {entry.description}
+                  </div>
+                  <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>{entry.userName}</div>
                 </div>
-                <div style={{ width: 7, height: 7, borderRadius: 4, background: userColor(r.userName), flexShrink: 0 }} title={r.userName} />
+                <span style={{ color: "#9BA88A", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
+                  {formatHistoryStamp(entry.createdAt)}
+                </span>
               </div>
             ))}
-            {addingTodayReminder && (
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newTodayReminderText}
-                  onChange={(e) => setNewTodayReminderText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newTodayReminderText.trim()) {
-                      onAddReminder(newTodayReminderText.trim(), today());
-                      setNewTodayReminderText("");
-                      setAddingTodayReminder(false);
-                    }
-                    if (e.key === "Escape") setAddingTodayReminder(false);
-                  }}
-                  placeholder="Add a reminder for today…"
-                  style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
-                />
-                <button
-                  onClick={() => {
-                    if (!newTodayReminderText.trim()) { setAddingTodayReminder(false); return; }
-                    onAddReminder(newTodayReminderText.trim(), today());
-                    setNewTodayReminderText("");
-                    setAddingTodayReminder(false);
-                  }}
-                  style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 14px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
-                >
-                  Add
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -14503,7 +14503,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-122";
+const APP_VERSION = "2026-08-03-123";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
