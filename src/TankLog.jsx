@@ -792,6 +792,42 @@ const PAGE_TOURS = {
       target: null,
     },
   ],
+  customers: [
+    {
+      title: "Track who you sell to",
+      body: "Add wholesale accounts, bars, and bottle shops here — whoever you sell finished beer to. This is where orders and invoicing tie back to.",
+      target: "page-customers-newbtn",
+    },
+    {
+      title: "Link a customer to Xero",
+      body: "Open any customer and link them to Xero — or create them fresh — and orders you fulfil for them will invoice automatically from then on.",
+      target: null,
+    },
+  ],
+  salesOrders: [
+    {
+      title: "Create an order",
+      body: "Pick a customer, then pick from what's actually packaged and available — the same stock everyone else can see, so you can't oversell it.",
+      target: "page-salesOrders-newbtn",
+    },
+    {
+      title: "Draft, Confirmed, Fulfilled",
+      body: "An order reserves stock once Confirmed, and marking it Fulfilled is what sends the invoice to Xero, if you've got that connected. Cancel an order at any point and its stock goes straight back.",
+      target: null,
+    },
+  ],
+  finishedGoodsStock: [
+    {
+      title: "Live, not manual",
+      body: "This updates itself — packaging a batch adds to it, fulfilling an order takes away from it, cancelling an order gives it back. Nothing here needs typing in by hand.",
+      target: null,
+    },
+    {
+      title: "Keep it accurate",
+      body: "Same idea as your other stock takes — count what's actually there, and any discrepancy gets logged for the record.",
+      target: "page-finishedGoodsStock-stocktake",
+    },
+  ],
   production: [
     {
       title: "See every tank's schedule at a glance",
@@ -3063,6 +3099,7 @@ function FinishedGoodsStockView({ availableStock, onStartStockTake, onOpenHistor
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <button
+          data-tour="page-finishedGoodsStock-stocktake"
           onClick={onStartStockTake}
           style={{ flex: 1, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
         >
@@ -14537,7 +14574,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-124";
+const APP_VERSION = "2026-08-03-125";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
