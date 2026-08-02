@@ -296,6 +296,60 @@ export function rowToSupplier(row) {
     createdAt: row.created_at || null,
   };
 }
+export function rowToCustomer(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type || "Wholesale",
+    contactName: row.contact_name,
+    phone: row.phone,
+    email: row.email,
+    address: row.address,
+    paymentTerms: row.payment_terms,
+    notes: row.notes,
+    createdAt: row.created_at || null,
+  };
+}
+export function customerToRow(customer, companyId) {
+  return {
+    id: customer.id,
+    company_id: companyId,
+    name: customer.name,
+    type: customer.type || "Wholesale",
+    contact_name: customer.contactName || null,
+    phone: customer.phone || null,
+    email: customer.email || null,
+    address: customer.address || null,
+    payment_terms: customer.paymentTerms || null,
+    notes: customer.notes || null,
+  };
+}
+export function rowToSalesOrder(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    orderNumber: row.order_number,
+    status: row.status || "Draft",
+    orderDate: row.order_date,
+    lines: row.lines || [],
+    notes: row.notes,
+    paid: !!row.paid,
+    createdAt: row.created_at || null,
+  };
+}
+export function salesOrderToRow(order, companyId) {
+  return {
+    id: order.id,
+    company_id: companyId,
+    customer_id: order.customerId,
+    order_number: order.orderNumber,
+    status: order.status || "Draft",
+    order_date: order.orderDate,
+    lines: order.lines || [],
+    notes: order.notes || null,
+    paid: !!order.paid,
+  };
+}
 
 export function supplierToRow(supplier, companyId) {
   return {
