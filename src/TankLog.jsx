@@ -12438,7 +12438,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-82";
+const APP_VERSION = "2026-07-31-83";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -12447,12 +12447,12 @@ function UpdateBanner({ onRefresh, refreshDidntWork }) {
       <div
         style={{
           position: "fixed",
-          top: 0,
+          bottom: "env(safe-area-inset-bottom, 0px)",
           left: 0,
           right: 0,
           zIndex: 95,
           background: "#1F2E18",
-          borderBottom: "1px solid #C9D1AC",
+          borderTop: "1px solid #C9D1AC",
           padding: "10px 16px",
           display: "flex",
           flexDirection: "column",
@@ -12477,12 +12477,12 @@ function UpdateBanner({ onRefresh, refreshDidntWork }) {
     <div
       style={{
         position: "fixed",
-        top: 0,
+        bottom: "env(safe-area-inset-bottom, 0px)",
         left: 0,
         right: 0,
         zIndex: 95,
         background: "#1F2E18",
-        borderBottom: "1px solid #C9D1AC",
+        borderTop: "1px solid #C9D1AC",
         padding: "8px 16px",
         display: "flex",
         alignItems: "center",
@@ -14509,7 +14509,7 @@ export default function TankLog() {
         style={{
           display: "none",
           position: "fixed",
-          top: `calc(env(safe-area-inset-top, 0px) + ${14 + (updateAvailable ? (refreshDidntWork ? 66 : 42) : 0) + (isOffline ? 42 : 0)}px)`,
+          top: `calc(env(safe-area-inset-top, 0px) + ${14 + (isOffline ? 42 : 0)}px)`,
           left: `calc(env(safe-area-inset-left, 0px) + 14px)`,
           zIndex: 97,
           alignItems: "center",
@@ -14721,7 +14721,15 @@ export default function TankLog() {
           </div>
         </div>
 
-        <div className="bp-main-content" style={{ flex: 1, minWidth: 0, padding: "24px 22px 60px", zoom: textScale }}>
+        <div
+          className="bp-main-content"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: `24px 22px ${60 + (updateAvailable ? (refreshDidntWork ? 90 : 50) : 0)}px`,
+            zoom: textScale,
+          }}
+        >
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
           <div key={view} className="bp-view-fade">
             <style>{`
