@@ -41,6 +41,8 @@ import {
   consumableToRow,
   rowToPackageType,
   packageTypeToRow,
+  rowToReminder,
+  reminderToRow,
   rowToActivity,
   activityToRow,
 } from "./lib/mappers";
@@ -164,6 +166,16 @@ function availableStockList(batches, salesOrders) {
     });
   });
   return list;
+}
+
+// Deterministic per-user color for the reminders calendar — same person
+// always gets the same color, without needing to store one anywhere.
+const USER_COLORS = ["#5C9A3C", "#D9A441", "#4AA8C9", "#B5502F", "#8E6FB5", "#5C6B54"];
+function userColor(name) {
+  if (!name) return "#9BA88A";
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return USER_COLORS[hash % USER_COLORS.length];
 }
 
 const totalPackagedVolume = (batch) =>
@@ -12701,7 +12713,85 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inve
   );
 }
 
-function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled }) {
+// A single day's reminders — see what's there, check things off, add a new
+// one. Kept simple deliberately: a date and a line of text, nothing more.
+function ReminderDayModal({ date, reminders, onClose, onAdd, onToggle, onDelete }) {
+  const [text, setText] = useState("");
+  const dayReminders = reminders.filter((r) => r.dueDate === date);
+  const dt = new Date(date + "T00:00:00");
+  const label = dt.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+
+  const submit = () => {
+    if (!text.trim()) return;
+    onAdd(text.trim(), date);
+    setText("");
+  };
+
+  return (
+    <Modal title={label} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {dayReminders.map((r) => (
+            <div
+              key={r.id}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5 }}
+            >
+              <button
+                onClick={() => onToggle(r.id, !r.done)}
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 4,
+                  border: `1.5px solid ${r.done ? "#5C9A3C" : "#C9D1AC"}`,
+                  background: r.done ? "#5C9A3C" : "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  cursor: "pointer",
+                }}
+              >
+                {r.done && <CheckCircle2 size={12} color="#FFFFFF" />}
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, color: "#2A3324", textDecoration: r.done ? "line-through" : "none", opacity: r.done ? 0.6 : 1 }}>{r.text}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 3, background: userColor(r.userName) }} />
+                  <span style={{ fontSize: 11, color: "#9BA88A" }}>
+                    {r.userName}
+                    {r.done && r.doneBy ? ` · done by ${r.doneBy}` : ""}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => onDelete(r.id)} aria-label="Delete" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4, flexShrink: 0 }}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+          {dayReminders.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>Nothing added for this day yet.</div>}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="Add a reminder…"
+            style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+          <button
+            onClick={submit}
+            style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 14px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled, reminders, onOpenDay }) {
   const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
   const daysBack = 7;
   const daysForward = 35;
@@ -12758,6 +12848,48 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                   </div>
                 );
               })}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", borderBottom: "2px solid #DDE0C8", minHeight: 40 }}>
+              <div style={{ width: 120, flexShrink: 0, paddingRight: 10 }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#5C6B54" }}>Reminders</div>
+              </div>
+              <div style={{ display: "flex" }}>
+                {dayList.map((d) => {
+                  const dayReminders = reminders.filter((r) => r.dueDate === d);
+                  return (
+                    <div
+                      key={d}
+                      onClick={() => onOpenDay(d)}
+                      style={{
+                        width: dayWidth,
+                        minHeight: 40,
+                        flexShrink: 0,
+                        borderLeft: "1px solid #F5F1E4",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignContent: "flex-start",
+                        gap: 2,
+                        padding: "5px 3px",
+                      }}
+                    >
+                      {dayReminders.slice(0, 4).map((r) => (
+                        <div
+                          key={r.id}
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: 4,
+                            background: userColor(r.userName),
+                            opacity: r.done ? 0.35 : 1,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {sortedTanks(calendarTanks).map((tank) => {
@@ -14219,7 +14351,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-117";
+const APP_VERSION = "2026-08-03-118";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14509,6 +14641,8 @@ function TankLogApp() {
   }, []);
   const [batches, setBatches] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
+  const [reminders, setReminders] = useState([]);
+  const [activeReminderDay, setActiveReminderDay] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [logTarget, setLogTarget] = useState(null);
@@ -14755,7 +14889,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -14775,6 +14909,7 @@ function TankLogApp() {
         supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(50),
         supabase.from("customers").select("*").order("name", { ascending: true }),
         supabase.from("sales_orders").select("*").order("created_at", { ascending: false }),
+        supabase.from("reminders").select("*").order("due_date", { ascending: true }),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -14820,6 +14955,8 @@ function TankLogApp() {
       else setCustomers(customersRes.data.map(rowToCustomer));
       if (salesOrdersRes.error) console.error(salesOrdersRes.error);
       else setSalesOrders(salesOrdersRes.data.map(rowToSalesOrder));
+      if (remindersRes.error) console.error(remindersRes.error);
+      else setReminders(remindersRes.data.map(rowToReminder));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -14923,6 +15060,27 @@ function TankLogApp() {
       .then(({ error }) => {
         if (error) console.error(error);
       });
+  };
+
+  const addReminder = async (text, dueDate) => {
+    const row = reminderToRow({ text, dueDate, done: false }, user.id, user.name, profile.companyId);
+    delete row.id; // let Postgres generate the real UUID, same fix as customers/sales_orders
+    const { data, error } = await supabase.from("reminders").insert(row).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setReminders((prev) => [...prev, rowToReminder(data)].sort((a, b) => a.dueDate.localeCompare(b.dueDate)));
+  };
+
+  const toggleReminderDone = async (id, done) => {
+    const patch = { done, done_by: done ? user.name : null };
+    const { error } = await supabase.from("reminders").update(patch).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done, doneBy: done ? user.name : null } : r)));
+  };
+
+  const deleteReminder = async (id) => {
+    const { error } = await supabase.from("reminders").delete().eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setReminders((prev) => prev.filter((r) => r.id !== id));
   };
 
   const createInvite = async () => {
@@ -17738,8 +17896,21 @@ function TankLogApp() {
                     setShowAdd(true);
                   }}
                   onEditScheduled={setEditScheduledBatchId}
+                  reminders={reminders}
+                  onOpenDay={setActiveReminderDay}
                 />
               </>
+            )}
+
+            {activeReminderDay && (
+              <ReminderDayModal
+                date={activeReminderDay}
+                reminders={reminders}
+                onClose={() => setActiveReminderDay(null)}
+                onAdd={addReminder}
+                onToggle={toggleReminderDone}
+                onDelete={deleteReminder}
+              />
             )}
 
             {!loadingData && view === "settings" && (
