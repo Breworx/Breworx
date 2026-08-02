@@ -798,6 +798,11 @@ const PAGE_TOURS = {
       body: "Tap an empty day on a tank's row to schedule a batch ahead of time, or tap an existing bar to open that batch.",
       target: null,
     },
+    {
+      title: "Set reminders for the team",
+      body: "The Reminders row above your tanks isn't just for batches — tap any day to add a task, check it off once it's done, and see who added or completed it at a glance.",
+      target: null,
+    },
   ],
 };
 
@@ -1046,6 +1051,35 @@ const CHANGELOG = [
       "CSV export for Inventory, Purchase Orders, and Batches",
       "Adjustable text size in Settings",
       "This changelog, so you don't have to go digging for what's changed",
+    ],
+  },
+  {
+    id: 6,
+    title: "Sales, Orders & Xero invoicing",
+    items: [
+      "Customers and Orders — track wholesale accounts and what's owed to them",
+      "Live available-to-sell stock, worked out automatically from what's packaged minus what's sold",
+      "Link a customer to Xero (or create them fresh) and invoices send automatically once an order's fulfilled",
+      "Sales & Orders is a genuinely optional module now — turn it off in Settings if you don't need it",
+    ],
+  },
+  {
+    id: 7,
+    title: "Food Safety audit suite",
+    items: [
+      "Every checklist and calibration now records who completed it",
+      "A failed checklist item requires a corrective action — tracked as open until it's marked resolved",
+      "A \"Needs attention\" dashboard right on Food Safety — overdue checklists, overdue calibrations, open corrective actions",
+      "Export a clean, print-ready audit report for any date range",
+    ],
+  },
+  {
+    id: 8,
+    title: "Reminders & Finished Stock",
+    items: [
+      "A Reminders row on the Production calendar — add a task to any day, check it off, color-coded by who added it",
+      "Today's reminders now show right on Home, with a quick way to add one",
+      "A dedicated Stock page for finished goods, with its own stock take",
     ],
   },
 ];
@@ -14503,7 +14537,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-123";
+const APP_VERSION = "2026-08-03-124";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
