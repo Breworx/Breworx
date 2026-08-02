@@ -14219,7 +14219,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-116";
+const APP_VERSION = "2026-08-03-117";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16805,7 +16805,15 @@ function TankLogApp() {
                   ["orders", "Purchase Orders", Truck],
                 ],
               },
-              { label: "Compliance", items: [["foodsafety", "Food Safety", CheckCircle2], ["excise", "Excise", FileText]] },
+              {
+                label: "Compliance",
+                items: [
+                  ["foodsafety", "Food Safety", CheckCircle2],
+                  // Excise hidden from nav for now — the view and its code
+                  // are untouched, just re-add this line to bring it back:
+                  // ["excise", "Excise", FileText],
+                ],
+              },
               { items: [["settings", "Settings", Settings]] },
             ].filter(Boolean).map((group, gi) => (
               <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
