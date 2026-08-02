@@ -14351,7 +14351,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-119";
+const APP_VERSION = "2026-08-03-120";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14914,7 +14914,9 @@ function TankLogApp() {
       if (cancelled) return;
       if (companyRes.error) {
         console.error(companyRes.error);
-        showToast("error", `Company load failed: ${companyRes.error.message || companyRes.error.code || "unknown error"}`);
+        alert(`Company load failed: ${companyRes.error.message || companyRes.error.code || "unknown error"}`);
+      } else if (!companyRes.data) {
+        alert("Company load returned no error, but also no data.");
       } else {
         setCompanyName(companyRes.data.name);
         setCompanyLogo(companyRes.data.logo_url || "");
@@ -14963,7 +14965,10 @@ function TankLogApp() {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
         console.error(err);
-        if (!cancelled) showToast("error", "Something went wrong loading your data — check your connection and try refreshing.");
+        if (!cancelled) {
+          alert(`Data load crashed: ${(err && err.message) || String(err)}`);
+          showToast("error", "Something went wrong loading your data — check your connection and try refreshing.");
+        }
       } finally {
         if (!cancelled) setLoadingData(false);
       }
