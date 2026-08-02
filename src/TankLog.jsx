@@ -9946,6 +9946,19 @@ function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) 
           </g>
         )}
       </g>
+      {recirculating && (
+        <>
+          <path d="M40 32 Q 44 12 25 -4" stroke="#9BA88A" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <circle cx="40" cy="32" r="1.6" fill="#9BA88A" />
+          <circle cx="25" cy="-4" r="1.8" fill="#9BA88A" />
+          {[0, 1, 2].map((i) => (
+            <circle key={`shower-${i}`} cx={22 + i * 3} cy="-2" r="1" fill="#FFFFFF" opacity="0">
+              <animate attributeName="cy" from="-2" to="24" dur="0.9s" begin={`${i * 0.15}s`} repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0;0.85;0.85;0" dur="0.9s" begin={`${i * 0.15}s`} repeatCount="indefinite" />
+            </circle>
+          ))}
+        </>
+      )}
       {isKettle &&
         [17, 33].map((x, i) => (
           <path key={`s-${i}`} d={`M${x} 2 Q${x - 3} -3 ${x} -7 Q${x + 3} -11 ${x} -15`} stroke="#E08A3C" strokeWidth="1.6" fill="none" strokeLinecap="round" opacity="0">
@@ -12520,7 +12533,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-88";
+const APP_VERSION = "2026-07-31-89";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
