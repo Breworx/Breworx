@@ -14351,7 +14351,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-118";
+const APP_VERSION = "2026-08-03-119";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14912,8 +14912,10 @@ function TankLogApp() {
         supabase.from("reminders").select("*").order("due_date", { ascending: true }),
       ]);
       if (cancelled) return;
-      if (companyRes.error) console.error(companyRes.error);
-      else {
+      if (companyRes.error) {
+        console.error(companyRes.error);
+        showToast("error", `Company load failed: ${companyRes.error.message || companyRes.error.code || "unknown error"}`);
+      } else {
         setCompanyName(companyRes.data.name);
         setCompanyLogo(companyRes.data.logo_url || "");
         setFoodSafetyDisclaimerAcceptedAt(companyRes.data.food_safety_disclaimer_accepted_at || null);
