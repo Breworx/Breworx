@@ -7815,7 +7815,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -8538,8 +8538,16 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         })()}
       </div>
       {batch.packagingRun && (
-        <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8 }}>
-          Packaging into {batch.packagingRun.containerType} — started {formatHistoryStamp(batch.packagingRun.startedAt)}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ color: "#9BA88A", fontSize: 11.5 }}>
+            Packaging into {batch.packagingRun.containerType} — started {formatHistoryStamp(batch.packagingRun.startedAt)}
+          </span>
+          <button
+            onClick={() => onCancelPackagingRun(batch.id)}
+            style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 11.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+          >
+            Cancel run
+          </button>
         </div>
       )}
 
@@ -10169,10 +10177,23 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
 
           {packaging &&
             boxes.map((b, i) => (
-              <rect key={`box-${i}`} x="-14" y="170" width="12" height="12" rx="2" fill="#FFFFFF" opacity="0.85">
-                <animateTransform attributeName="transform" type="translate" from="0 0" to="150 0" dur="2.6s" begin={`${b.delay}s`} repeatCount="indefinite" />
-                <animate attributeName="opacity" values="0;0.85;0.85;0" dur="2.6s" begin={`${b.delay}s`} repeatCount="indefinite" />
-              </rect>
+              <g key={`box-${i}`} opacity="0">
+                <animateTransform attributeName="transform" type="translate" from="-14 100" to="136 100" dur="2.6s" begin={`${b.delay}s`} repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0;0.95;0.95;0" dur="2.6s" begin={`${b.delay}s`} repeatCount="indefinite" />
+                {batch.packagingRun.containerType === "kegs" ? (
+                  <>
+                    <rect x="0" y="0" width="13" height="11" rx="4" fill="#FFFFFF" />
+                    <circle cx="6.5" cy="-1.5" r="2" fill="#5B7FDE" />
+                    <rect x="1.5" y="4" width="10" height="2" fill="#5B7FDE" opacity="0.4" />
+                  </>
+                ) : (
+                  <>
+                    <rect x="0" y="0" width="8" height="14" rx="1.5" fill="#FFFFFF" />
+                    <ellipse cx="4" cy="0" rx="4" ry="1.3" fill="#5B7FDE" />
+                    <rect x="1.5" y="2" width="1.4" height="10" fill="#5B7FDE" opacity="0.45" />
+                  </>
+                )}
+              </g>
             ))}
 
           {cooling && (
@@ -12305,7 +12326,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-79";
+const APP_VERSION = "2026-07-31-80";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14158,6 +14179,21 @@ export default function TankLog() {
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) started packaging (${containerType})`);
   };
 
+  // Cancels a packaging run that was started but never finished. Nothing
+  // gets deducted until logPackagingSession actually runs (that only
+  // happens on "Finish packaging"), so there's genuinely nothing to give
+  // back here — this just clears the in-progress marker.
+  const cancelPackagingRun = async (id) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    if (!window.confirm("Cancel this packaging run? Nothing's been deducted yet, so the tank and your stock stay exactly as they are — this just clears the in-progress status.")) return;
+    const { error } = await supabase.from("batches").update({ packaging_run: null }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packagingRun: null } : b)));
+    showToast("success", "Packaging run cancelled.");
+  };
+
+
   const undoPackagingEvent = async (id, eventId) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
@@ -15806,6 +15842,7 @@ export default function TankLog() {
             onEditSplitTanks={setEditSplitTanksTarget}
             onOpenFermenterTransfer={setFermenterTransferTarget}
             onStartPackaging={setStartPackagingTarget}
+            onCancelPackagingRun={cancelPackagingRun}
           />
         )}
 
