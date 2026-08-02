@@ -31,6 +31,10 @@ import {
   foodSafetyRecordToRow,
   rowToSupplier,
   supplierToRow,
+  rowToCustomer,
+  customerToRow,
+  rowToSalesOrder,
+  salesOrderToRow,
   rowToSupplierDocument,
   supplierDocumentToRow,
   rowToConsumable,
@@ -106,6 +110,61 @@ function packagingEvents(batch) {
 }
 
 const packagingDiscarded = (batch) => (batch.packaging && batch.packaging.discarded) || 0;
+
+// Sums every packaging event on a batch into one {cans330: N, kegs20: N, ...}
+// total — how much of each container size this batch has ever produced.
+function packagedTotalsByContainer(batch) {
+  const totals = {};
+  CONTAINERS.forEach((c) => (totals[c.key] = 0));
+  packagingEvents(batch).forEach((e) => {
+    CONTAINERS.forEach((c) => {
+      totals[c.key] += e[c.key] || 0;
+    });
+  });
+  return totals;
+}
+
+// Sums how much of a batch's stock is already spoken for by sales orders —
+// Draft and Cancelled orders don't reserve anything, everything else does.
+function soldTotalsByContainer(batchId, salesOrders) {
+  const totals = {};
+  CONTAINERS.forEach((c) => (totals[c.key] = 0));
+  (salesOrders || []).forEach((so) => {
+    if (so.status === "Draft" || so.status === "Cancelled") return;
+    (so.lines || []).forEach((line) => {
+      if (line.batchId === batchId && totals[line.containerKey] != null) {
+        totals[line.containerKey] += Number(line.qty) || 0;
+      }
+    });
+  });
+  return totals;
+}
+
+// Every batch+container combination that's ever had stock packaged into it,
+// with how much is actually still available to sell right now. This is
+// what a sales order line picker is built from.
+function availableStockList(batches, salesOrders) {
+  const list = [];
+  batches.forEach((b) => {
+    if (!b.packaging) return;
+    const packaged = packagedTotalsByContainer(b);
+    const sold = soldTotalsByContainer(b.id, salesOrders);
+    CONTAINERS.forEach((c) => {
+      if ((packaged[c.key] || 0) > 0) {
+        list.push({
+          batchId: b.id,
+          batchName: b.name,
+          batchNumber: b.number,
+          containerKey: c.key,
+          containerLabel: c.label,
+          packaged: packaged[c.key],
+          available: (packaged[c.key] || 0) - (sold[c.key] || 0),
+        });
+      }
+    });
+  });
+  return list;
+}
 
 const totalPackagedVolume = (batch) =>
   packagingEvents(batch).reduce((sum, e) => sum + packagedVolume(e), 0);
@@ -2760,6 +2819,277 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
   );
 }
 
+const CUSTOMER_TYPES = ["Wholesale", "Taproom", "Direct-to-consumer"];
+
+function CustomerFormModal({ customer, onClose, onSave }) {
+  const [name, setName] = useState(customer ? customer.name : "");
+  const [type, setType] = useState(customer ? customer.type || "Wholesale" : "Wholesale");
+  const [contactName, setContactName] = useState(customer ? customer.contactName || "" : "");
+  const [phone, setPhone] = useState(customer ? customer.phone || "" : "");
+  const [email, setEmail] = useState(customer ? customer.email || "" : "");
+  const [address, setAddress] = useState(customer ? customer.address || "" : "");
+  const [paymentTerms, setPaymentTerms] = useState(customer ? customer.paymentTerms || "" : "");
+  const [notes, setNotes] = useState(customer ? customer.notes || "" : "");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSave({
+      name: name.trim(),
+      type,
+      contactName: contactName.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      address: address.trim(),
+      paymentTerms: paymentTerms.trim(),
+      notes: notes.trim(),
+    });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <Modal title={customer ? "Edit customer" : "New customer"} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Customer / business name" value={name} onChange={setName} />
+        <SelectField label="Type" value={type} onChange={setType} options={CUSTOMER_TYPES} />
+        <TextField label="Contact name (optional)" value={contactName} onChange={setContactName} />
+        <TextField label="Phone (optional)" value={phone} onChange={setPhone} />
+        <TextField label="Email (optional)" value={email} onChange={setEmail} />
+        <TextField label="Address (optional)" value={address} onChange={setAddress} />
+        <TextField label="Payment terms (optional)" value={paymentTerms} onChange={setPaymentTerms} placeholder="e.g. Net 30" />
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
+        <button
+          onClick={submit}
+          disabled={saving}
+          style={{
+            background: saving ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: saving ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : customer ? "Save changes" : "Add customer"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const CUSTOMER_TYPE_COLOR = {
+  Wholesale: "#5C9A3C",
+  Taproom: "#D9A441",
+  "Direct-to-consumer": "#4AA8C9",
+};
+
+function CustomerCard({ customer, onOpen }) {
+  const color = CUSTOMER_TYPE_COLOR[customer.type] || "#9BA88A";
+  return (
+    <button
+      onClick={() => onOpen(customer.id)}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        background: "#FFFFFF",
+        border: "1px solid #DDE0C8",
+        borderRadius: 6,
+        padding: "14px 16px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2A3324", margin: "0 0 3px" }}>
+          {customer.name}
+        </h3>
+        <span style={{ color: "#9BA88A", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+          {customer.contactName || customer.email || customer.phone || "No contact details yet"}
+        </span>
+      </div>
+      <span
+        style={{
+          flexShrink: 0,
+          background: `${color}1A`,
+          border: `1px solid ${color}`,
+          borderRadius: 20,
+          padding: "3px 10px",
+          color,
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 11,
+          fontWeight: 500,
+        }}
+      >
+        {customer.type}
+      </span>
+    </button>
+  );
+}
+
+function CustomersView({ customers, onOpen }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? customers.filter((c) => c.name.toLowerCase().includes(q) || (c.contactName || "").toLowerCase().includes(q))
+    : customers;
+
+  return (
+    <div>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search customers by name or contact…"
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          background: "#F5F1E4",
+          border: "1px solid #DDE0C8",
+          borderRadius: 5,
+          padding: "10px 12px",
+          color: "#2A3324",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 14,
+          marginBottom: 16,
+        }}
+      />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map((c) => (
+          <CustomerCard key={c.id} customer={c} onOpen={onOpen} />
+        ))}
+      </div>
+      {customers.length === 0 && (
+        <EmptyState
+          icon={Users}
+          title="No customers yet"
+          subtitle="Add the businesses you sell to — wholesale accounts, bars, bottle shops — so you can start tracking orders against them."
+        />
+      )}
+      {customers.length > 0 && filtered.length === 0 && (
+        <div style={{ color: "#9BA88A", fontSize: 13, textAlign: "center", padding: "24px 0" }}>No customers match "{query}".</div>
+      )}
+    </div>
+  );
+}
+
+function CustomerDetail({ customer, onBack, onEdit, onDelete }) {
+  const color = CUSTOMER_TYPE_COLOR[customer.type] || "#9BA88A";
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "none",
+          border: "none",
+          color: "#5C6B54",
+          cursor: "pointer",
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 13,
+          padding: 0,
+          marginBottom: 18,
+        }}
+      >
+        <ChevronLeft size={16} /> All customers
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: 0 }}>{customer.name}</h1>
+      </div>
+      <span
+        style={{
+          display: "inline-block",
+          background: `${color}1A`,
+          border: `1px solid ${color}`,
+          borderRadius: 20,
+          padding: "3px 10px",
+          color,
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 11,
+          fontWeight: 500,
+          marginBottom: 20,
+        }}
+      >
+        {customer.type}
+      </span>
+
+      <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+        {customer.contactName && (
+          <div style={{ fontSize: 13.5, color: "#2A3324" }}><span style={{ color: "#9BA88A" }}>Contact: </span>{customer.contactName}</div>
+        )}
+        {customer.phone && (
+          <div style={{ fontSize: 13.5, color: "#2A3324" }}><span style={{ color: "#9BA88A" }}>Phone: </span>{customer.phone}</div>
+        )}
+        {customer.email && (
+          <div style={{ fontSize: 13.5, color: "#2A3324" }}><span style={{ color: "#9BA88A" }}>Email: </span>{customer.email}</div>
+        )}
+        {customer.address && (
+          <div style={{ fontSize: 13.5, color: "#2A3324" }}><span style={{ color: "#9BA88A" }}>Address: </span>{customer.address}</div>
+        )}
+        {customer.paymentTerms && (
+          <div style={{ fontSize: 13.5, color: "#2A3324" }}><span style={{ color: "#9BA88A" }}>Payment terms: </span>{customer.paymentTerms}</div>
+        )}
+        {customer.notes && (
+          <div style={{ fontSize: 13.5, color: "#2A3324" }}><span style={{ color: "#9BA88A" }}>Notes: </span>{customer.notes}</div>
+        )}
+        {!customer.contactName && !customer.phone && !customer.email && !customer.address && !customer.paymentTerms && !customer.notes && (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No contact details added yet.</div>
+        )}
+      </div>
+
+      <div style={{ color: "#9BA88A", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
+        Order history will show up here once Sales Orders are set up.
+      </div>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button
+          onClick={onEdit}
+          style={{
+            flex: 1,
+            background: "#EBE8D6",
+            border: "1px solid #C9D1AC",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13.5,
+            cursor: "pointer",
+          }}
+        >
+          Edit customer
+        </button>
+        <button
+          onClick={onDelete}
+          style={{
+            background: "none",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "11px 16px",
+            color: "#B5502F",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13.5,
+            cursor: "pointer",
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -4593,6 +4923,371 @@ function POCard({ po, onOpen }) {
       </div>
       <POStatusPill status={po.status} />
     </button>
+  );
+}
+
+function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, nextOrderNumber }) {
+  const [customerId, setCustomerId] = useState("");
+  const [orderDate, setOrderDate] = useState(today());
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState([{ id: uid(), batchId: "", containerKey: "", qty: "", unitPrice: "" }]);
+  const [saving, setSaving] = useState(false);
+
+  const stockOptions = availableStock.filter((s) => s.available > 0);
+
+  const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const addLine = () => setLines((prev) => [...prev, { id: uid(), batchId: "", containerKey: "", qty: "", unitPrice: "" }]);
+  const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const submit = async () => {
+    const cleanLines = lines.filter((l) => l.batchId && l.containerKey && Number(l.qty) > 0);
+    if (!customerId || cleanLines.length === 0) return;
+    setSaving(true);
+    const customer = customers.find((c) => c.id === customerId);
+    await onAdd({
+      id: uid(),
+      customerId,
+      orderNumber: nextOrderNumber,
+      status: "Draft",
+      orderDate,
+      notes: notes.trim(),
+      lines: cleanLines.map((l) => {
+        const stock = availableStock.find((s) => s.batchId === l.batchId && s.containerKey === l.containerKey);
+        return {
+          id: l.id,
+          batchId: l.batchId,
+          batchName: stock ? stock.batchName : "",
+          containerKey: l.containerKey,
+          containerLabel: stock ? stock.containerLabel : "",
+          qty: Number(l.qty),
+          unitPrice: l.unitPrice === "" ? 0 : Number(l.unitPrice),
+        };
+      }),
+    });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <Modal title="New order" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {customers.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>Add a customer first, then come back here to create an order for them.</div>
+        ) : (
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Customer</span>
+            <select
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+            >
+              <option value="">Choose a customer…</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Order date</span>
+          <input
+            type="date"
+            value={orderDate}
+            onChange={(e) => setOrderDate(e.target.value)}
+            style={{ boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+        </label>
+
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Order lines</div>
+        {stockOptions.length === 0 && (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>Nothing packaged and available to sell yet — package a batch first.</div>
+        )}
+        {stockOptions.length > 0 &&
+          lines.map((line) => {
+            const chosen = availableStock.find((s) => s.batchId === line.batchId && s.containerKey === line.containerKey);
+            return (
+              <div key={line.id} style={{ display: "flex", flexDirection: "column", gap: 6, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: 10 }}>
+                <select
+                  value={line.batchId && line.containerKey ? `${line.batchId}::${line.containerKey}` : ""}
+                  onChange={(e) => {
+                    const [batchId, containerKey] = e.target.value.split("::");
+                    updateLine(line.id, { batchId: batchId || "", containerKey: containerKey || "" });
+                  }}
+                  style={{ width: "100%", boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                >
+                  <option value="">Choose stock…</option>
+                  {stockOptions.map((s) => (
+                    <option key={`${s.batchId}::${s.containerKey}`} value={`${s.batchId}::${s.containerKey}`}>
+                      {s.batchName} — {s.containerLabel} ({s.available} available)
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max={chosen ? chosen.available : undefined}
+                    value={line.qty}
+                    onChange={(e) => updateLine(line.id, { qty: e.target.value })}
+                    placeholder="Qty"
+                    style={{ flex: 1, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={line.unitPrice}
+                    onChange={(e) => updateLine(line.id, { unitPrice: e.target.value })}
+                    placeholder="Price each ($)"
+                    style={{ flex: 1, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}
+                  />
+                  {lines.length > 1 && (
+                    <button onClick={() => removeLine(line.id)} aria-label="Remove line" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 8 }}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        {stockOptions.length > 0 && (
+          <button
+            onClick={addLine}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            <Plus size={13} /> Add another line
+          </button>
+        )}
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
+        <button
+          onClick={submit}
+          disabled={saving || customers.length === 0}
+          style={{
+            background: saving || customers.length === 0 ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving || customers.length === 0 ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: saving || customers.length === 0 ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : "Create order"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function SalesOrderStatusPill({ status }) {
+  const color = status === "Fulfilled" ? "#5C9A3C" : status === "Confirmed" ? "#D9A441" : status === "Cancelled" ? "#B5502F" : "#5C6B54";
+  return (
+    <span
+      style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color,
+        border: `1px solid ${color}`,
+        borderRadius: 3,
+        padding: "3px 7px",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+      }}
+    >
+      {status === "Fulfilled" && <CheckCircle2 size={11} />}
+      {status}
+    </span>
+  );
+}
+
+const salesOrderTotal = (order) => (order.lines || []).reduce((sum, l) => sum + (Number(l.qty) || 0) * (Number(l.unitPrice) || 0), 0);
+
+function SalesOrderCard({ order, customerName, onOpen }) {
+  return (
+    <button
+      onClick={() => onOpen(order.id)}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        background: "#FFFFFF",
+        border: "1px solid #DDE0C8",
+        borderRadius: 6,
+        padding: "14px 16px",
+        cursor: "pointer",
+        textAlign: "left",
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 13 }}>{order.orderNumber}</span>
+          <h3 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, color: "#2A3324", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {customerName}
+          </h3>
+        </div>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
+          {(order.lines || []).length} line{(order.lines || []).length !== 1 ? "s" : ""} · ${salesOrderTotal(order).toFixed(2)} · {order.orderDate ? order.orderDate.slice(5) : ""}
+          {order.paid && <span style={{ color: "#5C9A3C" }}> · Paid</span>}
+        </div>
+      </div>
+      <SalesOrderStatusPill status={order.status} />
+    </button>
+  );
+}
+
+function SalesOrdersView({ salesOrders, customers, onOpen }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const customerName = (id) => customers.find((c) => c.id === id)?.name || "Unknown customer";
+  const matches = (o) => !q || customerName(o.customerId).toLowerCase().includes(q) || (o.orderNumber || "").toLowerCase().includes(q);
+
+  const draft = salesOrders.filter((o) => o.status === "Draft" && matches(o));
+  const confirmed = salesOrders.filter((o) => o.status === "Confirmed" && matches(o));
+  const fulfilled = salesOrders.filter((o) => o.status === "Fulfilled" && matches(o));
+  const cancelled = salesOrders.filter((o) => o.status === "Cancelled" && matches(o));
+
+  const section = (title, list) =>
+    list.length > 0 && (
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+          {title} ({list.length})
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {list.map((o) => (
+            <SalesOrderCard key={o.id} order={o} customerName={customerName(o.customerId)} onOpen={onOpen} />
+          ))}
+        </div>
+      </div>
+    );
+
+  return (
+    <div>
+      {salesOrders.length > 0 && (
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search orders by number or customer…"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "10px 12px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+            marginBottom: 16,
+          }}
+        />
+      )}
+      {section("Draft", draft)}
+      {section("Confirmed", confirmed)}
+      {section("Fulfilled", fulfilled)}
+      {section("Cancelled", cancelled)}
+      {salesOrders.length === 0 && (
+        <EmptyState icon={Truck} title="No orders yet" subtitle="Create an order against a customer once you've got stock packaged and ready to sell." />
+      )}
+      {salesOrders.length > 0 && draft.length === 0 && confirmed.length === 0 && fulfilled.length === 0 && cancelled.length === 0 && (
+        <div style={{ color: "#9BA88A", fontSize: 13, textAlign: "center", padding: "24px 0" }}>No orders match "{query}".</div>
+      )}
+    </div>
+  );
+}
+
+function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogglePaid, onDelete }) {
+  const total = salesOrderTotal(order);
+  const nextStatus = order.status === "Draft" ? "Confirmed" : order.status === "Confirmed" ? "Fulfilled" : null;
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: 0, marginBottom: 18 }}
+      >
+        <ChevronLeft size={16} /> All orders
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 14 }}>{order.orderNumber}</span>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: 0 }}>{customer ? customer.name : "Unknown customer"}</h1>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <SalesOrderStatusPill status={order.status} />
+        <span style={{ color: "#9BA88A", fontSize: 12.5 }}>{order.orderDate}</span>
+        {order.paid && <span style={{ color: "#5C9A3C", fontSize: 12.5, fontWeight: 500 }}>Paid</span>}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+        {(order.lines || []).map((l) => (
+          <div key={l.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
+            <span>{l.batchName} — {l.containerLabel}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>
+              {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontFamily: "'Oswald', sans-serif", fontWeight: 500, color: "#2A3324", marginBottom: 20, padding: "0 4px" }}>
+        <span>Total</span>
+        <span>${total.toFixed(2)}</span>
+      </div>
+
+      {order.notes && (
+        <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 20, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px" }}>
+          {order.notes}
+        </div>
+      )}
+
+      {order.status !== "Cancelled" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          {nextStatus && (
+            <button
+              onClick={() => onAdvance(order.id, nextStatus)}
+              style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+            >
+              {nextStatus === "Confirmed" ? "Confirm order" : "Mark fulfilled"}
+            </button>
+          )}
+          <button
+            onClick={() => onTogglePaid(order.id, !order.paid)}
+            style={{ flex: 1, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "11px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+          >
+            {order.paid ? "Mark unpaid" : "Mark paid"}
+          </button>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10 }}>
+        {order.status !== "Cancelled" && order.status !== "Fulfilled" && (
+          <button
+            onClick={() => onCancel(order.id)}
+            style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px", color: "#B5502F", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+          >
+            Cancel order
+          </button>
+        )}
+        <button
+          onClick={() => onDelete(order)}
+          style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -13033,7 +13728,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-103";
+const APP_VERSION = "2026-07-31-105";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13349,6 +14044,9 @@ function TankLogApp() {
   const [recipes, setRecipes] = useState([]);
   const [selectedRecipeId, setSelectedRecipeId] = useState(null);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [showAddSalesOrder, setShowAddSalesOrder] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [showDeleteCompany, setShowDeleteCompany] = useState(false);
   const [brewRecipe, setBrewRecipe] = useState(null);
@@ -13443,6 +14141,9 @@ function TankLogApp() {
   const [xeroItems, setXeroItems] = useState([]);
   const [xeroMappingQueue, setXeroMappingQueue] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [salesOrders, setSalesOrders] = useState([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [supplierDocuments, setSupplierDocuments] = useState([]);
   const [showSuppliersModal, setShowSuppliersModal] = useState(false);
   const [showSupplierForm, setShowSupplierForm] = useState(false);
@@ -13558,7 +14259,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -13576,6 +14277,8 @@ function TankLogApp() {
         supabase.from("suppliers").select("*").order("name", { ascending: true }),
         supabase.from("supplier_documents").select("*").order("uploaded_at", { ascending: false }),
         supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("customers").select("*").order("name", { ascending: true }),
+        supabase.from("sales_orders").select("*").order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) console.error(companyRes.error);
@@ -13616,6 +14319,10 @@ function TankLogApp() {
       else setSupplierDocuments(supplierDocsRes.data.map(rowToSupplierDocument));
       if (activityRes.error) console.error(activityRes.error);
       else setActivityLog(activityRes.data.map(rowToActivity));
+      if (customersRes.error) console.error(customersRes.error);
+      else setCustomers(customersRes.data.map(rowToCustomer));
+      if (salesOrdersRes.error) console.error(salesOrdersRes.error);
+      else setSalesOrders(salesOrdersRes.data.map(rowToSalesOrder));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -13674,6 +14381,13 @@ function TankLogApp() {
     const nums = purchaseOrders.map((p) => parseInt((p.poNumber.match(/\d+/) || [0])[0], 10) || 0);
     return `PO-${Math.max(100, ...nums) + 1}`;
   }, [purchaseOrders]);
+  const nextSalesOrderNumber = useMemo(() => {
+    const nums = salesOrders.map((o) => parseInt(((o.orderNumber || "").match(/\d+/) || [0])[0], 10) || 0);
+    return `SO-${Math.max(100, ...nums) + 1}`;
+  }, [salesOrders]);
+  const [selectedSalesOrderId, setSelectedSalesOrderId] = useState(null);
+  const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
+  const availableStock = useMemo(() => availableStockList(batches, salesOrders), [batches, salesOrders]);
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) || null, [recipes, selectedRecipeId]);
   const selectedInventoryItem = useMemo(
     () => inventory.find((it) => it.id === selectedInventoryId) || null,
@@ -13686,6 +14400,10 @@ function TankLogApp() {
   const selectedPackageType = useMemo(
     () => packageTypes.find((pt) => pt.id === selectedPackageTypeId) || null,
     [packageTypes, selectedPackageTypeId]
+  );
+  const selectedCustomer = useMemo(
+    () => customers.find((c) => c.id === selectedCustomerId) || null,
+    [customers, selectedCustomerId]
   );
 
   // Fire-and-forget: records a line in the activity feed. Never blocks or
@@ -14311,6 +15029,107 @@ function TankLogApp() {
         setSupplierDocuments((prev) => [...prev, ...relatedDocs]);
       },
     });
+  };
+
+  const addCustomer = async (customer) => {
+    const payload = { id: uid(), ...customer };
+    const { data, error } = await supabase
+      .from("customers")
+      .insert(customerToRow(payload, profile.companyId))
+      .select()
+      .single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setCustomers((prev) => [...prev, rowToCustomer(data)].sort((a, b) => a.name.localeCompare(b.name)));
+    showToast("success", `${payload.name} added.`);
+  };
+
+  const updateCustomer = async (id, patch) => {
+    const customer = customers.find((c) => c.id === id);
+    if (!customer) return;
+    const updated = { ...customer, ...patch };
+    const { error } = await supabase
+      .from("customers")
+      .update(customerToRow(updated, profile.companyId))
+      .eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setCustomers((prev) => prev.map((c) => (c.id === id ? updated : c)).sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const deleteCustomer = (customer) => {
+    askConfirm(
+      `Delete ${customer.name}? You'll have a few seconds to undo right after.`,
+      () => {
+        setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+        setSelectedCustomerId(null);
+        const timeoutId = setTimeout(async () => {
+          delete pendingDeletesRef.current[customer.id];
+          const { error } = await supabase.from("customers").delete().eq("id", customer.id);
+          if (error) showToast("error", "Something didn't save — check your connection and try again.");
+        }, 5000);
+        pendingDeletesRef.current[customer.id] = timeoutId;
+        showToast("success", `${customer.name} deleted.`, {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(pendingDeletesRef.current[customer.id]);
+            delete pendingDeletesRef.current[customer.id];
+            setCustomers((prev) => [...prev, customer].sort((a, b) => a.name.localeCompare(b.name)));
+          },
+        });
+      },
+      { confirmLabel: "Delete", destructive: true }
+    );
+  };
+
+  const addSalesOrder = async (order) => {
+    const { data, error } = await supabase
+      .from("sales_orders")
+      .insert(salesOrderToRow(order, profile.companyId))
+      .select()
+      .single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setSalesOrders((prev) => [rowToSalesOrder(data), ...prev]);
+    showToast("success", `${order.orderNumber} created.`);
+    logActivity("created", "sales order", order.orderNumber, `Sales order ${order.orderNumber} created`);
+  };
+
+  const advanceSalesOrderStatus = async (id, status) => {
+    const { error } = await supabase.from("sales_orders").update({ status }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setSalesOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
+    showToast("success", status === "Fulfilled" ? "Order marked fulfilled — stock updated." : `Order ${status.toLowerCase()}.`);
+  };
+
+  const cancelSalesOrder = (id) => {
+    askConfirm(
+      "Cancel this order? Any stock it had reserved will become available to sell again.",
+      async () => {
+        const { error } = await supabase.from("sales_orders").update({ status: "Cancelled" }).eq("id", id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+        setSalesOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: "Cancelled" } : o)));
+        showToast("success", "Order cancelled.");
+      },
+      { confirmLabel: "Cancel order", destructive: true }
+    );
+  };
+
+  const toggleSalesOrderPaid = async (id, paid) => {
+    const { error } = await supabase.from("sales_orders").update({ paid }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setSalesOrders((prev) => prev.map((o) => (o.id === id ? { ...o, paid } : o)));
+  };
+
+  const deleteSalesOrder = (order) => {
+    askConfirm(
+      `Delete ${order.orderNumber}? This can't be undone.`,
+      async () => {
+        const { error } = await supabase.from("sales_orders").delete().eq("id", order.id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+        setSalesOrders((prev) => prev.filter((o) => o.id !== order.id));
+        setSelectedSalesOrderId(null);
+        showToast("success", `${order.orderNumber} deleted.`);
+      },
+      { confirmLabel: "Delete", destructive: true }
+    );
   };
 
   const uploadSupplierDocument = async (supplierId, file, name, expiryDate) => {
@@ -15375,6 +16194,13 @@ function TankLogApp() {
                 ],
               },
               {
+                label: "Sales",
+                items: [
+                  ["customers", "Customers", Users],
+                  ["salesOrders", "Orders", Truck],
+                ],
+              },
+              {
                 label: "Stock",
                 items: [
                   ["inventory", "Inventory", LayoutGrid],
@@ -15404,7 +16230,7 @@ function TankLogApp() {
                   </div>
                 )}
                 {group.items.map(([key, label, Icon]) => {
-                  const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType;
+                  const isCurrent = view === key && !selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && !selectedCustomerId && !selectedSalesOrderId;
                   return (
                     <button
                       key={key}
@@ -15482,7 +16308,7 @@ function TankLogApp() {
             zoom: textScale,
           }}
         >
-        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && !selectedCustomerId && !selectedSalesOrderId && (
           <div key={view} className="bp-view-fade">
             <style>{`
               @keyframes bp-view-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -15502,6 +16328,8 @@ function TankLogApp() {
                     else if (view === "packageTypes") setShowAddPackageType(true);
                     else if (view === "orders") setShowAddPO(true);
                     else if (view === "recipes") setShowAddRecipe(true);
+                    else if (view === "customers") setShowAddCustomer(true);
+                    else if (view === "salesOrders") setShowAddSalesOrder(true);
                     else setShowAddTank(true);
                   }}
                   style={{
@@ -15521,7 +16349,7 @@ function TankLogApp() {
                   }}
                 >
                   <Plus size={16} />{" "}
-                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "consumables" ? "New item" : view === "packageTypes" ? "New package type" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : "New tank"}
+                  {view === "batches" ? "New batch" : view === "inventory" ? "New item" : view === "consumables" ? "New item" : view === "packageTypes" ? "New package type" : view === "orders" ? "New order" : view === "recipes" ? "New recipe" : view === "customers" ? "New customer" : view === "salesOrders" ? "New order" : "New tank"}
                 </button>
               )}
             </div>
@@ -16024,6 +16852,14 @@ function TankLogApp() {
                   <EmptyState icon={Layers} title="No package types yet" subtitle="Create one to define which cans, lids, boxes, or labels get used up each time you package a batch." action={{ label: "New package type", onClick: () => setShowAddPackageType(true) }} />
                 )}
               </>
+            )}
+
+            {!loadingData && view === "customers" && !selectedCustomerId && (
+              <CustomersView customers={customers} onOpen={setSelectedCustomerId} />
+            )}
+
+            {!loadingData && view === "salesOrders" && !selectedSalesOrderId && (
+              <SalesOrdersView salesOrders={salesOrders} customers={customers} onOpen={setSelectedSalesOrderId} />
             )}
 
             {!loadingData && view === "orders" && (() => {
@@ -16791,7 +17627,7 @@ function TankLogApp() {
           />
         )}
 
-        {!selected && !selectedPO && !selectedRecipe && selectedInventoryItem && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedCustomerId && !selectedSalesOrderId && selectedInventoryItem && (
           <InventoryItemDetail
             item={selectedInventoryItem}
             onBack={() => setSelectedInventoryId(null)}
@@ -16803,7 +17639,7 @@ function TankLogApp() {
           />
         )}
 
-        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && selectedConsumableItem && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedCustomerId && !selectedSalesOrderId && selectedConsumableItem && (
           <InventoryItemDetail
             item={selectedConsumableItem}
             onBack={() => setSelectedConsumableId(null)}
@@ -16818,12 +17654,33 @@ function TankLogApp() {
           />
         )}
 
-        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && selectedPackageType && (
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedCustomerId && !selectedSalesOrderId && selectedPackageType && (
           <PackageTypeDetail
             packageType={selectedPackageType}
             consumables={consumables}
             onBack={() => setSelectedPackageTypeId(null)}
             onDelete={deletePackageType}
+          />
+        )}
+
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && !selectedSalesOrderId && selectedCustomer && (
+          <CustomerDetail
+            customer={selectedCustomer}
+            onBack={() => setSelectedCustomerId(null)}
+            onEdit={() => setEditingCustomer(selectedCustomer)}
+            onDelete={() => deleteCustomer(selectedCustomer)}
+          />
+        )}
+
+        {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && !selectedCustomerId && selectedSalesOrder && (
+          <SalesOrderDetail
+            order={selectedSalesOrder}
+            customer={customers.find((c) => c.id === selectedSalesOrder.customerId) || null}
+            onBack={() => setSelectedSalesOrderId(null)}
+            onAdvance={advanceSalesOrderStatus}
+            onCancel={cancelSalesOrder}
+            onTogglePaid={toggleSalesOrderPaid}
+            onDelete={deleteSalesOrder}
           />
         )}
         </div>
@@ -16953,6 +17810,25 @@ function TankLogApp() {
       )}
       {showAddPackageType && (
         <AddPackageTypeModal onClose={() => setShowAddPackageType(false)} onAdd={addPackageType} consumables={consumables} />
+      )}
+      {showAddCustomer && (
+        <CustomerFormModal onClose={() => setShowAddCustomer(false)} onSave={addCustomer} />
+      )}
+      {editingCustomer && (
+        <CustomerFormModal
+          customer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSave={(patch) => updateCustomer(editingCustomer.id, patch)}
+        />
+      )}
+      {showAddSalesOrder && (
+        <AddSalesOrderModal
+          onClose={() => setShowAddSalesOrder(false)}
+          onAdd={addSalesOrder}
+          customers={customers}
+          availableStock={availableStock}
+          nextOrderNumber={nextSalesOrderNumber}
+        />
       )}
       {showStockTake && (
         <StockTakeModal inventory={inventory} onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
