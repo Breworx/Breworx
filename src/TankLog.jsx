@@ -60,6 +60,7 @@ const STAGE_COLOR = {
   Primary: "#4FB83D",
   Cooling: "#4AA8C9",
   "Brite Tank": "#F0B429",
+  Aging: "#8E6FB5",
   // Kept for any batches created before this stage restructure.
   Secondary: "#4AA8C9",
   Conditioning: "#F0B429",
@@ -584,6 +585,61 @@ const HELP_ARTICLES = [
     answer: "Go to Food Safety. Checklists are at the top; \"Staff training,\" \"Staff sickness,\" calibration, water tests, and mock recalls are all under Other records.",
   },
   {
+    category: "Compliance",
+    question: "What's a corrective action?",
+    answer: "If you leave a checklist item unchecked, you're asked to record what's being done about it before you can save. That stays as an open item — visible right at the top of Food Safety — until someone marks it resolved.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I see what's overdue?",
+    answer: "The \"Needs attention\" section at the top of Food Safety shows overdue checklists, overdue equipment calibrations, and any open corrective actions, all in one place.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I get a report to hand an inspector?",
+    answer: "On Food Safety, tap \"Export audit report\" above the record history. It uses whatever date range you've filtered to, and gives you a clean print/Save-as-PDF report — summary counts, open corrective actions, and the full record log.",
+  },
+  {
+    category: "Sales",
+    question: "How do I add a customer?",
+    answer: "Go to Customers → New customer. Wholesale, taproom, or direct-to-consumer — pick whichever fits, though only wholesale is fully built out for ordering right now.",
+  },
+  {
+    category: "Sales",
+    question: "How do I create an order?",
+    answer: "Go to Orders → New order. Pick a customer, then pick from what's actually packaged and available to sell — you can't accidentally oversell something that's already gone.",
+  },
+  {
+    category: "Sales",
+    question: "What happens when I cancel an order?",
+    answer: "Any stock that order had reserved goes straight back to available — nothing needs manual adjusting.",
+  },
+  {
+    category: "Sales",
+    question: "How do I see what's actually available to sell right now?",
+    answer: "Go to Stock, under Sales. It's live — packaging a batch adds to it, fulfilling an order takes away from it, cancelling an order gives it back.",
+  },
+  {
+    category: "Sales",
+    question: "How do orders get invoiced in Xero automatically?",
+    answer: "Open a customer and tap \"Link to Xero\" — either match them to an existing Xero contact or create one fresh. From then on, marking any of their orders Fulfilled sends the invoice to Xero automatically.",
+  },
+  {
+    category: "Sales",
+    question: "I don't sell wholesale — can I turn this off?",
+    answer: "Yes. Settings → Modules → \"Sales & Orders.\" Switching it off hides Customers, Orders, and Stock from the sidebar entirely.",
+  },
+  {
+    category: "Reminders",
+    question: "How do I add a reminder or task?",
+    answer: "Tap any day on the Reminders row above your tanks on Production, or use the \"+ Add\" button under Today on Home for something due today.",
+  },
+  {
+    category: "Reminders",
+    question: "How do I tell whose reminder is whose?",
+    answer: "Each person gets their own color, consistent every time — no need to open anything to see who added what. Checking one off also records who completed it.",
+  },
+  {
     category: "Account",
     question: "How do I start completely fresh (delete everything)?",
     answer: "Settings → \"Delete company\" (near the bottom, in red). It wipes every batch, recipe, and record for the whole company, then signs you out to the sign-up screen. Type \"DELETE COMPANY\" to confirm — this can't be undone.",
@@ -826,6 +882,13 @@ const PAGE_TOURS = {
       title: "Keep it accurate",
       body: "Same idea as your other stock takes — count what's actually there, and any discrepancy gets logged for the record.",
       target: "page-finishedGoodsStock-stocktake",
+    },
+  ],
+  packaged: [
+    {
+      title: "Your packaging history",
+      body: "Every packaging run, grouped by month, so you can see volume trends over time. This is history, not current stock — for what's actually available to sell right now, check Stock under Sales.",
+      target: "page-packaged-search",
     },
   ],
   production: [
@@ -2419,6 +2482,77 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
           }}
         >
           {allChecked ? "Complete checklist" : "Save with open corrective action"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Grounded in how barrel programs actually track this — desirable character
+// varies by what the vessel used to hold, off-flavours are the same
+// handful of real risks regardless. Free text covers everything these
+// don't (Brett phases especially move through a lot of ground).
+const TASTING_TAGS = {
+  Character: ["Vanilla", "Oak", "Coconut", "Bourbon/Whiskey", "Vinous/Wine", "Sherry", "Tannin", "Spice/Clove", "Brett/Funk", "Sour/Tart", "Earthy", "Caramel"],
+  "Off-flavors": ["Oxidation", "Over-oaked", "Acetic/Vinegar", "Mouldy", "Solventy", "Mousy"],
+};
+
+function TastingLogModal({ onClose, onSave }) {
+  const [date, setDate] = useState(today());
+  const [tags, setTags] = useState(() => new Set());
+  const [notes, setNotes] = useState("");
+
+  const toggleTag = (tag) =>
+    setTags((prev) => {
+      const next = new Set(prev);
+      next.has(tag) ? next.delete(tag) : next.add(tag);
+      return next;
+    });
+
+  const submit = () => {
+    onSave({ date, tags: [...tags], notes: notes.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log a tasting" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        {Object.entries(TASTING_TAGS).map(([group, groupTags]) => (
+          <div key={group}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>{group}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {groupTags.map((tag) => {
+                const active = tags.has(tag);
+                const isOff = group === "Off-flavors";
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => toggleTag(tag)}
+                    style={{
+                      background: active ? (isOff ? "#FBE5D2" : "#EBF3E4") : "#F5F1E4",
+                      border: `1px solid ${active ? (isOff ? "#E3B37A" : "#5C9A3C") : "#DDE0C8"}`,
+                      borderRadius: 20,
+                      padding: "6px 12px",
+                      color: active ? (isOff ? "#7A3E1D" : "#2A3324") : "#5C6B54",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12.5,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} placeholder="Anything the tags don't cover…" />
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save tasting note
         </button>
       </div>
     </Modal>
@@ -4035,7 +4169,7 @@ function AddTankModal({ onClose, onAdd }) {
     const clean = rows.filter((r) => r.name.trim());
     if (clean.length === 0) return;
     setSaving(true);
-    await Promise.all(clean.map((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0, type: r.type || "Fermenter" })));
+    await Promise.all(clean.map((r) => onAdd({ id: uid(), name: r.name.trim(), capacity: Number(r.capacity) || 0, type: r.type || "Fermenter", barrelSource: r.type === "Barrel" ? r.barrelSource || "Bourbon/Whiskey" : null })));
     setSaving(false);
     onClose();
   };
@@ -4072,8 +4206,16 @@ function AddTankModal({ onClose, onAdd }) {
                 label="Type"
                 value={row.type || "Fermenter"}
                 onChange={(v) => updateRow(row.id, { type: v })}
-                options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank"]}
+                options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank", "Barrel", "Aging Tank"]}
               />
+              {row.type === "Barrel" && (
+                <SelectField
+                  label="What did it hold before?"
+                  value={row.barrelSource || "Bourbon/Whiskey"}
+                  onChange={(v) => updateRow(row.id, { barrelSource: v })}
+                  options={["Bourbon/Whiskey", "Red Wine", "White Wine", "Sherry", "Rum", "Virgin Oak", "Other"]}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -4106,10 +4248,11 @@ function EditTankModal({ tank, onClose, onSave }) {
   const [name, setName] = useState(tank.name);
   const [capacity, setCapacity] = useState(tank.capacity);
   const [type, setType] = useState(tank.type || "Fermenter");
+  const [barrelSource, setBarrelSource] = useState(tank.barrelSource || "Bourbon/Whiskey");
 
   const submit = () => {
     if (!name.trim()) return;
-    onSave(tank.id, { name: name.trim(), capacity: Number(capacity) || 0, type });
+    onSave(tank.id, { name: name.trim(), capacity: Number(capacity) || 0, type, barrelSource: type === "Barrel" ? barrelSource : null });
     onClose();
   };
 
@@ -4118,7 +4261,15 @@ function EditTankModal({ tank, onClose, onSave }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Tank ID" value={name} onChange={setName} />
         <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
-        <SelectField label="Type" value={type} onChange={setType} options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank"]} />
+        <SelectField label="Type" value={type} onChange={setType} options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank", "Barrel", "Aging Tank"]} />
+        {type === "Barrel" && (
+          <SelectField
+            label="What did it hold before?"
+            value={barrelSource}
+            onChange={setBarrelSource}
+            options={["Bourbon/Whiskey", "Red Wine", "White Wine", "Sherry", "Rum", "Virgin Oak", "Other"]}
+          />
+        )}
         <div style={{ color: "#9BA88A", fontSize: 12 }}>
           Renaming won't retroactively update batches already assigned to this tank — reassign them from the batch's page if needed.
         </div>
@@ -9208,7 +9359,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const latest = latestReading(batch);
@@ -9962,6 +10113,26 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           );
         })()}
       </div>
+      {!inMashTun && (batch.stage === "Primary" || batch.stage === "Brite Tank" || inKettle) && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button
+            onClick={() =>
+              onOpenVesselTransfer({ batch, toType: "Barrel", brewStage: null, newStage: "Aging", actionLabel: "Move to a barrel" })
+            }
+            style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Move to a barrel
+          </button>
+          <button
+            onClick={() =>
+              onOpenVesselTransfer({ batch, toType: "Aging Tank", brewStage: null, newStage: "Aging", actionLabel: "Move to an aging tank" })
+            }
+            style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Move to an aging tank
+          </button>
+        </div>
+      )}
       {!inMashTun && !inKettle && stageIdx < stages.length - 1 && stages[stageIdx + 1] === "Packaged" && !batch.packagingRun && (
         <label
           style={{
@@ -10275,6 +10446,54 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {batch.stage === "Aging" && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Tasting log</div>
+            <button
+              onClick={onOpenTastingLog}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              + Log a tasting
+            </button>
+          </div>
+          {(batch.tastingLog || []).length === 0 ? (
+            <div style={{ color: "#9BA88A", fontSize: 13 }}>Nothing logged yet — since this could sit here for months, it's worth checking in on periodically.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[...batch.tastingLog].reverse().map((t) => (
+                <div key={t.id} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A", marginBottom: 6 }}>{t.date}</div>
+                  {t.tags && t.tags.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: t.notes ? 6 : 0 }}>
+                      {t.tags.map((tag) => {
+                        const isOff = TASTING_TAGS["Off-flavors"].includes(tag);
+                        return (
+                          <span
+                            key={tag}
+                            style={{
+                              background: isOff ? "#FBE5D2" : "#EBF3E4",
+                              border: `1px solid ${isOff ? "#E3B37A" : "#5C9A3C"}`,
+                              borderRadius: 20,
+                              padding: "3px 9px",
+                              color: isOff ? "#7A3E1D" : "#2A3324",
+                              fontSize: 11.5,
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {t.notes && <div style={{ color: "#2A3324", fontSize: 13, lineHeight: 1.4 }}>{t.notes}</div>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -11425,6 +11644,7 @@ function PackagedView({ batches, onOpenBatch }) {
     <div>
       <div style={{ position: "relative", marginBottom: 12 }}>
         <input
+          data-tour="page-packaged-search"
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -14574,7 +14794,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-125";
+const APP_VERSION = "2026-08-03-127";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15014,6 +15234,7 @@ function TankLogApp() {
   const [foodSafetyRecords, setFoodSafetyRecords] = useState([]);
   const [activeChecklistTemplate, setActiveChecklistTemplate] = useState(null);
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+  const [showTastingLog, setShowTastingLog] = useState(false);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [showIllnessModal, setShowIllnessModal] = useState(false);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
@@ -16188,7 +16409,7 @@ function TankLogApp() {
   };
 
   const updateTank = async (id, patch) => {
-    const { error } = await supabase.from("tanks").update({ name: patch.name, capacity: patch.capacity, type: patch.type }).eq("id", id);
+    const { error } = await supabase.from("tanks").update({ name: patch.name, capacity: patch.capacity, type: patch.type, barrel_source: patch.barrelSource ?? null }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   };
@@ -16887,6 +17108,17 @@ function TankLogApp() {
     const { error } = await supabase.from("batches").update({ notes }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, notes } : b)));
+  };
+
+  const addTastingNote = async (id, entry) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const newEntry = { id: uid(), ...entry };
+    const tastingLog = [...(batch.tastingLog || []), newEntry];
+    const { error } = await supabase.from("batches").update({ tasting_log: tastingLog }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, tastingLog } : b)));
+    showToast("success", "Tasting note saved.");
   };
 
   // Cancels a packaging run that was started but never finished. Nothing
@@ -18100,6 +18332,7 @@ function TankLogApp() {
                         </div>
                         <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
                           {t.capacity}L{occupant ? ` · occupied by ${occupant.name}` : " · empty"}
+                          {t.type === "Barrel" && t.barrelSource ? ` · previously ${t.barrelSource}` : ""}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -18660,6 +18893,13 @@ function TankLogApp() {
             onSetBrewDayCheckbox={setBrewDayCheckbox}
             onAddNote={addBatchNote}
             onDeleteNote={deleteBatchNote}
+            onOpenTastingLog={() => setShowTastingLog(true)}
+          />
+        )}
+        {showTastingLog && selected && (
+          <TastingLogModal
+            onClose={() => setShowTastingLog(false)}
+            onSave={(entry) => addTastingNote(selected.id, entry)}
           />
         )}
 
