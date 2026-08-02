@@ -3012,6 +3012,76 @@ function CustomerCard({ customer, onOpen }) {
   );
 }
 
+// Live available-to-sell stock, per beer and container — the same numbers
+// the order picker already uses, just surfaced as its own page. Stays in
+// sync automatically: packaging a batch adds to it, confirming/fulfilling
+// an order subtracts, cancelling an order gives it straight back.
+function FinishedGoodsStockView({ availableStock, onStartStockTake, onOpenHistory, stockTakeCount }) {
+  const relevant = availableStock.filter((s) => s.packaged > 0);
+  const grouped = {};
+  relevant.forEach((s) => {
+    if (!grouped[s.batchName]) grouped[s.batchName] = [];
+    grouped[s.batchName].push(s);
+  });
+  const beerNames = Object.keys(grouped).sort();
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <button
+          onClick={onStartStockTake}
+          style={{ flex: 1, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+        >
+          Start stock take
+        </button>
+        <button
+          onClick={onOpenHistory}
+          style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+        >
+          Past reports ({stockTakeCount})
+        </button>
+      </div>
+
+      {beerNames.length === 0 ? (
+        <EmptyState icon={Package} title="Nothing packaged yet" subtitle="Once a batch is packaged, what's available to sell will show up here automatically." />
+      ) : (
+        beerNames.map((name) => (
+          <div key={name} style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324", marginBottom: 8 }}>{name}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {grouped[name].map((s) => (
+                <div
+                  key={s.containerKey}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "10px 14px",
+                    background: "#FFFFFF",
+                    border: `1px solid ${s.available <= 0 ? "#E3D3A0" : "#DDE0C8"}`,
+                    borderRadius: 6,
+                  }}
+                >
+                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.containerLabel}</span>
+                  <span
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 13,
+                      color: s.available <= 0 ? "#B5502F" : "#5C9A3C",
+                    }}
+                  >
+                    {s.available} available
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function CustomersView({ customers, onOpen }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -14433,7 +14503,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-121";
+const APP_VERSION = "2026-08-03-122";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14883,6 +14953,9 @@ function TankLogApp() {
   const [showConsumablesStockTake, setShowConsumablesStockTake] = useState(false);
   const [showConsumablesStockTakeHistory, setShowConsumablesStockTakeHistory] = useState(false);
   const [viewingConsumablesStockTake, setViewingConsumablesStockTake] = useState(null);
+  const [showFinishedStockTake, setShowFinishedStockTake] = useState(false);
+  const [showFinishedStockTakeHistory, setShowFinishedStockTakeHistory] = useState(false);
+  const [viewingFinishedStockTake, setViewingFinishedStockTake] = useState(null);
   const [editTankTarget, setEditTankTarget] = useState(null);
   const [deleteTankTarget, setDeleteTankTarget] = useState(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState(null);
@@ -15763,6 +15836,24 @@ function TankLogApp() {
       .single();
     if (stError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setStockTakes((prev) => [rowToStockTake(data), ...prev]);
+  };
+
+  // Finished stock isn't a single stored number the way ingredients or
+  // consumables are — it's worked out from packaging events minus sales
+  // orders. So a stock take here can't "correct" a field the way the
+  // others do; it's a discrepancy report for the record, same as walking
+  // any other shelf and writing down what's actually there.
+  const completeFinishedStockTake = async (lines) => {
+    const date = today();
+    const record = { id: uid(), date, userName: user.name, lines, type: "finished_stock" };
+    const { data, error } = await supabase
+      .from("stock_takes")
+      .insert(stockTakeToRow(record, user.id, profile.companyId))
+      .select()
+      .single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setStockTakes((prev) => [rowToStockTake(data), ...prev]);
+    showToast("success", "Stock take saved.");
   };
 
   const addFoodSafetyRecord = async (record) => {
@@ -17037,6 +17128,7 @@ function TankLogApp() {
                 items: [
                   ["customers", "Customers", Users],
                   ["salesOrders", "Orders", Truck],
+                  ["finishedGoodsStock", "Stock", Package],
                 ],
               },
               {
@@ -17165,7 +17257,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -17714,6 +17806,15 @@ function TankLogApp() {
 
             {!loadingData && view === "salesOrders" && !selectedSalesOrderId && (
               <SalesOrdersView salesOrders={salesOrders} customers={customers} onOpen={setSelectedSalesOrderId} />
+            )}
+
+            {!loadingData && view === "finishedGoodsStock" && (
+              <FinishedGoodsStockView
+                availableStock={availableStock}
+                onStartStockTake={() => setShowFinishedStockTake(true)}
+                onOpenHistory={() => setShowFinishedStockTakeHistory(true)}
+                stockTakeCount={stockTakes.filter((st) => st.type === "finished_stock").length}
+              />
             )}
 
             {!loadingData && view === "orders" && (() => {
@@ -18762,6 +18863,29 @@ function TankLogApp() {
       )}
       {viewingConsumablesStockTake && (
         <StockTakeReportModal stockTake={viewingConsumablesStockTake} onClose={() => setViewingConsumablesStockTake(null)} />
+      )}
+      {showFinishedStockTake && (
+        <StockTakeModal
+          inventory={availableStock
+            .filter((s) => s.packaged > 0)
+            .map((s) => ({ id: `${s.batchId}::${s.containerKey}`, name: `${s.batchName} — ${s.containerLabel}`, qty: s.available, unit: "units" }))}
+          itemLabel="item"
+          onClose={() => setShowFinishedStockTake(false)}
+          onComplete={completeFinishedStockTake}
+        />
+      )}
+      {showFinishedStockTakeHistory && (
+        <StockTakeHistoryModal
+          stockTakes={stockTakes.filter((st) => st.type === "finished_stock")}
+          onClose={() => setShowFinishedStockTakeHistory(false)}
+          onOpenReport={(st) => {
+            setViewingFinishedStockTake(st);
+            setShowFinishedStockTakeHistory(false);
+          }}
+        />
+      )}
+      {viewingFinishedStockTake && (
+        <StockTakeReportModal stockTake={viewingFinishedStockTake} onClose={() => setViewingFinishedStockTake(null)} />
       )}
       {activeChecklistTemplate && (
         <FoodSafetyChecklistModal
