@@ -13032,7 +13032,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-99";
+const APP_VERSION = "2026-07-31-100";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13162,7 +13162,95 @@ function ToastStack({ toasts, onDismiss }) {
   );
 }
 
-export default function TankLog() {
+// Catches any render-time crash and shows the actual error instead of a
+// blank white screen — critical for diagnosing issues on iPad, where
+// there's no easy way to open dev tools and see what actually happened.
+class BrewpointErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, info: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    this.setState({ info });
+    console.error("Brewpoint crashed:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const message = this.state.error?.message || String(this.state.error);
+      const stack = this.state.error?.stack || "";
+      const componentStack = this.state.info?.componentStack || "";
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            background: "#F5F1E4",
+            fontFamily: "'Inter', sans-serif",
+            textAlign: "center",
+            boxSizing: "border-box",
+          }}
+        >
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: "0 0 8px" }}>
+            Something went wrong
+          </h1>
+          <p style={{ color: "#5C6B54", fontSize: 13.5, maxWidth: 480, margin: "0 0 16px" }}>
+            Brewpoint hit an error and couldn't load. Screenshot everything below and send it over — this tells us exactly what broke.
+          </p>
+          <div
+            style={{
+              background: "#FFFFFF",
+              border: "1px solid #DDE0C8",
+              borderRadius: 6,
+              padding: 14,
+              fontSize: 11,
+              fontFamily: "'JetBrains Mono', monospace",
+              color: "#B5502F",
+              maxWidth: "100%",
+              width: 560,
+              maxHeight: "50vh",
+              overflow: "auto",
+              textAlign: "left",
+              boxSizing: "border-box",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {message}
+            {stack ? `\n\n${stack}` : ""}
+            {componentStack ? `\n\n--- component stack ---${componentStack}` : ""}
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 18,
+              background: "#5C9A3C",
+              border: "none",
+              borderRadius: 5,
+              padding: "11px 22px",
+              color: "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function TankLogApp() {
   const [session, setSession] = useState(undefined); // undefined = not checked yet, null = signed out
   const [justConfirmedEmail, setJustConfirmedEmail] = useState(() => {
     const hash = window.location.hash || "";
@@ -17115,5 +17203,13 @@ export default function TankLog() {
         <DeleteCompanyModal onClose={() => setShowDeleteCompany(false)} onConfirm={deleteCompany} />
       )}
     </div>
+  );
+}
+
+export default function TankLog() {
+  return (
+    <BrewpointErrorBoundary>
+      <TankLogApp />
+    </BrewpointErrorBoundary>
   );
 }
