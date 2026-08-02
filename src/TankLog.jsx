@@ -312,14 +312,18 @@ function BrewpointLoadingMark({ size = 52, label }) {
             <stop offset="0%" stopColor="#7CB854" />
             <stop offset="100%" stopColor="#4A7D2E" />
           </linearGradient>
+          <linearGradient id="bp-loading-marker-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#E8BE63" />
+            <stop offset="100%" stopColor="#D4A24C" />
+          </linearGradient>
         </defs>
         <path d={BP_TANK_PATH} stroke="#5C9A3C" strokeWidth="2.1" strokeLinejoin="round" strokeLinecap="round" />
         <g clipPath="url(#bp-loading-clip)">
           <rect x="7" y="15" width="24" height="21" fill="url(#bp-loading-liquid-grad)" style={{ animation: "bp-mark-pulse 1.6s ease-in-out infinite" }} />
         </g>
         <g style={{ transformOrigin: "19px 19px", animation: "bp-mark-spin 1.3s linear infinite" }}>
-          <line x1="27.5" y1="15" x2="34" y2="9" stroke="#D4A24C" strokeWidth="1.7" strokeLinecap="round" />
-          <circle cx="34" cy="9" r="2.6" fill="#D4A24C" />
+          <line x1="27.5" y1="15" x2="34" y2="9" stroke="url(#bp-loading-marker-grad)" strokeWidth="1.7" strokeLinecap="round" />
+          <circle cx="34" cy="9" r="2.6" fill="url(#bp-loading-marker-grad)" />
           <circle cx="34" cy="9" r="5.4" stroke="#D4A24C" strokeWidth="1" opacity="0.4" />
         </g>
       </svg>
@@ -13029,7 +13033,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-102";
+const APP_VERSION = "2026-07-31-103";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
