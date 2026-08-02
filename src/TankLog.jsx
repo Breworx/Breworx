@@ -10661,7 +10661,119 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction }) {
+// A clean, print-ready report — built for handing to an inspector or
+// auditor, not for reading on screen. Uses the browser's own print/Save-as-
+// PDF rather than a PDF library, so there's nothing extra to load or break.
+function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
+  const categoryLabel = {
+    checklist: "Checklist",
+    calibration: "Calibration",
+    training: "Training",
+    water: "Water test",
+    recall: "Mock recall",
+    incident: "Incident",
+    illness: "Staff sickness",
+  };
+  const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+  const openCorrectiveActions = records.filter((r) => r.category === "checklist" && r.correctiveAction && !r.correctiveActionResolved);
+  const periodLabel = monthFilter ? monthLabelFromKey(monthFilter) : "All records";
+  const counts = {};
+  records.forEach((r) => {
+    counts[r.category] = (counts[r.category] || 0) + 1;
+  });
+
+  const recordDetail = (r) => {
+    if (r.category === "checklist") {
+      const total = (r.items || []).length;
+      const done = (r.items || []).filter((i) => i.checked).length;
+      return `${done}/${total} items checked${r.completedBy ? ` — completed by ${r.completedBy}` : ""}${r.correctiveAction ? ` — corrective action: ${r.correctiveAction} (${r.correctiveActionResolved ? "resolved" : "OPEN"})` : ""}`;
+    }
+    if (r.category === "calibration") {
+      return `${r.equipmentName || ""} — ${r.result || "no result recorded"}${r.dueDate ? ` — next due ${r.dueDate}` : ""}${r.completedBy ? ` — completed by ${r.completedBy}` : ""}`;
+    }
+    if (r.category === "training") {
+      return `${r.staffName || ""} — ${r.topic || ""}${r.trainedBy ? ` — trained by ${r.trainedBy}` : ""}${r.staffConfirmed ? " — confirmed by staff member" : ""}`;
+    }
+    if (r.category === "illness") return `${r.staffName || ""}${r.notes ? ` — ${r.notes}` : ""}`;
+    return r.notes || "";
+  };
+
+  return (
+    <div id="audit-report-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto" }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #audit-report-print, #audit-report-print * { visibility: visible; }
+          #audit-report-print { position: absolute; top: 0; left: 0; width: 100%; background: #FFFFFF; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
+        <button
+          onClick={onClose}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5 }}
+        >
+          <X size={16} /> Close
+        </button>
+        <button
+          onClick={() => window.print()}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+        >
+          Print / Save as PDF
+        </button>
+      </div>
+
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "36px 28px 60px", color: "#1A1F16" }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5C6B54" }}>
+          {companyName || "Brewery"}
+        </div>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 500, margin: "4px 0 6px" }}>Food Safety Audit Report</h1>
+        <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 28 }}>
+          Period: {periodLabel} · Generated {today()}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 28, pageBreakInside: "avoid" }}>
+          {Object.entries(counts).map(([cat, n]) => (
+            <div key={cat} style={{ border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ fontSize: 20, fontFamily: "'JetBrains Mono', monospace" }}>{n}</div>
+              <div style={{ fontSize: 11, color: "#5C6B54" }}>{categoryLabel[cat] || cat}</div>
+            </div>
+          ))}
+        </div>
+
+        {openCorrectiveActions.length > 0 && (
+          <div style={{ marginBottom: 28, pageBreakInside: "avoid" }}>
+            <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 15, fontWeight: 500, borderBottom: "1px solid #DDE0C8", paddingBottom: 6, marginBottom: 10 }}>
+              Open corrective actions ({openCorrectiveActions.length})
+            </h2>
+            {openCorrectiveActions.map((r) => (
+              <div key={r.id} style={{ fontSize: 13, padding: "6px 0", borderBottom: "1px solid #F0EDE0" }}>
+                <strong>{r.date}</strong> — {r.correctiveAction}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 15, fontWeight: 500, borderBottom: "1px solid #DDE0C8", paddingBottom: 6, marginBottom: 10 }}>
+          Full record log ({sorted.length})
+        </h2>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {sorted.map((r) => (
+            <div key={r.id} style={{ display: "flex", gap: 14, padding: "8px 0", borderBottom: "1px solid #F0EDE0", fontSize: 12.5, pageBreakInside: "avoid" }}>
+              <div style={{ width: 78, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>{r.date}</div>
+              <div style={{ width: 90, flexShrink: 0, color: "#5C6B54" }}>{categoryLabel[r.category] || r.category}</div>
+              <div style={{ flex: 1 }}>{recordDetail(r)}</div>
+            </div>
+          ))}
+          {sorted.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13, padding: "12px 0" }}>No records in this period.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -11019,7 +11131,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
       </div>
     </div>
     {showAuditReport && (
-      <FoodSafetyAuditReport records={filteredRecords} monthFilter={monthFilter} onClose={() => setShowAuditReport(false)} />
+      <FoodSafetyAuditReport records={filteredRecords} monthFilter={monthFilter} companyName={companyName} onClose={() => setShowAuditReport(false)} />
     )}
     </>
   );
@@ -14107,7 +14219,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-114";
+const APP_VERSION = "2026-08-03-115";
 
 function UpdateBanner({ onRefresh, runningVersion, latestVersion }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16904,6 +17016,7 @@ function TankLogApp() {
                   suppliers={suppliers}
                   onOpenSupplier={setViewingSupplierDocs}
                   onResolveCorrectiveAction={resolveCorrectiveAction}
+                  companyName={companyName}
                 />
               </>
             )}
