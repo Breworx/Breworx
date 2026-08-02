@@ -272,26 +272,29 @@ function BreworxMark({ size = 24 }) {
         <clipPath id="bp-tank-clip">
           <path d={BP_TANK_PATH} />
         </clipPath>
-        <linearGradient id="bp-liquid-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#7CB854" />
-          <stop offset="100%" stopColor="#4A7D2E" />
+        <linearGradient id="bp-badge-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#2F3D26" />
+          <stop offset="100%" stopColor="#1B2415" />
         </linearGradient>
-        <linearGradient id="bp-marker-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#E8BE63" />
-          <stop offset="100%" stopColor="#D4A24C" />
+        <linearGradient id="bp-liquid-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#F0C25E" />
+          <stop offset="100%" stopColor="#D4972E" />
         </linearGradient>
       </defs>
+      {/* Self-contained badge — reads consistently wherever it's placed,
+          rather than relying on whatever background happens to sit behind it. */}
+      <rect x="1" y="1" width="38" height="38" rx="10" fill="url(#bp-badge-grad)" />
+      <rect x="1" y="1" width="38" height="38" rx="10" stroke="#4A5D3A" strokeWidth="0.75" opacity="0.6" />
       {/* Fermenter tank outline, softened shoulders */}
-      <path d={BP_TANK_PATH} stroke="#5C9A3C" strokeWidth="2.1" strokeLinejoin="round" strokeLinecap="round" />
+      <path d={BP_TANK_PATH} stroke="#F5F1E4" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" opacity="0.92" />
       {/* Liquid fill with gradient depth + glass highlight */}
       <g clipPath="url(#bp-tank-clip)">
-        <rect x="7" y="15" width="24" height="21" fill="url(#bp-liquid-grad)" opacity="0.85" />
-        <rect x="12.5" y="8" width="2.4" height="21" rx="1.2" fill="#FFFFFF" opacity="0.28" />
+        <rect x="7" y="15" width="24" height="21" fill="url(#bp-liquid-grad)" />
+        <rect x="12.5" y="8" width="2.4" height="21" rx="1.2" fill="#FFFFFF" opacity="0.3" />
       </g>
       {/* Reading marker calling out the point on the tank */}
-      <line x1="27.5" y1="15" x2="34" y2="9" stroke="url(#bp-marker-grad)" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="34" cy="9" r="2.6" fill="url(#bp-marker-grad)" />
-      <circle cx="34" cy="9" r="5.4" stroke="#D4A24C" strokeWidth="1" opacity="0.4" />
+      <line x1="27.5" y1="15" x2="33.5" y2="9.5" stroke="#8FCB6C" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="34" cy="9" r="2.4" fill="#8FCB6C" />
     </svg>
   );
 }
@@ -13029,7 +13032,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-98";
+const APP_VERSION = "2026-07-31-99";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
