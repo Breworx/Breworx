@@ -13029,7 +13029,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-97";
+const APP_VERSION = "2026-07-31-98";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13267,14 +13267,27 @@ export default function TankLog() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   useEffect(() => {
+    if (!profile) return;
+    if (!(profile.toursSeen || []).includes("welcome")) setShowWelcomeTour(true);
+  }, [profile]);
+
+  // Marks a tour (the welcome tour, or any single page's tour) as seen —
+  // tied to the person's account rather than the device, so it follows
+  // them wherever they log in, and each teammate gets their own first look
+  // regardless of whether they're sharing a device with someone else.
+  const markTourSeen = async (key) => {
+    if (!profile) return;
+    const toursSeen = [...new Set([...(profile.toursSeen || []), key])];
+    setProfile((prev) => (prev ? { ...prev, toursSeen } : prev));
     try {
-      if (!localStorage.getItem("brewpoint-welcome-tour-done")) setShowWelcomeTour(true);
+      await supabase.from("profiles").update({ tours_seen: toursSeen }).eq("id", profile.id);
     } catch {}
-  }, []);
+  };
+
   const dismissWelcomeTour = () => {
     setShowWelcomeTour(false);
+    markTourSeen("welcome");
     try {
-      localStorage.setItem("brewpoint-welcome-tour-done", "1");
       // A brand-new account doesn't need a "what changed" recap on top of
       // the tour it just saw — mark the changelog seen too.
       localStorage.setItem("brewpoint-changelog-seen", String(LATEST_CHANGELOG_ID));
@@ -13282,35 +13295,31 @@ export default function TankLog() {
   };
 
   // Same spotlight mechanism as the welcome tour, but scoped to a single
-  // page — fires the first time you land on a page that has one, same
-  // one-time-per-device semantics. Skips while the welcome tour itself is
-  // showing, so a brand-new account isn't hit by two overlapping tours.
+  // page — fires the first time this account lands on a page that has one.
+  // Skips while the welcome tour itself is showing, so a brand-new account
+  // isn't hit by two overlapping tours.
   const [pageTourKey, setPageTourKey] = useState(null);
   useEffect(() => {
     if (showWelcomeTour) return;
+    if (!profile) return;
     if (!PAGE_TOURS[view]) return;
-    try {
-      if (!localStorage.getItem(`brewpoint-page-tour-${view}-done`)) setPageTourKey(view);
-    } catch {}
-  }, [view, showWelcomeTour]);
+    if (!(profile.toursSeen || []).includes(view)) setPageTourKey(view);
+  }, [view, showWelcomeTour, profile]);
   const dismissPageTour = () => {
-    if (pageTourKey) {
-      try {
-        localStorage.setItem(`brewpoint-page-tour-${pageTourKey}-done`, "1");
-      } catch {}
-    }
+    if (pageTourKey) markTourSeen(pageTourKey);
     setPageTourKey(null);
   };
 
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   useEffect(() => {
+    if (!profile) return;
     try {
-      const isFirstVisit = !localStorage.getItem("brewpoint-welcome-tour-done");
+      const isFirstVisit = !(profile.toursSeen || []).includes("welcome");
       if (isFirstVisit) return;
       const lastSeen = Number(localStorage.getItem("brewpoint-changelog-seen") || "0");
       if (lastSeen < LATEST_CHANGELOG_ID) setShowWhatsNew(true);
     } catch {}
-  }, []);
+  }, [profile]);
   const dismissWhatsNew = () => {
     setShowWhatsNew(false);
     try {
