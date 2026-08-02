@@ -10159,6 +10159,27 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
             </g>
           )}
 
+          {recirculating && (
+            <>
+              {/* Recirculation arm — pulls from the side, arcs up and over the top */}
+              <path
+                d="M100 132 Q 108 45 60 -8"
+                stroke="#9BA88A"
+                strokeWidth="3.5"
+                fill="none"
+                strokeLinecap="round"
+              />
+              <circle cx="100" cy="132" r="3" fill="#9BA88A" />
+              <circle cx="60" cy="-8" r="3.5" fill="#9BA88A" />
+              {[0, 1, 2, 3].map((i) => (
+                <circle key={`shower-${i}`} cx={54 + i * 4} cy="-4" r="1.6" fill="#FFFFFF" opacity="0">
+                  <animate attributeName="cy" from="-4" to={surfaceY + 4} dur="1.1s" begin={`${i * 0.18}s`} repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0;0.85;0.85;0" dur="1.1s" begin={`${i * 0.18}s`} repeatCount="indefinite" />
+                </circle>
+              ))}
+            </>
+          )}
+
           {boiling &&
             steamWisps.map((s, i) => (
               <path
@@ -12326,7 +12347,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-80";
+const APP_VERSION = "2026-07-31-81";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
