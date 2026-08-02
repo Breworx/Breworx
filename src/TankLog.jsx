@@ -13175,7 +13175,14 @@ function HomeView({
   activityLog,
   onCycleClean,
   onSetCleanStage,
+  reminders,
+  onAddReminder,
+  onToggleReminder,
 }) {
+  const [addingTodayReminder, setAddingTodayReminder] = useState(false);
+  const [newTodayReminderText, setNewTodayReminderText] = useState("");
+  const todayReminders = reminders.filter((r) => r.dueDate === today());
+
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
 
@@ -13583,6 +13590,81 @@ function HomeView({
                 <span style={{ color: "#D9A441", fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, flexShrink: 0, textTransform: "uppercase" }}>food safety</span>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {(todayReminders.length > 0 || addingTodayReminder) && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Today</div>
+            <button
+              onClick={() => setAddingTodayReminder(true)}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              + Add
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: totalTasks > 0 ? 0 : undefined }}>
+            {todayReminders.map((r) => (
+              <div
+                key={r.id}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}
+              >
+                <button
+                  onClick={() => onToggleReminder(r.id, !r.done)}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 4,
+                    border: `1.5px solid ${r.done ? "#5C9A3C" : "#C9D1AC"}`,
+                    background: r.done ? "#5C9A3C" : "none",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    cursor: "pointer",
+                  }}
+                >
+                  {r.done && <CheckCircle2 size={12} color="#FFFFFF" />}
+                </button>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: "#2A3324", textDecoration: r.done ? "line-through" : "none", opacity: r.done ? 0.6 : 1 }}>
+                  {r.text}
+                </div>
+                <div style={{ width: 7, height: 7, borderRadius: 4, background: userColor(r.userName), flexShrink: 0 }} title={r.userName} />
+              </div>
+            ))}
+            {addingTodayReminder && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newTodayReminderText}
+                  onChange={(e) => setNewTodayReminderText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newTodayReminderText.trim()) {
+                      onAddReminder(newTodayReminderText.trim(), today());
+                      setNewTodayReminderText("");
+                      setAddingTodayReminder(false);
+                    }
+                    if (e.key === "Escape") setAddingTodayReminder(false);
+                  }}
+                  placeholder="Add a reminder for today…"
+                  style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+                />
+                <button
+                  onClick={() => {
+                    if (!newTodayReminderText.trim()) { setAddingTodayReminder(false); return; }
+                    onAddReminder(newTodayReminderText.trim(), today());
+                    setNewTodayReminderText("");
+                    setAddingTodayReminder(false);
+                  }}
+                  style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 14px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+                >
+                  Add
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -14351,7 +14433,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-120";
+const APP_VERSION = "2026-08-03-121";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14914,9 +14996,8 @@ function TankLogApp() {
       if (cancelled) return;
       if (companyRes.error) {
         console.error(companyRes.error);
-        alert(`Company load failed: ${companyRes.error.message || companyRes.error.code || "unknown error"}`);
       } else if (!companyRes.data) {
-        alert("Company load returned no error, but also no data.");
+        console.error("Company load returned no error, but also no data.");
       } else {
         setCompanyName(companyRes.data.name);
         setCompanyLogo(companyRes.data.logo_url || "");
@@ -14965,10 +15046,7 @@ function TankLogApp() {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
         console.error(err);
-        if (!cancelled) {
-          alert(`Data load crashed: ${(err && err.message) || String(err)}`);
-          showToast("error", "Something went wrong loading your data — check your connection and try refreshing.");
-        }
+        if (!cancelled) showToast("error", "Something went wrong loading your data — check your connection and try refreshing.");
       } finally {
         if (!cancelled) setLoadingData(false);
       }
@@ -17156,6 +17234,9 @@ function TankLogApp() {
                 activityLog={activityLog}
                 onCycleClean={cycleTankClean}
                 onSetCleanStage={setTankCleanStage}
+                reminders={reminders}
+                onAddReminder={addReminder}
+                onToggleReminder={toggleReminderDone}
               />
             )}
 
