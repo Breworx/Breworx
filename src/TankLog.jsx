@@ -5739,13 +5739,15 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
     </div>
   );
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const requestClose = () => {
-    if (name.trim().length > 0 && !window.confirm("Discard this recipe? Your entries won't be saved.")) return;
+    if (name.trim().length > 0) { setConfirmDiscard(true); return; }
     onClose();
   };
 
   if (standalone) {
     return (
+      <>
       <div style={{ maxWidth: 640 }}>
         <button
           onClick={requestClose}
@@ -5770,13 +5772,34 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
         </h1>
         {content}
       </div>
+      {confirmDiscard && (
+        <ConfirmDialogModal
+          message="Discard this recipe? Your entries won't be saved."
+          confirmLabel="Discard"
+          destructive
+          onCancel={() => setConfirmDiscard(false)}
+          onConfirm={() => { setConfirmDiscard(false); onClose(); }}
+        />
+      )}
+      </>
     );
   }
 
   return (
+    <>
     <Modal title={editingRecipe ? `Save new version — ${editingRecipe.name}` : "New recipe"} onClose={requestClose}>
       {content}
     </Modal>
+    {confirmDiscard && (
+      <ConfirmDialogModal
+        message="Discard this recipe? Your entries won't be saved."
+        confirmLabel="Discard"
+        destructive
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => { setConfirmDiscard(false); onClose(); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -6348,6 +6371,55 @@ function Modal({ title, onClose, children }) {
   );
 }
 
+// A styled stand-in for window.confirm() — everywhere the app needs a
+// "are you sure?" check, this keeps it looking like the rest of Brewpoint
+// instead of the browser's plain OS-level alert box.
+function ConfirmDialogModal({ title = "Are you sure?", message, confirmLabel = "Confirm", destructive = false, onConfirm, onCancel }) {
+  return (
+    <Modal title={title} onClose={onCancel}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <p style={{ color: "#5C6B54", fontSize: 14, lineHeight: 1.5, margin: 0 }}>{message}</p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              background: "none",
+              border: "1px solid #C9D1AC",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#5C6B54",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13.5,
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              flex: 1,
+              background: destructive ? "#B5502F" : "#5C9A3C",
+              border: "none",
+              borderRadius: 5,
+              padding: "11px",
+              color: destructive ? "#FFFFFF" : "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 13.5,
+              letterSpacing: "0.02em",
+              cursor: "pointer",
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate }) {
   const mashTuns = tanks.filter((t) => t.type === "Mash Tun");
   const tankChoices = mashTuns.length > 0 ? mashTuns : tanks;
@@ -6509,12 +6581,14 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     onClose();
   };
 
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const requestClose = () => {
-    if (name.trim().length > 0 && !window.confirm("Discard this batch? Your entries won't be saved.")) return;
+    if (name.trim().length > 0) { setConfirmDiscard(true); return; }
     onClose();
   };
 
   return (
+    <>
     <Modal title="New Batch" onClose={requestClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -7081,6 +7155,16 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         </button>
       </div>
     </Modal>
+    {confirmDiscard && (
+      <ConfirmDialogModal
+        message="Discard this batch? Your entries won't be saved."
+        confirmLabel="Discard"
+        destructive
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => { setConfirmDiscard(false); onClose(); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -11048,14 +11132,11 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDel
     onClose();
   };
 
-  const handleDelete = () => {
-    if (window.confirm(`Delete the scheduled brew "${batch.name}"? You'll have a few seconds to undo right after.`)) {
-      onDelete(batch.id);
-      onClose();
-    }
-  };
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleDelete = () => setConfirmDelete(true);
 
   return (
+    <>
     <Modal title={`Edit scheduled brew`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ color: "#5C9A3C", fontSize: 12, background: "#FCF1DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 12px", lineHeight: 1.5 }}>
@@ -11155,6 +11236,16 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onDel
         </button>
       </div>
     </Modal>
+    {confirmDelete && (
+      <ConfirmDialogModal
+        message={`Delete the scheduled brew "${batch.name}"? You'll have a few seconds to undo right after.`}
+        confirmLabel="Delete"
+        destructive
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { setConfirmDelete(false); onDelete(batch.id); onClose(); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -12347,7 +12438,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-81";
+const APP_VERSION = "2026-07-31-82";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -12719,6 +12810,8 @@ export default function TankLog() {
   const [editSplitTanksTarget, setEditSplitTanksTarget] = useState(null);
   const [fermenterTransferTarget, setFermenterTransferTarget] = useState(null);
   const [startPackagingTarget, setStartPackagingTarget] = useState(null);
+  const [confirmTarget, setConfirmTarget] = useState(null);
+  const askConfirm = (message, onConfirm, opts = {}) => setConfirmTarget({ message, onConfirm, ...opts });
   const [diacetylTestTarget, setDiacetylTestTarget] = useState(null);
 
   // Watch the Supabase auth session. This runs once and fires again on
@@ -12956,22 +13049,27 @@ export default function TankLog() {
   };
 
   const removeTeammate = (teammate) => {
-    if (!window.confirm(`Remove ${teammate.name} from the team? They'll lose access to this company immediately.`)) return;
-    setTeammates((prev) => prev.filter((t) => t.id !== teammate.id));
-    const timeoutId = setTimeout(async () => {
-      delete pendingDeletesRef.current[teammate.id];
-      const { error } = await supabase.rpc("remove_teammate", { member_id: teammate.id });
-      if (error) { showToast("error", `Couldn't remove ${teammate.name}: ${error.message || "unknown error"}`); setTeammates((prev) => [teammate, ...prev]); }
-    }, 5000);
-    pendingDeletesRef.current[teammate.id] = timeoutId;
-    showToast("success", `${teammate.name} removed from the team.`, {
-      label: "Undo",
-      onClick: () => {
-        clearTimeout(pendingDeletesRef.current[teammate.id]);
-        delete pendingDeletesRef.current[teammate.id];
-        setTeammates((prev) => [teammate, ...prev]);
+    askConfirm(
+      `Remove ${teammate.name} from the team? They'll lose access to this company immediately.`,
+      () => {
+        setTeammates((prev) => prev.filter((t) => t.id !== teammate.id));
+        const timeoutId = setTimeout(async () => {
+          delete pendingDeletesRef.current[teammate.id];
+          const { error } = await supabase.rpc("remove_teammate", { member_id: teammate.id });
+          if (error) { showToast("error", `Couldn't remove ${teammate.name}: ${error.message || "unknown error"}`); setTeammates((prev) => [teammate, ...prev]); }
+        }, 5000);
+        pendingDeletesRef.current[teammate.id] = timeoutId;
+        showToast("success", `${teammate.name} removed from the team.`, {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(pendingDeletesRef.current[teammate.id]);
+            delete pendingDeletesRef.current[teammate.id];
+            setTeammates((prev) => [teammate, ...prev]);
+          },
+        });
       },
-    });
+      { confirmLabel: "Remove", destructive: true }
+    );
   };
 
   const uploadBatchPhoto = async (batchId, file) => {
@@ -13643,23 +13741,28 @@ export default function TankLog() {
   };
 
   const deleteInventoryItem = (item) => {
-    if (!window.confirm(`Delete ${item.name}? You'll have a few seconds to undo right after.`)) return;
-    setInventory((prev) => prev.filter((it) => it.id !== item.id));
-    setSelectedInventoryId(null);
-    const timeoutId = setTimeout(async () => {
-      delete pendingDeletesRef.current[item.id];
-      const { error } = await supabase.from("inventory_items").delete().eq("id", item.id);
-      if (error) showToast("error", "Something didn't save — check your connection and try again.");
-    }, 5000);
-    pendingDeletesRef.current[item.id] = timeoutId;
-    showToast("success", `${item.name} deleted.`, {
-      label: "Undo",
-      onClick: () => {
-        clearTimeout(pendingDeletesRef.current[item.id]);
-        delete pendingDeletesRef.current[item.id];
-        setInventory((prev) => [item, ...prev]);
+    askConfirm(
+      `Delete ${item.name}? You'll have a few seconds to undo right after.`,
+      () => {
+        setInventory((prev) => prev.filter((it) => it.id !== item.id));
+        setSelectedInventoryId(null);
+        const timeoutId = setTimeout(async () => {
+          delete pendingDeletesRef.current[item.id];
+          const { error } = await supabase.from("inventory_items").delete().eq("id", item.id);
+          if (error) showToast("error", "Something didn't save — check your connection and try again.");
+        }, 5000);
+        pendingDeletesRef.current[item.id] = timeoutId;
+        showToast("success", `${item.name} deleted.`, {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(pendingDeletesRef.current[item.id]);
+            delete pendingDeletesRef.current[item.id];
+            setInventory((prev) => [item, ...prev]);
+          },
+        });
       },
-    });
+      { confirmLabel: "Delete", destructive: true }
+    );
   };
 
   const updateInventorySupplier = async (id, supplierId) => {
@@ -13707,23 +13810,28 @@ export default function TankLog() {
   };
 
   const deleteConsumable = (item) => {
-    if (!window.confirm(`Delete ${item.name}? You'll have a few seconds to undo right after.`)) return;
-    setConsumables((prev) => prev.filter((it) => it.id !== item.id));
-    setSelectedConsumableId(null);
-    const timeoutId = setTimeout(async () => {
-      delete pendingDeletesRef.current[item.id];
-      const { error } = await supabase.from("consumables").delete().eq("id", item.id);
-      if (error) showToast("error", "Something didn't save — check your connection and try again.");
-    }, 5000);
-    pendingDeletesRef.current[item.id] = timeoutId;
-    showToast("success", `${item.name} deleted.`, {
-      label: "Undo",
-      onClick: () => {
-        clearTimeout(pendingDeletesRef.current[item.id]);
-        delete pendingDeletesRef.current[item.id];
-        setConsumables((prev) => [item, ...prev]);
+    askConfirm(
+      `Delete ${item.name}? You'll have a few seconds to undo right after.`,
+      () => {
+        setConsumables((prev) => prev.filter((it) => it.id !== item.id));
+        setSelectedConsumableId(null);
+        const timeoutId = setTimeout(async () => {
+          delete pendingDeletesRef.current[item.id];
+          const { error } = await supabase.from("consumables").delete().eq("id", item.id);
+          if (error) showToast("error", "Something didn't save — check your connection and try again.");
+        }, 5000);
+        pendingDeletesRef.current[item.id] = timeoutId;
+        showToast("success", `${item.name} deleted.`, {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(pendingDeletesRef.current[item.id]);
+            delete pendingDeletesRef.current[item.id];
+            setConsumables((prev) => [item, ...prev]);
+          },
+        });
       },
-    });
+      { confirmLabel: "Delete", destructive: true }
+    );
   };
 
   const updateConsumableSupplier = async (id, supplierId) => {
@@ -13830,24 +13938,29 @@ export default function TankLog() {
   };
 
   const deletePO = (po) => {
-    if (!window.confirm(`Delete ${po.poNumber}? You'll have a few seconds to undo right after.`)) return;
-    setPurchaseOrders((prev) => prev.filter((p) => p.id !== po.id));
-    setSelectedPOId(null);
-    logActivity("deleted", "purchase order", po.poNumber, `Purchase order ${po.poNumber} deleted`);
-    const timeoutId = setTimeout(async () => {
-      delete pendingDeletesRef.current[po.id];
-      const { error } = await supabase.from("purchase_orders").delete().eq("id", po.id);
-      if (error) showToast("error", "Something didn't save — check your connection and try again.");
-    }, 5000);
-    pendingDeletesRef.current[po.id] = timeoutId;
-    showToast("success", `${po.poNumber} deleted.`, {
-      label: "Undo",
-      onClick: () => {
-        clearTimeout(pendingDeletesRef.current[po.id]);
-        delete pendingDeletesRef.current[po.id];
-        setPurchaseOrders((prev) => [po, ...prev]);
+    askConfirm(
+      `Delete ${po.poNumber}? You'll have a few seconds to undo right after.`,
+      () => {
+        setPurchaseOrders((prev) => prev.filter((p) => p.id !== po.id));
+        setSelectedPOId(null);
+        logActivity("deleted", "purchase order", po.poNumber, `Purchase order ${po.poNumber} deleted`);
+        const timeoutId = setTimeout(async () => {
+          delete pendingDeletesRef.current[po.id];
+          const { error } = await supabase.from("purchase_orders").delete().eq("id", po.id);
+          if (error) showToast("error", "Something didn't save — check your connection and try again.");
+        }, 5000);
+        pendingDeletesRef.current[po.id] = timeoutId;
+        showToast("success", `${po.poNumber} deleted.`, {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(pendingDeletesRef.current[po.id]);
+            delete pendingDeletesRef.current[po.id];
+            setPurchaseOrders((prev) => [po, ...prev]);
+          },
+        });
       },
-    });
+      { confirmLabel: "Delete", destructive: true }
+    );
   };
 
   const markPOSent = async (id) => {
@@ -14207,11 +14320,16 @@ export default function TankLog() {
   const cancelPackagingRun = async (id) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    if (!window.confirm("Cancel this packaging run? Nothing's been deducted yet, so the tank and your stock stay exactly as they are — this just clears the in-progress status.")) return;
-    const { error } = await supabase.from("batches").update({ packaging_run: null }).eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packagingRun: null } : b)));
-    showToast("success", "Packaging run cancelled.");
+    askConfirm(
+      "Cancel this packaging run? Nothing's been deducted yet, so the tank and your stock stay exactly as they are — this just clears the in-progress status.",
+      async () => {
+        const { error } = await supabase.from("batches").update({ packaging_run: null }).eq("id", id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+        setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packagingRun: null } : b)));
+        showToast("success", "Packaging run cancelled.");
+      },
+      { confirmLabel: "Cancel run", destructive: true }
+    );
   };
 
 
@@ -14220,21 +14338,20 @@ export default function TankLog() {
     if (!batch) return;
     const event = packagingEvents(batch).find((e) => e.id === eventId);
     if (!event) return;
-    if (
-      !window.confirm(
-        "Undo this packaging run? It'll go back to the Cooling stage, and any consumables (cans, lids, boxes, labels) used for it will be returned to stock."
-      )
-    ) {
-      return;
-    }
-    const events = packagingEvents(batch).filter((e) => e.id !== eventId);
-    const newPackaging = { events, discarded: packagingDiscarded(batch) };
-    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Cooling" }).eq("id", id);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Cooling" } : b)));
-    await deductConsumablesForPackaging(batch, event, event.packageTypes || {}, 1);
-    showToast("success", "Packaging undone — back to Cooling, consumables returned to stock.");
-    logActivity("undid packaging for", "batch", batch.name, `Packaging undone for ${batch.name} (#${batch.number})`);
+    askConfirm(
+      "Undo this packaging run? It'll go back to the Cooling stage, and any consumables (cans, lids, boxes, labels) used for it will be returned to stock.",
+      async () => {
+        const events = packagingEvents(batch).filter((e) => e.id !== eventId);
+        const newPackaging = { events, discarded: packagingDiscarded(batch) };
+        const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Cooling" }).eq("id", id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+        setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Cooling" } : b)));
+        await deductConsumablesForPackaging(batch, event, event.packageTypes || {}, 1);
+        showToast("success", "Packaging undone — back to Cooling, consumables returned to stock.");
+        logActivity("undid packaging for", "batch", batch.name, `Packaging undone for ${batch.name} (#${batch.number})`);
+      },
+      { confirmLabel: "Undo packaging", destructive: true }
+    );
   };
 
   const discardRemaining = async (id) => {
@@ -16232,6 +16349,19 @@ export default function TankLog() {
           onSave={(containerType) => {
             startPackagingRun(startPackagingTarget.id, containerType);
             setStartPackagingTarget(null);
+          }}
+        />
+      )}
+      {confirmTarget && (
+        <ConfirmDialogModal
+          message={confirmTarget.message}
+          title={confirmTarget.title}
+          confirmLabel={confirmTarget.confirmLabel}
+          destructive={confirmTarget.destructive}
+          onCancel={() => setConfirmTarget(null)}
+          onConfirm={() => {
+            confirmTarget.onConfirm();
+            setConfirmTarget(null);
           }}
         />
       )}
