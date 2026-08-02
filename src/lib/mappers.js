@@ -451,6 +451,32 @@ export function packageTypeToRow(packageType, userId, companyId) {
   };
 }
 
+export function rowToReminder(row) {
+  return {
+    id: row.id,
+    text: row.text,
+    dueDate: row.due_date,
+    done: !!row.done,
+    userId: row.user_id,
+    userName: row.user_name,
+    doneBy: row.done_by || null,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function reminderToRow(reminder, userId, userName, companyId) {
+  return {
+    id: reminder.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: userName,
+    text: reminder.text,
+    due_date: reminder.dueDate,
+    done: !!reminder.done,
+    done_by: reminder.doneBy || null,
+  };
+}
+
 export function rowToActivity(row) {
   return {
     id: row.id,
