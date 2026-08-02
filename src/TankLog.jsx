@@ -7322,6 +7322,133 @@ function EditBrewDayFieldModal({ target, onClose, onSave }) {
 // The first half of a packaging run — just picking cans or kegs and marking
 // a start time. The actual counts get entered later, in PackagingModal,
 // once the run is genuinely finished.
+// Every batch that's used this tank, and every cleaning step logged against
+// it, in one place — the point is spotting patterns (a tank with repeat
+// faults, or one that keeps skipping straight to "Sanitised" without the
+// steps in between) rather than just looking up "what's in it right now."
+function TankHistoryModal({ tank, batches, onClose, onOpenBatch }) {
+  const history = [...(tank.history || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const batchEntries = history.filter((h) => h.type === "batch");
+  const cleanEntries = history.filter((h) => h.type === "clean");
+  const [tab, setTab] = useState("batches");
+
+  return (
+    <Modal title={`${tank.name} — history`} onClose={onClose}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setTab("batches")}
+          style={{
+            flex: 1,
+            background: tab === "batches" ? "#5C9A3C" : "none",
+            border: "1px solid #C9D1AC",
+            borderRadius: 5,
+            padding: "8px",
+            color: tab === "batches" ? "#16191A" : "#5C6B54",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Batches ({batchEntries.length})
+        </button>
+        <button
+          onClick={() => setTab("clean")}
+          style={{
+            flex: 1,
+            background: tab === "clean" ? "#5C9A3C" : "none",
+            border: "1px solid #C9D1AC",
+            borderRadius: 5,
+            padding: "8px",
+            color: tab === "clean" ? "#16191A" : "#5C6B54",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Cleaning ({cleanEntries.length})
+        </button>
+      </div>
+
+      {tab === "batches" && (
+        batchEntries.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No batches recorded for this tank yet.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {batchEntries.map((h) => {
+              const stillExists = batches.some((b) => b.id === h.batchId);
+              return (
+                <button
+                  key={h.id}
+                  onClick={() => stillExists && onOpenBatch(h.batchId)}
+                  disabled={!stillExists}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "9px 12px",
+                    background: "#F8F5EA",
+                    border: "1px solid #EBE8D6",
+                    borderRadius: 5,
+                    fontSize: 13,
+                    textAlign: "left",
+                    cursor: stillExists ? "pointer" : "default",
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <span style={{ color: "#2A3324", fontFamily: "'Inter', sans-serif" }}>
+                    {h.batchName} {h.batchNumber ? `(#${h.batchNumber})` : ""}
+                    {!stillExists && <span style={{ color: "#9BA88A" }}> — deleted</span>}
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11.5, flexShrink: 0 }}>
+                    {formatHistoryStamp(h.date)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {tab === "clean" && (
+        cleanEntries.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No cleaning steps logged for this tank yet.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {cleanEntries.map((h) => (
+              <div
+                key={h.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "9px 12px",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
+                  borderRadius: 5,
+                  fontSize: 13,
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#2A3324", fontFamily: "'Inter', sans-serif" }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: CLEAN_STAGE_COLOR[h.stage] || "#9BA88A", flexShrink: 0 }} />
+                  {h.stage}
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11.5, flexShrink: 0 }}>
+                  {formatHistoryStamp(h.date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </Modal>
+  );
+}
+
 function StartPackagingModal({ batch, onClose, onSave }) {
   return (
     <Modal title={`Start packaging — ${batch.name}`} onClose={onClose}>
@@ -12617,7 +12744,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-93";
+const APP_VERSION = "2026-07-31-94";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -12808,6 +12935,7 @@ export default function TankLog() {
   const [inviteToken] = useState(() => new URLSearchParams(window.location.search).get("invite"));
   const [tankParam] = useState(() => new URLSearchParams(window.location.search).get("tank"));
   const [qrTankTarget, setQrTankTarget] = useState(null);
+  const [historyTankTarget, setHistoryTankTarget] = useState(null);
 
   useEffect(() => {
     if (window.location.search) {
@@ -13287,8 +13415,8 @@ export default function TankLog() {
     setBatches((prev) => [rowToBatch(data), ...prev]);
     showToast("success", `${b.name} created.`);
     logActivity("created", "batch", b.name, `${b.startDate > today() ? "Scheduled" : "Started"} batch ${b.name} (#${b.number})`);
-    if (b.tankId) resetTankClean(b.tankId);
-    (b.splitTanks || []).forEach((t) => resetTankClean(t.tankId));
+    if (b.tankId) resetTankClean(b.tankId, b);
+    (b.splitTanks || []).forEach((t) => resetTankClean(t.tankId, b));
 
     for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
       const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => i.name.toLowerCase() === item.name.toLowerCase())?.qty || 0)) * 100) / 100);
@@ -13802,26 +13930,37 @@ export default function TankLog() {
     const tank = tanks.find((t) => t.id === id);
     if (!tank) return;
     const next = NEXT_CLEAN_STAGE[tank.cleanStatus || "Needs CIP"] || "Needs CIP";
-    const { error } = await supabase.from("tanks").update({ clean_status: next }).eq("id", id);
+    const history = [...(tank.history || []), { id: uid(), type: "clean", date: new Date().toISOString(), stage: next }];
+    const { error } = await supabase.from("tanks").update({ clean_status: next, history }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: next } : t)));
+    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: next, history } : t)));
   };
 
   // For Brite tanks choosing between acid and caustic clean — sets the
   // stage directly rather than just advancing to "next."
   const setTankCleanStage = async (id, stage) => {
-    const { error } = await supabase.from("tanks").update({ clean_status: stage }).eq("id", id);
+    const tank = tanks.find((t) => t.id === id);
+    if (!tank) return;
+    const history = [...(tank.history || []), { id: uid(), type: "clean", date: new Date().toISOString(), stage }];
+    const { error } = await supabase.from("tanks").update({ clean_status: stage, history }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: stage } : t)));
+    setTanks((prev) => prev.map((t) => (t.id === id ? { ...t, cleanStatus: stage, history } : t)));
   };
 
   // Whenever a tank starts being used by a batch, its clean status resets —
   // so the next time it empties out, it correctly starts a fresh CIP cycle
-  // instead of showing a stale "Sanitised" from before.
-  const resetTankClean = async (tankId) => {
+  // instead of showing a stale "Sanitised" from before. Also logs a batch
+  // history entry — this is what lets the tank's history view show every
+  // batch that's ever used it.
+  const resetTankClean = async (tankId, batch) => {
     if (!tankId) return;
-    await supabase.from("tanks").update({ clean_status: null }).eq("id", tankId);
-    setTanks((prev) => prev.map((t) => (t.id === tankId ? { ...t, cleanStatus: null } : t)));
+    const tank = tanks.find((t) => t.id === tankId);
+    const historyEntry = batch
+      ? [{ id: uid(), type: "batch", date: new Date().toISOString(), batchId: batch.id, batchName: batch.name, batchNumber: batch.number }]
+      : [];
+    const history = [...(tank?.history || []), ...historyEntry];
+    await supabase.from("tanks").update({ clean_status: null, history }).eq("id", tankId);
+    setTanks((prev) => prev.map((t) => (t.id === tankId ? { ...t, cleanStatus: null, history } : t)));
   };
 
   const deleteTank = async (id) => {
@@ -13846,6 +13985,7 @@ export default function TankLog() {
   };
 
   const assignBatchTank = async (batchId, tank, brewStage) => {
+    const batch = batches.find((b) => b.id === batchId);
     const { error } = await supabase
       .from("batches")
       .update({ tank_id: tank ? tank.id : null, tank_name: tank ? tank.name : null, brew_stage: brewStage ?? null })
@@ -13854,14 +13994,15 @@ export default function TankLog() {
     setBatches((prev) =>
       prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null, brewStage: brewStage ?? null } : b))
     );
-    if (tank) resetTankClean(tank.id);
+    if (tank) resetTankClean(tank.id, batch);
   };
 
   const updateBatchSplitTanks = async (batchId, splitTanks) => {
+    const batch = batches.find((b) => b.id === batchId);
     const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, splitTanks } : b)));
-    splitTanks.forEach((t) => resetTankClean(t.tankId));
+    splitTanks.forEach((t) => resetTankClean(t.tankId, batch));
   };
 
   const addInventoryItem = async (item) => {
@@ -14206,7 +14347,7 @@ export default function TankLog() {
       prev.map((b) => (b.id === id ? { ...b, tankId: tank.id, tankName: tank.name, brewStage, ...(newStage ? { stage: newStage } : {}) } : b))
     );
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.name}${newStage ? ` — ${newStage}` : ""}`);
-    resetTankClean(tank.id);
+    resetTankClean(tank.id, batch);
   };
 
   // From the kettle, a batch can go into one fermenter or split across
@@ -14225,7 +14366,7 @@ export default function TankLog() {
         prev.map((b) => (b.id === id ? { ...b, tankId: tank.tankId, tankName: tank.tankName, splitTanks: [], brewStage: null, stage: "Primary" } : b))
       );
       logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.tankName} — Primary`);
-      resetTankClean(tank.tankId);
+      resetTankClean(tank.tankId, batch);
       return;
     }
 
@@ -14266,7 +14407,7 @@ export default function TankLog() {
     const summary = newBatches.map((b) => `${b.name} (${b.tankName})`).join(" + ");
     showToast("success", `Split into ${newBatches.length} separate batches.`);
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) split into ${summary} — Primary`);
-    tanksChosen.forEach((t) => resetTankClean(t.tankId));
+    tanksChosen.forEach((t, i) => resetTankClean(t.tankId, newBatches[i]));
   };
 
   const logDiacetylTest = async (id, test) => {
@@ -15638,6 +15779,13 @@ export default function TankLog() {
                       </div>
                       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                         <button
+                          onClick={() => setHistoryTankTarget(t)}
+                          aria-label={`History for ${t.name}`}
+                          style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, color: "#5C6B54", cursor: "pointer", padding: 6 }}
+                        >
+                          <Calendar size={14} />
+                        </button>
+                        <button
                           onClick={() => setQrTankTarget(t)}
                           aria-label={`QR code for ${t.name}`}
                           style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, color: "#5C6B54", cursor: "pointer", padding: 6 }}
@@ -16254,6 +16402,18 @@ export default function TankLog() {
         );
       })()}
       {qrTankTarget && <TankQRModal tank={qrTankTarget} onClose={() => setQrTankTarget(null)} />}
+      {historyTankTarget && (
+        <TankHistoryModal
+          tank={historyTankTarget}
+          batches={batches}
+          onClose={() => setHistoryTankTarget(null)}
+          onOpenBatch={(id) => {
+            setHistoryTankTarget(null);
+            setSelectedId(id);
+            setView("batches");
+          }}
+        />
+      )}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
       {showWelcomeTour && <SpotlightTour onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
