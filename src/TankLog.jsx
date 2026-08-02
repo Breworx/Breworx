@@ -9962,6 +9962,7 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
   const steelId = `tankwall-steel-${tank.id}`;
   const isMashTun = tank.type === "Mash Tun";
   const isKettle = tank.type === "Kettle";
+  const isBrite = tank.type === "Brite Tank";
   const packaging = batch && !!batch.packagingRun;
   const boiling = batch && isKettle && batch.stage === "Brewing";
   const recirculating = batch && isMashTun && batch.brewStage === "Recirculating";
@@ -10364,6 +10365,19 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
           <line x1="10" y1="100" x2="110" y2="100" stroke="#C9D1AC" strokeWidth="1" opacity="0.5" />
           {/* Sample valve nub */}
           <rect x="104" y="150" width="10" height="6" rx="1.5" fill="#C9D1AC" />
+
+          {/* Pressure gauge — brite tanks carbonate under pressure, so this
+              is the one detail that reads as "brite" at a glance rather
+              than "fermenter." */}
+          {isBrite && (
+            <g>
+              <circle cx="92" cy="24" r="9" fill="#F5F1E4" stroke="#9BA88A" strokeWidth="1.5" />
+              <circle cx="92" cy="24" r="9" fill="none" stroke="#F0B429" strokeWidth="1.5" strokeDasharray="4 24" strokeDashoffset="-2" opacity="0.8" />
+              <line x1="92" y1="24" x2="95.5" y2="19.5" stroke="#2A3324" strokeWidth="1.4" strokeLinecap="round" />
+              <circle cx="92" cy="24" r="1.2" fill="#2A3324" />
+              <rect x="88" y="33" width="8" height="4" rx="1" fill="#C9D1AC" />
+            </g>
+          )}
 
           <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
           <rect x="18" y="16" width="7" height="118" rx="3.5" fill="#FFFFFF" opacity="0.5" />
@@ -11510,7 +11524,7 @@ function HomeView({
       })()}
 
       {tanks.length > 0 && tanks.some((t) => t.type !== "Mash Tun" && t.type !== "Kettle") && (
-        <div>
+        <>
           <style>{`
             @keyframes bp-wave-drift { from { transform: translateX(0); } to { transform: translateX(-60px); } }
             @keyframes bp-swirl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -11518,21 +11532,32 @@ function HomeView({
               [style*="bp-wave-drift"], [style*="bp-swirl-spin"] { animation: none !important; }
             }
           `}</style>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-            Your tanks
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12, alignItems: "start" }}>
-            {[...sortedTanks(tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle"))]
-              .sort((a, b) => {
-                const aOcc = occupyingBatch(batches, a.id) ? 0 : 1;
-                const bOcc = occupyingBatch(batches, b.id) ? 0 : 1;
-                return aOcc - bOcc;
-              })
-              .map((t) => (
-                <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} onCycleClean={onCycleClean} onSetCleanStage={onSetCleanStage} />
-              ))}
-          </div>
-        </div>
+          {[
+            { label: "Fermenters", type: "Fermenter" },
+            { label: "Brite tanks", type: "Brite Tank" },
+          ].map(({ label, type }) => {
+            const group = tanks.filter((t) => t.type === type);
+            if (group.length === 0) return null;
+            return (
+              <div key={type}>
+                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                  {label}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12, alignItems: "start" }}>
+                  {[...sortedTanks(group)]
+                    .sort((a, b) => {
+                      const aOcc = occupyingBatch(batches, a.id) ? 0 : 1;
+                      const bOcc = occupyingBatch(batches, b.id) ? 0 : 1;
+                      return aOcc - bOcc;
+                    })
+                    .map((t) => (
+                      <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} onCycleClean={onCycleClean} onSetCleanStage={onSetCleanStage} />
+                    ))}
+                </div>
+              </div>
+            );
+          })}
+        </>
       )}
 
       {recentBatches.length > 0 && (
@@ -12484,7 +12509,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-85";
+const APP_VERSION = "2026-07-31-86";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
