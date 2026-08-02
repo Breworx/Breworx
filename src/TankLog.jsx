@@ -8602,6 +8602,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           const needsDiacetylPass = batch.stage === "Primary" && nextStage === "Cooling";
           const hasDiacetylPass = (batch.diacetylTests || []).some((t) => t.result === "pass");
           const isPackagingStep = nextStage === "Packaged";
+          const isBriteStep = nextStage === "Brite Tank";
           const packagingStarted = isPackagingStep && batch.packagingRun;
           const needsCarbonationCheck = isPackagingStep && !packagingStarted;
           const blocked = (needsDiacetylPass && !hasDiacetylPass) || (needsCarbonationCheck && !batch.carbonationChecked);
@@ -8609,6 +8610,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <button
               onClick={() => {
                 if (blocked) return;
+                if (isBriteStep) {
+                  onOpenVesselTransfer({ batch, toType: "Brite Tank", brewStage: null, newStage: "Brite Tank", actionLabel: "Transfer to Brite tank" });
+                  return;
+                }
                 if (!isPackagingStep) { onAdvance(batch.id); return; }
                 packagingStarted ? onOpenPackaging(batch) : onStartPackaging(batch);
               }}
@@ -8636,6 +8641,8 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                 ? "Log a passing diacetyl test first"
                 : needsCarbonationCheck && !batch.carbonationChecked
                 ? "Confirm carbonation is checked first"
+                : isBriteStep
+                ? "Transfer to Brite tank"
                 : !isPackagingStep
                 ? `Advance to ${nextStage}`
                 : packagingStarted
@@ -12513,7 +12520,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-87";
+const APP_VERSION = "2026-07-31-88";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
