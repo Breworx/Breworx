@@ -10697,14 +10697,152 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const [selectedFamilyId, setSelectedFamilyId] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
   const [selectedBatchIds, setSelectedBatchIds] = useState([]);
+  const [faultMode, setFaultMode] = useState(false);
+  const [selectedFault, setSelectedFault] = useState(null);
 
   const families = activeRecipesByFamily(recipes).filter(
     (r) => r.name.toLowerCase().includes(query.trim().toLowerCase()) || r.style.toLowerCase().includes(query.trim().toLowerCase())
   );
 
+  if (faultMode) {
+    const recipeNameById = {};
+    recipes.forEach((r) => (recipeNameById[r.id] = r.name));
+    const affected = selectedFault
+      ? batches.filter((b) => currentFaults(b).some((f) => f.fault === selectedFault))
+      : [];
+    const byRecipe = {};
+    const byTank = {};
+    affected.forEach((b) => {
+      const rName = b.recipeName || recipeNameById[b.recipeId] || "No recipe";
+      byRecipe[rName] = (byRecipe[rName] || 0) + 1;
+      const tName = batchTankSummary(b) || "No tank";
+      byTank[tName] = (byTank[tName] || 0) + 1;
+    });
+    const sortedEntries = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]);
+
+    return (
+      <div>
+        <button
+          onClick={() => { setFaultMode(false); setSelectedFault(null); }}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: 0, marginBottom: 18 }}
+        >
+          <ChevronLeft size={16} /> Back
+        </button>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+          Search by fault
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8, marginBottom: 22 }}>
+          {COMMON_FAULTS.map((fault) => (
+            <button
+              key={fault}
+              onClick={() => setSelectedFault(fault)}
+              style={{
+                background: selectedFault === fault ? "#5C9A3C" : "#FFFFFF",
+                border: "1px solid " + (selectedFault === fault ? "#5C9A3C" : "#DDE0C8"),
+                borderRadius: 6,
+                padding: "9px 10px",
+                color: selectedFault === fault ? "#16191A" : "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: "pointer",
+              }}
+            >
+              {fault}
+            </button>
+          ))}
+        </div>
+
+        {selectedFault && (
+          affected.length === 0 ? (
+            <EmptyState icon={AlertTriangle} title={`No batches with ${selectedFault}`} subtitle="Nothing currently on record for this fault — good sign." />
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 22 }}>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                    By recipe
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {sortedEntries(byRecipe).map(([name, count]) => (
+                      <div key={name} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#2A3324" }}>
+                        <span>{name}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A" }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                    By tank
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {sortedEntries(byTank).map(([name, count]) => (
+                      <div key={name} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#2A3324" }}>
+                        <span>{name}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A" }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                Affected batches ({affected.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {[...affected].sort((a, b) => (b.startDate || "").localeCompare(a.startDate || "")).map((b) => {
+                  const f = currentFaults(b).find((fl) => fl.fault === selectedFault);
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => onOpenBatch(b.id)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "9px 12px",
+                        background: "#F8F5EA",
+                        border: "1px solid #EBE8D6",
+                        borderRadius: 5,
+                        fontSize: 13,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        width: "100%",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <span style={{ color: "#2A3324" }}>
+                        {b.name} <span style={{ color: "#9BA88A" }}>· {b.recipeName || "No recipe"} · {batchTankSummary(b) || "No tank"}</span>
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                        {f && (
+                          <span style={{ color: FAULT_SEVERITY_COLOR[f.severity], fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 500 }}>
+                            {f.severity}
+                          </span>
+                        )}
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11.5 }}>{b.startDate}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )
+        )}
+      </div>
+    );
+  }
+
   if (!selectedFamilyId) {
     return (
       <div>
+        <button
+          onClick={() => setFaultMode(true)}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 12.5, padding: 0, marginBottom: 12 }}
+        >
+          <AlertTriangle size={14} /> Search by fault instead
+        </button>
         <input
           type="text"
           value={query}
@@ -12744,7 +12882,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-94";
+const APP_VERSION = "2026-07-31-95";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
