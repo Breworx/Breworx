@@ -2244,17 +2244,25 @@ function InventoryItemCard({ item, onAdjust, onOpen, suppliers }) {
 function FoodSafetyChecklistModal({ template, onClose, onSave }) {
   const [checked, setChecked] = useState(() => template.items.map(() => false));
   const [notes, setNotes] = useState("");
+  const [completedBy, setCompletedBy] = useState("");
+  const [correctiveAction, setCorrectiveAction] = useState("");
 
   const toggle = (i) => setChecked((prev) => prev.map((c, idx) => (idx === i ? !c : c)));
   const allChecked = checked.every(Boolean);
+  const hasFailures = !allChecked;
+  const canSubmit = completedBy.trim() && (!hasFailures || correctiveAction.trim());
 
   const submit = () => {
+    if (!canSubmit) return;
     onSave({
       category: "checklist",
       frequency: template.frequency,
       date: today(),
       items: template.items.map((label, i) => ({ label, checked: checked[i] })),
       notes: notes.trim(),
+      completedBy: completedBy.trim(),
+      correctiveAction: hasFailures ? correctiveAction.trim() : null,
+      correctiveActionResolved: !hasFailures,
     });
     onClose();
   };
@@ -2299,23 +2307,36 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
             </button>
           ))}
         </div>
+        {hasFailures && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "10px 12px" }}>
+            <AlertTriangle size={15} color="#7A3E1D" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12.5, color: "#7A3E1D", lineHeight: 1.4 }}>
+              One or more items aren't checked. Record what's being done about it below — this becomes an open corrective action until it's resolved.
+            </div>
+          </div>
+        )}
+        {hasFailures && (
+          <TextField label="Corrective action (required)" value={correctiveAction} onChange={setCorrectiveAction} placeholder="What's being done about the failed item(s)?" />
+        )}
+        <TextField label="Completed by (required)" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
         <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
         <button
           onClick={submit}
+          disabled={!canSubmit}
           style={{
-            background: allChecked ? "#5C9A3C" : "#E8E4D4",
+            background: canSubmit ? (allChecked ? "#5C9A3C" : "#D9A441") : "#E8E4D4",
             border: "none",
             borderRadius: 5,
             padding: "12px",
-            color: allChecked ? "#16191A" : "#5C9A3C",
+            color: canSubmit ? "#16191A" : "#A3AC94",
             fontFamily: "'Oswald', sans-serif",
             fontWeight: 500,
             fontSize: 15,
             letterSpacing: "0.03em",
-            cursor: "pointer",
+            cursor: canSubmit ? "pointer" : "default",
           }}
         >
-          {allChecked ? "Complete checklist" : "Save (some items unchecked)"}
+          {allChecked ? "Complete checklist" : "Save with open corrective action"}
         </button>
       </div>
     </Modal>
@@ -2327,15 +2348,17 @@ function CalibrationModal({ onClose, onSave }) {
   const [date, setDate] = useState(today());
   const [result, setResult] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [completedBy, setCompletedBy] = useState("");
 
   const submit = () => {
-    if (!equipmentName.trim()) return;
+    if (!equipmentName.trim() || !completedBy.trim()) return;
     onSave({
       category: "calibration",
       date,
       equipmentName: equipmentName.trim(),
       result: result.trim(),
       dueDate: dueDate || null,
+      completedBy: completedBy.trim(),
     });
     onClose();
   };
@@ -2347,6 +2370,7 @@ function CalibrationModal({ onClose, onSave }) {
         <TextField label="Date" type="date" value={date} onChange={setDate} />
         <TextField label="Result (e.g. Pass — reads 7.01 in pH7 buffer)" value={result} onChange={setResult} />
         <TextField label="Next calibration due (optional)" type="date" value={dueDate} onChange={setDueDate} />
+        <TextField label="Completed by (required)" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
         <button
           onClick={submit}
           style={{
@@ -10637,9 +10661,10 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
+  const [showAuditReport, setShowAuditReport] = useState(false);
 
   const categoryLabel = {
     checklist: "Checklist",
@@ -10682,12 +10707,89 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     return true;
   });
 
+  // Overdue/open-items dashboard — the bit that makes this feel like a real
+  // audit tool rather than just a log. A checklist is "overdue" once it's
+  // past its frequency window since the last completed one of that type;
+  // a corrective action stays open until explicitly marked resolved;
+  // calibration checks its most recent record's due date (re-calibrating
+  // clears an old overdue one automatically, since only the latest counts).
+  const CHECKLIST_WINDOW_DAYS = { daily: 1, weekly: 7, monthly: 31 };
+  const daysSince = (dateStr) => Math.floor((new Date(today()) - new Date(dateStr)) / 86400000);
+  const overdueChecklists = Object.entries(FOOD_SAFETY_CHECKLISTS)
+    .map(([key, template]) => {
+      const matching = records.filter((r) => r.category === "checklist" && r.frequency === key).sort((a, b) => b.date.localeCompare(a.date));
+      const latest = matching[0];
+      const since = latest ? daysSince(latest.date) : Infinity;
+      return { key, template, latest, since, overdue: since > CHECKLIST_WINDOW_DAYS[key] };
+    })
+    .filter((c) => c.overdue);
+
+  const openCorrectiveActions = records.filter((r) => r.category === "checklist" && r.correctiveAction && !r.correctiveActionResolved);
+
+  const latestCalibrationByEquipment = {};
+  records
+    .filter((r) => r.category === "calibration" && r.equipmentName)
+    .forEach((r) => {
+      const existing = latestCalibrationByEquipment[r.equipmentName];
+      if (!existing || r.date > existing.date) latestCalibrationByEquipment[r.equipmentName] = r;
+    });
+  const overdueCalibrations = Object.values(latestCalibrationByEquipment).filter((r) => r.dueDate && r.dueDate < today());
+
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length;
+
   return (
+    <>
     <div>
       <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5, marginBottom: 18 }}>
         Based on MPI's National Programme 3 (Dec 2025) — the food safety framework for breweries under the Food Act
         2014. Records are kept here for at least 4 years, as required.
       </div>
+
+      {totalOpenItems > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#B5502F", marginBottom: 10 }}>
+            Needs attention ({totalOpenItems})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {overdueChecklists.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => onStartChecklist(c.template)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{c.template.label}</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {c.latest ? `last done ${c.since}d ago` : "never done"}
+                </span>
+              </button>
+            ))}
+            {overdueCalibrations.map((r) => (
+              <button
+                key={r.equipmentName}
+                onClick={() => onStartCalibration()}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{r.equipmentName} calibration overdue</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {r.dueDate}</span>
+              </button>
+            ))}
+            {openCorrectiveActions.map((r) => (
+              <div
+                key={r.id}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6 }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{r.correctiveAction}</span>
+                <button
+                  onClick={() => onResolveCorrectiveAction(r.id)}
+                  style={{ flexShrink: 0, background: "#FFFFFF", border: "1px solid #E3B37A", borderRadius: 5, padding: "6px 10px", color: "#7A3E1D", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+                >
+                  Mark resolved
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Checklists
@@ -10799,8 +10901,16 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         </>
       )}
 
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-        History ({filteredRecords.length})
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+          History ({filteredRecords.length})
+        </div>
+        <button
+          onClick={() => setShowAuditReport(true)}
+          style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "5px 10px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+        >
+          <FileText size={12} /> Export audit report
+        </button>
       </div>
       <input
         type="text"
@@ -10908,6 +11018,10 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         )}
       </div>
     </div>
+    {showAuditReport && (
+      <FoodSafetyAuditReport records={filteredRecords} monthFilter={monthFilter} onClose={() => setShowAuditReport(false)} />
+    )}
+    </>
   );
 }
 
@@ -13993,7 +14107,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-112";
+const APP_VERSION = "2026-08-03-114";
 
 function UpdateBanner({ onRefresh, runningVersion, latestVersion }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15311,6 +15425,13 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setFoodSafetyRecords((prev) => [rowToFoodSafetyRecord(data), ...prev]);
     showToast("success", "Logged.");
+  };
+
+  const resolveCorrectiveAction = async (recordId) => {
+    const { error } = await supabase.from("food_safety_records").update({ corrective_action_resolved: true }).eq("id", recordId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setFoodSafetyRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, correctiveActionResolved: true } : r)));
+    showToast("success", "Marked resolved.");
   };
 
   const addSupplier = async (supplier) => {
@@ -16782,6 +16903,7 @@ function TankLogApp() {
                   onOpenStaff={setViewingStaffTraining}
                   suppliers={suppliers}
                   onOpenSupplier={setViewingSupplierDocs}
+                  onResolveCorrectiveAction={resolveCorrectiveAction}
                 />
               </>
             )}
