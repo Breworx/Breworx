@@ -14219,9 +14219,9 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-115";
+const APP_VERSION = "2026-08-03-116";
 
-function UpdateBanner({ onRefresh, runningVersion, latestVersion }) {
+function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
   return (
     <div
@@ -14244,11 +14244,6 @@ function UpdateBanner({ onRefresh, runningVersion, latestVersion }) {
       <CheckCircle2 size={14} color="#8FCB6C" />
       <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
         A new version of Brewpoint is available.
-        {runningVersion && latestVersion && (
-          <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
-            {" "}(running {runningVersion}, latest {latestVersion})
-          </span>
-        )}
       </span>
       <button
         onClick={() => {
@@ -16650,8 +16645,6 @@ function TankLogApp() {
       `}</style>
       {updateAvailable && (
         <UpdateBanner
-          runningVersion={APP_VERSION}
-          latestVersion={latestVersionSeen}
           onRefresh={async () => {
             // Installed home-screen apps on iOS can hang onto a cached copy
             // even when the server says not to — this throws everything we
