@@ -578,17 +578,125 @@ const TOUR_STEPS = [
   },
 ];
 
+// Per-page spotlight tours — same mechanism as the welcome tour, but each
+// one fires only the first time you land on that specific page. Keyed by
+// the same string used for `view`, so it's a straight lookup at render
+// time. Kept intentionally short (2-3 steps) — these are quick orientation,
+// not a repeat of the welcome tour.
+const PAGE_TOURS = {
+  brewery: [
+    {
+      title: "Set up your tanks",
+      body: "Add a tank here for every fermenter and Brite Tank you have — and a Mash Tun and Kettle too, if you want brew day tracked from mashing right through to transferring into a fermenter.",
+      target: "page-brewery-newbtn",
+    },
+    {
+      title: "Check on any tank",
+      body: "The calendar icon shows a tank's full history — every batch that's used it, and every cleaning step logged against it. Handy for spotting a tank with repeat problems.",
+      target: "page-brewery-history",
+    },
+  ],
+  batches: [
+    {
+      title: "Every batch lives here",
+      body: "From brew day through to packaging. Tap here to start one — pick a saved recipe and it pre-fills everything, or enter the details yourself.",
+      target: "page-batches-newbtn",
+    },
+    {
+      title: "Find any batch fast",
+      body: "Search by name, style, or number — this covers every stage, including ones you've already packaged. There's also an Export CSV link once you've got a few batches in.",
+      target: "page-batches-search",
+    },
+  ],
+  inventory: [
+    {
+      title: "Your brewing ingredients",
+      body: "Grain, hops, yeast — add stock manually here, or receive it automatically through a Purchase Order with proper lot tracking.",
+      target: "page-inventory-newbtn",
+    },
+    {
+      title: "Keep it accurate",
+      body: "Walk the brewery and count what's actually on the shelf — any discrepancy gets logged, and the report's saved for later.",
+      target: "page-inventory-stocktake",
+    },
+  ],
+  consumables: [
+    {
+      title: "Packaging supplies",
+      body: "Cans, lids, boxes, labels — tracked separately from your brewing ingredients. Add a cost per unit here to get true packaging costs.",
+      target: "page-consumables-newbtn",
+    },
+    {
+      title: "Keep it accurate",
+      body: "Same idea as ingredients — walk the shelf, count what's there, and any discrepancy gets logged.",
+      target: "page-consumables-stocktake",
+    },
+  ],
+  packageTypes: [
+    {
+      title: "Bundle what a run uses",
+      body: "Define what consumables get used per unit packaged — e.g. 1 can + 1 lid + a share of a box. Pick a package type when you log a packaging run and it deducts stock automatically, with the cost worked out for you.",
+      target: "page-packageTypes-newbtn",
+    },
+  ],
+  orders: [
+    {
+      title: "Order from your suppliers",
+      body: "Create a purchase order here to bring ingredients or packaging in from a supplier. Receiving one adds the stock straight in, with proper lot tracking and cost per unit.",
+      target: "page-orders-newbtn",
+    },
+  ],
+  recipes: [
+    {
+      title: "Save a recipe to reuse",
+      body: "Ingredients pull in automatically on brew day, and OG/FG/ABV/IBU/SRM calculate live as you build one out.",
+      target: "page-recipes-newbtn",
+    },
+    {
+      title: "Find one fast",
+      body: "Search by name or style — this covers every version you've saved, including older ones you've since updated.",
+      target: "page-recipes-search",
+    },
+  ],
+  recipeAnalytics: [
+    {
+      title: "Compare batches of the same beer",
+      body: "Search for a recipe to see every batch ever brewed from it side by side — target vs actual OG/FG, attenuation, ABV, days in tank, and cost — so you can spot drift or confirm consistency over time.",
+      target: "page-recipeAnalytics-search",
+    },
+    {
+      title: "Or search by fault instead",
+      body: "See if a fault keeps showing up on a particular recipe, or a particular tank, regardless of what's brewed in it.",
+      target: "page-recipeAnalytics-faultmode",
+    },
+  ],
+  foodsafety: [
+    {
+      title: "Stay on top of compliance",
+      body: "Log daily, weekly, and monthly checklists, equipment calibration, and staff training here — everything you'd need on hand for an audit.",
+      target: null,
+    },
+  ],
+  production: [
+    {
+      title: "See every tank's schedule at a glance",
+      body: "Tap an empty day on a tank's row to schedule a batch ahead of time, or tap an existing bar to open that batch.",
+      target: null,
+    },
+  ],
+};
+
 // Highlights a live element on screen by its data-tour attribute — finds
 // it, measures its real position, and dims everything else via a single
 // box-shadow trick (a huge spread radius on a transparent box acts as a
 // full-screen overlay with a "hole" cut exactly where the box is). Opens
 // the mobile sidebar drawer itself for steps that need it visible, and
 // closes it again once the tour moves past those steps or ends.
-function SpotlightTour({ onClose, setSidebarOpen }) {
+function SpotlightTour({ steps, onClose, setSidebarOpen, showLogoOnFirst = false }) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState(null);
-  const slide = TOUR_STEPS[step];
-  const isLast = step === TOUR_STEPS.length - 1;
+  const slide = steps[step];
+  const isLast = step === steps.length - 1;
 
   useEffect(() => {
     setSidebarOpen(!!slide.needsSidebar);
@@ -673,21 +781,21 @@ function SpotlightTour({ onClose, setSidebarOpen }) {
           <X size={16} />
         </button>
 
-        {step === 0 && (
+        {step === 0 && showLogoOnFirst && (
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
             <BreworxMark size={38} />
           </div>
         )}
 
-        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, fontWeight: 500, color: "#2A3324", margin: "0 0 8px", textAlign: step === 0 || isLast ? "center" : "left" }}>
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 18, fontWeight: 500, color: "#2A3324", margin: "0 0 8px", textAlign: (step === 0 && showLogoOnFirst) || isLast ? "center" : "left" }}>
           {slide.title}
         </h2>
-        <p style={{ color: "#5C6B54", fontSize: 13.5, lineHeight: 1.5, margin: "0 0 18px", textAlign: step === 0 || isLast ? "center" : "left" }}>
+        <p style={{ color: "#5C6B54", fontSize: 13.5, lineHeight: 1.5, margin: "0 0 18px", textAlign: (step === 0 && showLogoOnFirst) || isLast ? "center" : "left" }}>
           {slide.body}
         </p>
 
         <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 16 }}>
-          {TOUR_STEPS.map((_, i) => (
+          {steps.map((_, i) => (
             <div
               key={i}
               style={{ width: i === step ? 16 : 6, height: 6, borderRadius: 3, background: i === step ? "#5C9A3C" : "#DDE0C8", transition: "width 0.2s" }}
@@ -10875,12 +10983,14 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
     return (
       <div>
         <button
+          data-tour="page-recipeAnalytics-faultmode"
           onClick={() => setFaultMode(true)}
           style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 12.5, padding: 0, marginBottom: 12 }}
         >
           <AlertTriangle size={14} /> Search by fault instead
         </button>
         <input
+          data-tour="page-recipeAnalytics-search"
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -12919,7 +13029,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-96";
+const APP_VERSION = "2026-07-31-97";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13169,6 +13279,27 @@ export default function TankLog() {
       // the tour it just saw — mark the changelog seen too.
       localStorage.setItem("brewpoint-changelog-seen", String(LATEST_CHANGELOG_ID));
     } catch {}
+  };
+
+  // Same spotlight mechanism as the welcome tour, but scoped to a single
+  // page — fires the first time you land on a page that has one, same
+  // one-time-per-device semantics. Skips while the welcome tour itself is
+  // showing, so a brand-new account isn't hit by two overlapping tours.
+  const [pageTourKey, setPageTourKey] = useState(null);
+  useEffect(() => {
+    if (showWelcomeTour) return;
+    if (!PAGE_TOURS[view]) return;
+    try {
+      if (!localStorage.getItem(`brewpoint-page-tour-${view}-done`)) setPageTourKey(view);
+    } catch {}
+  }, [view, showWelcomeTour]);
+  const dismissPageTour = () => {
+    if (pageTourKey) {
+      try {
+        localStorage.setItem(`brewpoint-page-tour-${pageTourKey}-done`, "1");
+      } catch {}
+    }
+    setPageTourKey(null);
   };
 
   const [showWhatsNew, setShowWhatsNew] = useState(false);
@@ -15261,6 +15392,7 @@ export default function TankLog() {
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
               {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && (
                 <button
+                  data-tour={`page-${view}-newbtn`}
                   onClick={() => {
                     if (view === "batches") setShowAdd(true);
                     else if (view === "inventory") setShowAddInventory(true);
@@ -15340,9 +15472,6 @@ export default function TankLog() {
 
             {!loadingData && view === "foodsafety" && (
               <>
-                <FirstVisitTip tipKey="foodsafety">
-                  Log daily, weekly, and monthly checklists, equipment calibration, and staff training here to stay on top of compliance.
-                </FirstVisitTip>
                 <FoodSafetyView
                   records={foodSafetyRecords}
                   onStartChecklist={setActiveChecklistTemplate}
@@ -15373,10 +15502,8 @@ export default function TankLog() {
               const noMatches = batchQuery.trim() && fFerm.length === 0 && fCond.length === 0 && fProg.length === 0 && fPack.length === 0;
               return (
                 <>
-                  <FirstVisitTip tipKey="batches">
-                    Every batch lives here from brew day through to packaging. Tap "New batch" to start one, log gravity readings as it ferments, then advance it through each stage.
-                  </FirstVisitTip>
                   <input
+                    data-tour="page-batches-search"
                     type="text"
                     value={batchQuery}
                     onChange={(e) => setBatchQuery(e.target.value)}
@@ -15491,11 +15618,9 @@ export default function TankLog() {
 
               return (
                 <>
-                  <FirstVisitTip tipKey="inventory">
-                    Track your brewing ingredients — grain, hops, yeast — here. Add stock manually, or receive it automatically through a Purchase Order with proper lot tracking.
-                  </FirstVisitTip>
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <button
+                      data-tour="page-inventory-stocktake"
                       onClick={() => setShowStockTake(true)}
                       style={{
                         flex: 1,
@@ -15679,9 +15804,6 @@ export default function TankLog() {
 
               return (
                 <>
-                  <FirstVisitTip tipKey="consumables">
-                    Track packaging supplies — cans, lids, boxes, labels — here, separately from your brewing ingredients. Add a cost per unit to track true packaging costs.
-                  </FirstVisitTip>
                   <input
                     type="text"
                     value={consumableQuery}
@@ -15703,6 +15825,7 @@ export default function TankLog() {
 
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <button
+                      data-tour="page-consumables-stocktake"
                       onClick={() => setShowConsumablesStockTake(true)}
                       style={{
                         flex: 1,
@@ -15790,9 +15913,6 @@ export default function TankLog() {
 
             {!loadingData && view === "packageTypes" && (
               <>
-                <FirstVisitTip tipKey="packageTypes">
-                  Define what consumables get used per unit packaged — e.g. 1 can + 1 lid + a share of a box. Pick a package type when you log a packaging run and it'll deduct stock automatically.
-                </FirstVisitTip>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {packageTypes.map((pt) => (
                     <PackageTypeCard key={pt.id} packageType={pt} onOpen={setSelectedPackageTypeId} />
@@ -15813,9 +15933,6 @@ export default function TankLog() {
               const noMatches = q && draftPOs.length === 0 && sentPOs.length === 0 && receivedPOs.length === 0;
               return (
                 <>
-                  <FirstVisitTip tipKey="orders">
-                    Create purchase orders to bring ingredients in from suppliers. Receiving one adds the stock straight into Inventory with proper lot tracking and cost per unit.
-                  </FirstVisitTip>
                   {purchaseOrders.length > 0 && (
                     <input
                       type="text"
@@ -15918,10 +16035,8 @@ export default function TankLog() {
               );
               return (
                 <>
-                  <FirstVisitTip tipKey="recipes">
-                    Save your recipes here to reuse on brew day — ingredients pull in automatically, and OG/FG/ABV/IBU/SRM calculate live as you build one.
-                  </FirstVisitTip>
                   <input
+                    data-tour="page-recipes-search"
                     type="text"
                     value={recipeQuery}
                     onChange={(e) => setRecipeQuery(e.target.value)}
@@ -15968,9 +16083,6 @@ export default function TankLog() {
 
             {!loadingData && view === "recipeAnalytics" && (
               <>
-                <FirstVisitTip tipKey="recipeAnalytics">
-                  Search for a recipe to see every batch ever brewed from it side by side — target vs actual OG/FG, attenuation, ABV, days in tank, and cost — so you can spot drift or confirm consistency over time.
-                </FirstVisitTip>
                 <RecipeAnalyticsView
                   recipes={recipes}
                   batches={batches}
@@ -15984,9 +16096,6 @@ export default function TankLog() {
 
             {!loadingData && view === "brewery" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <FirstVisitTip tipKey="brewery">
-                  Set up your fermenters and brite tanks here so batches can be assigned to them — this is the first thing worth doing before you brew your first batch.
-                </FirstVisitTip>
                 {sortedTanks(tanks).map((t) => {
                   const occupant = occupyingBatch(batches, t.id);
                   return (
@@ -16031,6 +16140,7 @@ export default function TankLog() {
                       </div>
                       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                         <button
+                          data-tour="page-brewery-history"
                           onClick={() => setHistoryTankTarget(t)}
                           aria-label={`History for ${t.name}`}
                           style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, color: "#5C6B54", cursor: "pointer", padding: 6 }}
@@ -16070,9 +16180,6 @@ export default function TankLog() {
 
             {!loadingData && view === "production" && (
               <>
-                <FirstVisitTip tipKey="production">
-                  See every tank's schedule at a glance. Tap an empty day on a tank's row to schedule a batch ahead of time, or tap an existing bar to open that batch.
-                </FirstVisitTip>
                 <ProductionManagerView
                   tanks={tanks}
                   batches={batches}
@@ -16668,7 +16775,8 @@ export default function TankLog() {
         />
       )}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
-      {showWelcomeTour && <SpotlightTour onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
+      {showWelcomeTour && <SpotlightTour steps={TOUR_STEPS} showLogoOnFirst onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
+      {pageTourKey && PAGE_TOURS[pageTourKey] && <SpotlightTour steps={PAGE_TOURS[pageTourKey]} onClose={dismissPageTour} setSidebarOpen={setSidebarOpen} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
         <QuickJumpModal
