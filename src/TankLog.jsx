@@ -10032,11 +10032,11 @@ function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) 
       </g>
       {recirculating && (
         <>
-          <path d="M40 32 Q 44 12 25 -4" stroke="#9BA88A" strokeWidth="2" fill="none" strokeLinecap="round" />
-          <circle cx="40" cy="32" r="1.6" fill="#9BA88A" />
+          <path d="M43 42 Q 48 15 25 -4" stroke="#9BA88A" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <circle cx="43" cy="42" r="1.6" fill="#9BA88A" />
           <circle cx="25" cy="-4" r="1.8" fill="#9BA88A" />
           {[0, 1, 2].map((i) => (
-            <circle key={`shower-${i}`} cx={22 + i * 3} cy="-2" r="1" fill="#FFFFFF" opacity="0">
+            <circle key={`shower-${i}`} cx={22 + i * 3} cy="-2" r="1" fill={fillColor} opacity="0">
               <animate attributeName="cy" from="-2" to="24" dur="0.9s" begin={`${i * 0.15}s`} repeatCount="indefinite" />
               <animate attributeName="opacity" values="0;0.85;0.85;0" dur="0.9s" begin={`${i * 0.15}s`} repeatCount="indefinite" />
             </circle>
@@ -10400,18 +10400,18 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
 
           {recirculating && (
             <>
-              {/* Recirculation arm — pulls from the side, arcs up and over the top */}
+              {/* Recirculation arm — pulls from lower on the side, arcs up and over the top */}
               <path
-                d="M100 132 Q 108 45 60 -8"
+                d="M102 155 Q 112 55 60 -8"
                 stroke="#9BA88A"
                 strokeWidth="3.5"
                 fill="none"
                 strokeLinecap="round"
               />
-              <circle cx="100" cy="132" r="3" fill="#9BA88A" />
+              <circle cx="102" cy="155" r="3" fill="#9BA88A" />
               <circle cx="60" cy="-8" r="3.5" fill="#9BA88A" />
               {[0, 1, 2, 3].map((i) => (
-                <circle key={`shower-${i}`} cx={54 + i * 4} cy="-4" r="1.6" fill="#FFFFFF" opacity="0">
+                <circle key={`shower-${i}`} cx={54 + i * 4} cy="-4" r="1.6" fill={vesselColor} opacity="0">
                   <animate attributeName="cy" from="-4" to={surfaceY + 4} dur="1.1s" begin={`${i * 0.18}s`} repeatCount="indefinite" />
                   <animate attributeName="opacity" values="0;0.85;0.85;0" dur="1.1s" begin={`${i * 0.18}s`} repeatCount="indefinite" />
                 </circle>
@@ -12617,7 +12617,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-90";
+const APP_VERSION = "2026-07-31-91";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
