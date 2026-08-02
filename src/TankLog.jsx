@@ -174,6 +174,46 @@ const remainingVolume = (batch) => {
   return Math.max(0, Math.round(rem * 100) / 100);
 };
 
+// NZ Customs alcohol excise duty rates, effective 1 July 2026 (the annual
+// CPI-indexed adjustment). Source: customs.govt.nz "New excise duty rates
+// for alcohol from 1 July 2026". Two different calculation bases apply
+// depending on strength — most craft beer (2.5–6% ABV) is charged per
+// litre of pure alcohol, not per litre of beverage.
+const NZ_EXCISE_BANDS = [
+  { min: 0, max: 1.15, rate: 0, basis: "exempt" },
+  { min: 1.15, max: 2.5, rate: 0.58492, basis: "beverage" },
+  { min: 2.5, max: 6, rate: 38.999, basis: "alcohol" },
+  { min: 6, max: 9, rate: 3.1199, basis: "beverage" },
+  { min: 9, max: 14, rate: 3.8999, basis: "beverage" },
+  { min: 14, max: 23, rate: 71.034, basis: "alcohol" },
+  { min: 23, max: Infinity, rate: 71.034, basis: "alcohol" },
+];
+
+function exciseBandForAbv(abv) {
+  return NZ_EXCISE_BANDS.find((b) => abv > b.min && abv <= b.max) || NZ_EXCISE_BANDS[0];
+}
+
+// One row per packaging event, since excise is calculated on what actually
+// left the licensed area on a given date — a batch packaged across several
+// sessions can straddle two different reporting periods.
+function exciseRowsForBatches(batches) {
+  const rows = [];
+  batches.forEach((b) => {
+    if (!b.og) return;
+    const latest = latestReading(b);
+    const abv = latest ? calcABV(b.og, latest.gravity) : null;
+    if (abv == null || abv <= 0) return;
+    const band = exciseBandForAbv(abv);
+    packagingEvents(b).forEach((e) => {
+      const volumeL = packagedVolume(e);
+      if (volumeL <= 0) return;
+      const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * band.rate : band.basis === "beverage" ? volumeL * band.rate : 0;
+      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, date: e.date, abv, volumeL, band, duty });
+    });
+  });
+  return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
 function monthKeyFromDate(dateStr) {
   return dateStr && dateStr.length >= 7 ? dateStr.slice(0, 7) : "unknown";
 }
@@ -10761,6 +10801,107 @@ const secondaryBtnStyle = {
   cursor: "pointer",
 };
 
+// Estimated NZ Customs excise duty on packaged beer — grouped by month
+// since that's the natural reporting cycle, broken down by the duty band
+// each batch actually falls into. Built from packaging events + each
+// batch's measured ABV (OG and its latest logged gravity reading).
+function ExciseReportView({ batches }) {
+  const [monthFilter, setMonthFilter] = useState("");
+  const allRows = useMemo(() => exciseRowsForBatches(batches), [batches]);
+  const months = useMemo(() => {
+    const keys = [...new Set(allRows.map((r) => monthKeyFromDate(r.date)))];
+    return keys.sort().reverse();
+  }, [allRows]);
+  const rows = monthFilter ? allRows.filter((r) => monthKeyFromDate(r.date) === monthFilter) : allRows;
+  const totalDuty = rows.reduce((s, r) => s + r.duty, 0);
+  const totalVolume = Math.round(rows.reduce((s, r) => s + r.volumeL, 0) * 100) / 100;
+
+  const byBand = {};
+  rows.forEach((r) => {
+    const key = `${r.band.min}-${r.band.max}`;
+    if (!byBand[key]) byBand[key] = { band: r.band, volumeL: 0, duty: 0 };
+    byBand[key].volumeL += r.volumeL;
+    byBand[key].duty += r.duty;
+  });
+  const bandRows = Object.values(byBand).sort((a, b) => a.band.min - b.band.min);
+
+  return (
+    <div>
+      <div style={{ color: "#5C6B54", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20, lineHeight: 1.5 }}>
+        Estimated excise duty using NZ Customs rates effective 1 July 2026, based on each batch's packaged volume and its measured ABV (from OG and the latest logged reading). This is an estimate for record-keeping and cash-flow planning — confirm your actual filing obligations, reporting period, and figures with NZ Customs or your accountant before lodging a return.
+      </div>
+
+      {months.length > 0 && (
+        <select
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "10px 12px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+            marginBottom: 16,
+          }}
+        >
+          <option value="">All time</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {monthLabelFromKey(m)}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {rows.length === 0 ? (
+        <EmptyState icon={FileText} title="Nothing packaged yet" subtitle="Excise is calculated from packaging events, so this fills in once you've packaged a batch with a logged final gravity." />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Volume packaged</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>{totalVolume} L</div>
+            </div>
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Estimated duty</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalDuty.toFixed(2)}</div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>By duty band</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
+            {bandRows.map((b) => (
+              <div key={`${b.band.min}-${b.band.max}`} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
+                <span>
+                  {b.band.min}–{b.band.max === Infinity ? "23+" : b.band.max}% ABV
+                  <span style={{ color: "#9BA88A", fontSize: 12 }}> · {Math.round(b.volumeL * 100) / 100} L</span>
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>${b.duty.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>Packaging events</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {rows.map((r, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 5, fontSize: 13 }}>
+                <span style={{ color: "#2A3324" }}>
+                  {r.batchName} <span style={{ color: "#9BA88A" }}>· {r.abv.toFixed(1)}% ABV · {r.volumeL}L · {r.date}</span>
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0 }}>${r.duty.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PackagedView({ batches, onOpenBatch }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
@@ -13728,7 +13869,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-105";
+const APP_VERSION = "2026-07-31-106";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16209,7 +16350,7 @@ function TankLogApp() {
                   ["orders", "Purchase Orders", Truck],
                 ],
               },
-              { label: "Compliance", items: [["foodsafety", "Food Safety", CheckCircle2]] },
+              { label: "Compliance", items: [["foodsafety", "Food Safety", CheckCircle2], ["excise", "Excise", FileText]] },
               { items: [["settings", "Settings", Settings]] },
             ].map((group, gi) => (
               <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -16318,7 +16459,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -16418,6 +16559,8 @@ function TankLogApp() {
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
             )}
+
+            {!loadingData && view === "excise" && <ExciseReportView batches={batches} />}
 
             {!loadingData && view === "batches" && (() => {
               const matches = (b) => {
