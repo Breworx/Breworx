@@ -258,6 +258,9 @@ export function rowToFoodSafetyRecord(row) {
     trainedBy: row.trained_by,
     staffConfirmed: row.staff_confirmed || false,
     notes: row.notes,
+    completedBy: row.completed_by || null,
+    correctiveAction: row.corrective_action || null,
+    correctiveActionResolved: row.corrective_action_resolved !== false,
     createdAt: row.created_at || null,
   };
 }
@@ -280,6 +283,9 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     trained_by: record.trainedBy || null,
     staff_confirmed: record.staffConfirmed || false,
     notes: record.notes || null,
+    completed_by: record.completedBy || null,
+    corrective_action: record.correctiveAction || null,
+    corrective_action_resolved: record.correctiveActionResolved !== false,
   };
 }
 
@@ -307,6 +313,8 @@ export function rowToCustomer(row) {
     address: row.address,
     paymentTerms: row.payment_terms,
     notes: row.notes,
+    xeroContactId: row.xero_contact_id || null,
+    xeroContactName: row.xero_contact_name || null,
     createdAt: row.created_at || null,
   };
 }
@@ -322,6 +330,8 @@ export function customerToRow(customer, companyId) {
     address: customer.address || null,
     payment_terms: customer.paymentTerms || null,
     notes: customer.notes || null,
+    xero_contact_id: customer.xeroContactId || null,
+    xero_contact_name: customer.xeroContactName || null,
   };
 }
 export function rowToSalesOrder(row) {
