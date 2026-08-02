@@ -192,6 +192,7 @@ export function rowToProfile(row) {
     name: row.name,
     role: row.role,
     createdAt: row.created_at || null,
+    toursSeen: row.tours_seen || [],
   };
 }
 
