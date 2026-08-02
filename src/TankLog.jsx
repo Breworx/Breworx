@@ -9971,8 +9971,12 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
   const cooling = batch && !isMashTun && !isKettle && !packaging && batch.stage === "Cooling";
   const brite = batch && !isMashTun && !isKettle && !packaging && batch.stage === "Brite Tank";
   const frostId = `tankwall-frost-${tank.id}`;
-  // Body: x10–110, shoulders taper into a cone from y140 to the point at y190.
-  const bodyPath = "M10 10 H110 V140 L60 190 L10 140 Z";
+  // Fermenters taper into a cone (real ones do, for dumping yeast/trub).
+  // Brite tanks don't need that, so they get a flat-bottomed cylinder
+  // instead — a genuine shape difference, not just a color/detail one.
+  const bodyPath = isBrite
+    ? "M10 20 Q10 10 20 10 H100 Q110 10 110 20 V180 Q110 190 100 190 H20 Q10 190 10 180 Z"
+    : "M10 10 H110 V140 L60 190 L10 140 Z";
   const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
   const bubbles = fermenting
     ? [22, 45, 68, 91].map((x, i) => ({ x, delay: i * 0.7, dur: 2.6 + (i % 2) * 0.5, r: i % 2 ? 2 : 1.4 }))
@@ -10380,7 +10384,7 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
           )}
 
           <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
-          <rect x="18" y="16" width="7" height="118" rx="3.5" fill="#FFFFFF" opacity="0.5" />
+          <rect x="18" y="16" width="7" height={isBrite ? 168 : 118} rx="3.5" fill="#FFFFFF" opacity="0.5" />
         </svg>
 
         {empty ? (
@@ -12509,7 +12513,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-86";
+const APP_VERSION = "2026-07-31-87";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
