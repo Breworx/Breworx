@@ -7899,8 +7899,9 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [noteText, setNoteText] = useState("");
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -8884,6 +8885,89 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </div>
         ))}
       </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginTop: 26, marginBottom: 10 }}>
+        Notes
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input
+          type="text"
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && noteText.trim()) {
+              onAddNote(batch.id, noteText.trim());
+              setNoteText("");
+            }
+          }}
+          placeholder="Jot something down — brew day, fermentation, packaging, anything"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            boxSizing: "border-box",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
+            borderRadius: 4,
+            padding: "9px 10px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13.5,
+          }}
+        />
+        <button
+          onClick={() => {
+            if (!noteText.trim()) return;
+            onAddNote(batch.id, noteText.trim());
+            setNoteText("");
+          }}
+          disabled={!noteText.trim()}
+          style={{
+            background: noteText.trim() ? "#5C9A3C" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "0 16px",
+            color: noteText.trim() ? "#16191A" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 13,
+            cursor: noteText.trim() ? "pointer" : "default",
+            flexShrink: 0,
+          }}
+        >
+          Add
+        </button>
+      </div>
+      {(batch.notes || []).length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 26 }}>
+          {[...batch.notes].reverse().map((n) => (
+            <div
+              key={n.id}
+              style={{
+                display: "flex",
+                gap: 12,
+                alignItems: "flex-start",
+                padding: "9px 12px",
+                background: "#F8F5EA",
+                border: "1px solid #EBE8D6",
+                borderRadius: 5,
+                fontSize: 13,
+              }}
+            >
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, flexShrink: 0, marginTop: 2 }}>
+                {formatHistoryStamp(n.date)}
+              </span>
+              <span style={{ flex: 1, color: "#2A3324", lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "break-word" }}>{n.text}</span>
+              <button
+                onClick={() => onDeleteNote(batch.id, n.id)}
+                aria-label="Delete note"
+                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4, flexShrink: 0 }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <button
         onClick={() => window.print()}
@@ -12533,7 +12617,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-89";
+const APP_VERSION = "2026-07-31-90";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14423,6 +14507,25 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: checked } : b)));
   };
 
+  const addBatchNote = async (id, text) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const newNote = { id: uid(), date: new Date().toISOString(), text };
+    const notes = [...(batch.notes || []), newNote];
+    const { error } = await supabase.from("batches").update({ notes }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, notes } : b)));
+  };
+
+  const deleteBatchNote = async (id, noteId) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const notes = (batch.notes || []).filter((n) => n.id !== noteId);
+    const { error } = await supabase.from("batches").update({ notes }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, notes } : b)));
+  };
+
   // Cancels a packaging run that was started but never finished. Nothing
   // gets deducted until logPackagingSession actually runs (that only
   // happens on "Finish packaging"), so there's genuinely nothing to give
@@ -16101,6 +16204,8 @@ export default function TankLog() {
             onCancelPackagingRun={cancelPackagingRun}
             onSetCarbonationChecked={setCarbonationChecked}
             onSetBrewDayCheckbox={setBrewDayCheckbox}
+            onAddNote={addBatchNote}
+            onDeleteNote={deleteBatchNote}
           />
         )}
 
