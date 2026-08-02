@@ -10827,8 +10827,11 @@ function ExciseReportView({ batches }) {
 
   return (
     <div>
-      <div style={{ color: "#5C6B54", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20, lineHeight: 1.5 }}>
-        Estimated excise duty using NZ Customs rates effective 1 July 2026, based on each batch's packaged volume and its measured ABV (from OG and the latest logged reading). This is an estimate for record-keeping and cash-flow planning — confirm your actual filing obligations, reporting period, and figures with NZ Customs or your accountant before lodging a return.
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", color: "#7A3E1D", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
+        <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+          <strong>This is a guide, not a filing.</strong> Figures are estimated from NZ Customs rates effective 1 July 2026, based on each batch's packaged volume and measured ABV. Confirm your actual filing obligations, reporting period, and final figures with NZ Customs or your accountant before lodging a real return.
+        </div>
       </div>
 
       {months.length > 0 && (
@@ -13869,7 +13872,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-106";
+const APP_VERSION = "2026-07-31-107";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
