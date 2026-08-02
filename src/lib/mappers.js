@@ -202,6 +202,7 @@ export function rowToTank(row) {
     capacity: row.capacity,
     type: row.type || "Fermenter",
     cleanStatus: row.clean_status || null,
+    history: row.history || [],
   };
 }
 
@@ -213,6 +214,7 @@ export function tankToRow(tank, companyId) {
     capacity: tank.capacity,
     type: tank.type || "Fermenter",
     clean_status: tank.cleanStatus ?? null,
+    history: tank.history || [],
   };
 }
 
@@ -223,6 +225,7 @@ export function rowToStockTake(row) {
     userName: row.user_name,
     lines: row.lines || [],
     createdAt: row.created_at || null,
+    type: row.type || "inventory",
   };
 }
 
@@ -234,6 +237,7 @@ export function stockTakeToRow(stockTake, userId, companyId) {
     user_name: stockTake.userName,
     date: stockTake.date,
     lines: stockTake.lines || [],
+    type: stockTake.type || "inventory",
   };
 }
 
