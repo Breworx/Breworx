@@ -13872,7 +13872,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-107";
+const APP_VERSION = "2026-07-31-108";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15182,7 +15182,7 @@ function TankLogApp() {
       .insert(customerToRow(payload, profile.companyId))
       .select()
       .single();
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (error) { showToast("error", `Save failed: ${error.message || error.code || "unknown error"}`); return; }
     setCustomers((prev) => [...prev, rowToCustomer(data)].sort((a, b) => a.name.localeCompare(b.name)));
     showToast("success", `${payload.name} added.`);
   };
