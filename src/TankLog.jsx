@@ -3022,7 +3022,100 @@ function CustomersView({ customers, onOpen }) {
   );
 }
 
-function CustomerDetail({ customer, onBack, onEdit, onDelete }) {
+// Picks (or creates) the Xero contact this customer maps to. Kept
+// deliberately simple — search the list Xero already has, or push this
+// customer's details into Xero as a brand-new contact.
+function XeroContactLinkModal({ customer, contacts, onClose, onLink, onCreate }) {
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const q = query.trim().toLowerCase();
+  const filtered = q ? contacts.filter((c) => c.name.toLowerCase().includes(q)) : contacts;
+
+  return (
+    <Modal title={`Link ${customer.name} to Xero`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <button
+          onClick={async () => {
+            setCreating(true);
+            await onCreate(customer);
+            setCreating(false);
+          }}
+          disabled={creating}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 13.5,
+            cursor: creating ? "default" : "pointer",
+          }}
+        >
+          <Plus size={15} /> {creating ? "Creating…" : `Create "${customer.name}" as a new Xero contact`}
+        </button>
+
+        <div style={{ color: "#9BA88A", fontSize: 12, textAlign: "center" }}>— or link to an existing one —</div>
+
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search Xero contacts…"
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            background: "#F5F1E4",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "9px 10px",
+            color: "#2A3324",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14,
+          }}
+        />
+
+        {contacts.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>Loading Xero contacts…</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+            {filtered.map((c) => (
+              <button
+                key={c.contactId}
+                onClick={() => onLink(customer.id, c.contactId, c.name)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
+                  borderRadius: 5,
+                  fontSize: 13.5,
+                  color: "#2A3324",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+              >
+                {c.name}
+              </button>
+            ))}
+            {filtered.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No contacts match "{query}".</div>}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero }) {
   const color = CUSTOMER_TYPE_COLOR[customer.type] || "#9BA88A";
   return (
     <div>
@@ -3088,6 +3181,34 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete }) {
           <div style={{ color: "#9BA88A", fontSize: 13 }}>No contact details added yet.</div>
         )}
       </div>
+
+      {xeroConnected && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 3 }}>Xero</div>
+            {customer.xeroContactId ? (
+              <div style={{ fontSize: 13.5, color: "#2A3324" }}>Linked to <strong>{customer.xeroContactName}</strong></div>
+            ) : (
+              <div style={{ fontSize: 13.5, color: "#9BA88A" }}>Not linked — invoices won't send automatically until this is set up.</div>
+            )}
+          </div>
+          {customer.xeroContactId ? (
+            <button
+              onClick={() => onUnlinkXero(customer.id)}
+              style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "8px 12px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}
+            >
+              Unlink
+            </button>
+          ) : (
+            <button
+              onClick={() => onLinkXero(customer)}
+              style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", flexShrink: 0 }}
+            >
+              Link to Xero
+            </button>
+          )}
+        </div>
+      )}
 
       <div style={{ color: "#9BA88A", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
         Order history will show up here once Sales Orders are set up.
@@ -13872,7 +13993,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-111";
+const APP_VERSION = "2026-07-31-112";
 
 function UpdateBanner({ onRefresh, runningVersion, latestVersion }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17942,6 +18063,9 @@ function TankLogApp() {
             onBack={() => setSelectedCustomerId(null)}
             onEdit={() => setEditingCustomer(selectedCustomer)}
             onDelete={() => deleteCustomer(selectedCustomer)}
+            xeroConnected={!!xeroConnection}
+            onLinkXero={openXeroContactLink}
+            onUnlinkXero={unlinkCustomerFromXero}
           />
         )}
 
@@ -18101,6 +18225,15 @@ function TankLogApp() {
           customers={customers}
           availableStock={availableStock}
           nextOrderNumber={nextSalesOrderNumber}
+        />
+      )}
+      {xeroContactLinkTarget && (
+        <XeroContactLinkModal
+          customer={xeroContactLinkTarget}
+          contacts={xeroContacts}
+          onClose={() => setXeroContactLinkTarget(null)}
+          onLink={linkCustomerToXero}
+          onCreate={createXeroContactForCustomer}
         />
       )}
       {showStockTake && (
