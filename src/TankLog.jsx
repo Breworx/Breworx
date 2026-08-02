@@ -13032,7 +13032,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-100";
+const APP_VERSION = "2026-07-31-101";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13356,6 +13356,21 @@ function TankLogApp() {
   const [showQuickJump, setShowQuickJump] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [textScale, setTextScale] = useState(() => {
+    try {
+      return localStorage.getItem("brewpoint-text-scale") || "1";
+    } catch {
+      return "1";
+    }
+  });
+  const setTextScalePersist = (v) => {
+    setTextScale(v);
+    try {
+      localStorage.setItem("brewpoint-text-scale", v);
+    } catch {}
+  };
+  const [profile, setProfile] = useState(null);
+
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   useEffect(() => {
     if (!profile) return;
@@ -13417,20 +13432,6 @@ function TankLogApp() {
       localStorage.setItem("brewpoint-changelog-seen", String(LATEST_CHANGELOG_ID));
     } catch {}
   };
-  const [textScale, setTextScale] = useState(() => {
-    try {
-      return localStorage.getItem("brewpoint-text-scale") || "1";
-    } catch {
-      return "1";
-    }
-  });
-  const setTextScalePersist = (v) => {
-    setTextScale(v);
-    try {
-      localStorage.setItem("brewpoint-text-scale", v);
-    } catch {}
-  };
-  const [profile, setProfile] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState("");
   const [xeroConnection, setXeroConnection] = useState(null);
