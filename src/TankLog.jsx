@@ -12617,41 +12617,10 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-92";
+const APP_VERSION = "2026-07-31-93";
 
-function UpdateBanner({ onRefresh, refreshDidntWork }) {
+function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
-  if (refreshDidntWork) {
-    return (
-      <div
-        style={{
-          position: "fixed",
-          bottom: "env(safe-area-inset-bottom, 0px)",
-          left: 0,
-          right: 0,
-          zIndex: 95,
-          background: "#1F2E18",
-          borderTop: "1px solid #C9D1AC",
-          padding: "10px 16px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 4,
-          textAlign: "center",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <AlertTriangle size={14} color="#E3B04A" />
-          <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
-            This app icon needs a quick reset to update
-          </span>
-        </div>
-        <span style={{ color: "#C9D1AC", fontSize: 11.5, fontFamily: "'Inter', sans-serif", maxWidth: 480, lineHeight: 1.4 }}>
-          Refreshing didn't pick up the latest version. Delete this app's icon from your Home Screen, then open Safari, go to the site again, and tap Share → "Add to Home Screen" to put it back — that clears it out for good.
-        </span>
-      </div>
-    );
-  }
   return (
     <div
       style={{
@@ -12802,30 +12771,13 @@ export default function TankLog() {
   // open — important for the installed PWA, which otherwise keeps showing a
   // stale cached version until the user manually reinstalls it.
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [refreshDidntWork, setRefreshDidntWork] = useState(false);
   useEffect(() => {
     const checkForUpdate = async () => {
       try {
         const res = await fetch(`/version.txt?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) return;
         const latest = (await res.text()).trim();
-        if (latest && latest !== APP_VERSION) {
-          setUpdateAvailable(true);
-          // If we're still on the same version we already tried refreshing
-          // away from, a plain reload genuinely isn't working for this
-          // device — most likely an installed home-screen icon stuck on
-          // old cached code. Surface plainer, actionable guidance instead
-          // of just repeating the same button that already didn't help.
-          try {
-            if (localStorage.getItem("brewpoint-refresh-attempt-version") === APP_VERSION) {
-              setRefreshDidntWork(true);
-            }
-          } catch {}
-        } else {
-          try {
-            localStorage.removeItem("brewpoint-refresh-attempt-version");
-          } catch {}
-        }
+        if (latest && latest !== APP_VERSION) setUpdateAvailable(true);
       } catch {
         // Network hiccup or offline — not worth surfacing, just skip this check.
       }
@@ -14687,7 +14639,6 @@ export default function TankLog() {
       `}</style>
       {updateAvailable && (
         <UpdateBanner
-          refreshDidntWork={refreshDidntWork}
           onRefresh={async () => {
             // Installed home-screen apps on iOS can hang onto a cached copy
             // even when the server says not to — this throws everything we
@@ -14695,9 +14646,6 @@ export default function TankLog() {
             // exist), confirm a fresh copy is actually fetchable, then force
             // a hard navigation (replace, not href — less likely to resolve
             // from any in-memory/back-forward cache) to a cache-busted URL.
-            try {
-              localStorage.setItem("brewpoint-refresh-attempt-version", APP_VERSION);
-            } catch {}
             try {
               if (window.caches) {
                 const keys = await caches.keys();
@@ -14939,7 +14887,7 @@ export default function TankLog() {
           style={{
             flex: 1,
             minWidth: 0,
-            padding: `24px 22px ${60 + (updateAvailable ? (refreshDidntWork ? 90 : 50) : 0)}px`,
+            padding: `24px 22px ${60 + (updateAvailable ? 50 : 0)}px`,
             zoom: textScale,
           }}
         >
