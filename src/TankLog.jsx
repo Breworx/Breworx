@@ -2738,7 +2738,7 @@ function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
   );
 }
 
-function StockTakeModal({ inventory, onClose, onComplete }) {
+function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredient" }) {
   const [counts, setCounts] = useState(() => {
     const init = {};
     inventory.forEach((it) => (init[it.id] = String(it.qty)));
@@ -2772,7 +2772,7 @@ function StockTakeModal({ inventory, onClose, onComplete }) {
     <Modal title="Stock take" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.5 }}>
-          Walk the brewery and enter what you actually count for each ingredient. Anything left unchanged is
+          Walk the brewery and enter what you actually count for each {itemLabel}. Anything left unchanged is
           assumed correct as-is.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2816,7 +2816,7 @@ function StockTakeModal({ inventory, onClose, onComplete }) {
               </div>
             );
           })}
-          {inventory.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No ingredients to count yet.</div>}
+          {inventory.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No {itemLabel}s to count yet.</div>}
         </div>
         <button
           onClick={submit}
@@ -4304,7 +4304,18 @@ function AddPackageTypeModal({ onClose, onAdd, consumables }) {
   );
 }
 
-function PackageTypeDetail({ packageType, onBack, onDelete }) {
+function PackageTypeDetail({ packageType, consumables, onBack, onDelete }) {
+  const costableItems = packageType.items.filter((it) => !it.matchLabelByRecipeName);
+  const hasVariableLabel = packageType.items.some((it) => it.matchLabelByRecipeName);
+  const allCosted = costableItems.length > 0 && costableItems.every((it) => {
+    const c = consumables.find((c) => c.id === it.consumableId);
+    return c && c.costPerUnit != null;
+  });
+  const totalCost = costableItems.reduce((sum, it) => {
+    const c = consumables.find((c) => c.id === it.consumableId);
+    return sum + (c?.costPerUnit || 0) * (Number(it.qtyPerUnit) || 0);
+  }, 0);
+
   return (
     <div>
       <button
@@ -4330,28 +4341,54 @@ function PackageTypeDetail({ packageType, onBack, onDelete }) {
         {packageType.name}
       </h1>
 
+      {costableItems.length > 0 && (
+        <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
+            Cost per unit
+          </div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>
+            {allCosted ? `$${totalCost.toFixed(2)}` : `~$${totalCost.toFixed(2)}`}
+          </div>
+          {(!allCosted || hasVariableLabel) && (
+            <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 3 }}>
+              {!allCosted && "Some consumables here don't have a cost set yet, so this is a partial total. "}
+              {hasVariableLabel && "Doesn't include the auto-matched label, since its cost varies by recipe."}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         Consumables used per unit packaged
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
-        {packageType.items.map((it, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "10px 12px",
-              background: "#F8F5EA",
-              border: "1px solid #EBE8D6",
-              borderRadius: 5,
-              fontSize: 13.5,
-              color: "#2A3324",
-            }}
-          >
-            <span>{it.matchLabelByRecipeName ? "Label (auto-matched by beer name)" : it.consumableName}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>× {it.qtyPerUnit}</span>
-          </div>
-        ))}
+        {packageType.items.map((it, i) => {
+          const c = it.consumableId ? consumables.find((c) => c.id === it.consumableId) : null;
+          const lineCost = c?.costPerUnit != null ? c.costPerUnit * (Number(it.qtyPerUnit) || 0) : null;
+          return (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "10px 12px",
+                background: "#F8F5EA",
+                border: "1px solid #EBE8D6",
+                borderRadius: 5,
+                fontSize: 13.5,
+                color: "#2A3324",
+              }}
+            >
+              <span>{it.matchLabelByRecipeName ? "Label (auto-matched by beer name)" : it.consumableName}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>× {it.qtyPerUnit}</span>
+                {lineCost != null && (
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 12 }}>${lineCost.toFixed(2)}</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <button
@@ -12882,7 +12919,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-95";
+const APP_VERSION = "2026-07-31-96";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -13197,6 +13234,9 @@ export default function TankLog() {
   const [showStockTake, setShowStockTake] = useState(false);
   const [showStockTakeHistory, setShowStockTakeHistory] = useState(false);
   const [viewingStockTake, setViewingStockTake] = useState(null);
+  const [showConsumablesStockTake, setShowConsumablesStockTake] = useState(false);
+  const [showConsumablesStockTakeHistory, setShowConsumablesStockTakeHistory] = useState(false);
+  const [viewingConsumablesStockTake, setViewingConsumablesStockTake] = useState(null);
   const [editTankTarget, setEditTankTarget] = useState(null);
   const [deleteTankTarget, setDeleteTankTarget] = useState(null);
   const [deleteRecipeTarget, setDeleteRecipeTarget] = useState(null);
@@ -13932,7 +13972,46 @@ export default function TankLog() {
     }
     setInventory(nextInventory);
 
-    const record = { id: uid(), date, userName: user.name, lines };
+    const record = { id: uid(), date, userName: user.name, lines, type: "inventory" };
+    const { data, error: stError } = await supabase
+      .from("stock_takes")
+      .insert(stockTakeToRow(record, user.id, profile.companyId))
+      .select()
+      .single();
+    if (stError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setStockTakes((prev) => [rowToStockTake(data), ...prev]);
+  };
+
+  // Same idea as completeStockTake, just walking the cans/kegs/labels
+  // shelf instead of the ingredients shelf.
+  const completeConsumablesStockTake = async (lines) => {
+    const date = today();
+    let nextConsumables = [...consumables];
+
+    for (const line of lines) {
+      if (line.discrepancy === 0) continue;
+      const idx = nextConsumables.findIndex((it) => it.id === line.itemId);
+      if (idx < 0) continue;
+      const item = nextConsumables[idx];
+      const historyEntry = {
+        id: uid(),
+        date: new Date().toISOString(),
+        user: user.name,
+        type: "stocktake",
+        delta: line.discrepancy,
+        note: `Stock take ${date}`,
+      };
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error } = await supabase.from("consumables").update({ qty: line.countedQty, history: newHistory }).eq("id", item.id);
+      if (error) {
+        showToast("error", "Something didn't save — check your connection and try again.");
+        continue;
+      }
+      nextConsumables[idx] = { ...item, qty: line.countedQty, history: newHistory };
+    }
+    setConsumables(nextConsumables);
+
+    const record = { id: uid(), date, userName: user.name, lines, type: "consumables" };
     const { data, error: stError } = await supabase
       .from("stock_takes")
       .insert(stockTakeToRow(record, user.id, profile.companyId))
@@ -15446,7 +15525,7 @@ export default function TankLog() {
                         cursor: "pointer",
                       }}
                     >
-                      Past reports ({stockTakes.length})
+                      Past reports ({stockTakes.filter((st) => st.type !== "consumables").length})
                     </button>
                     <button
                       onClick={() => setShowSuppliersModal(true)}
@@ -15621,6 +15700,41 @@ export default function TankLog() {
                       marginBottom: 16,
                     }}
                   />
+
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <button
+                      onClick={() => setShowConsumablesStockTake(true)}
+                      style={{
+                        flex: 1,
+                        background: "#EBE8D6",
+                        border: "1px solid #C9D1AC",
+                        borderRadius: 5,
+                        padding: "9px",
+                        color: "#2A3324",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Start stock take
+                    </button>
+                    <button
+                      onClick={() => setShowConsumablesStockTakeHistory(true)}
+                      style={{
+                        flex: 1,
+                        background: "none",
+                        border: "1px solid #DDE0C8",
+                        borderRadius: 5,
+                        padding: "9px",
+                        color: "#5C6B54",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Past reports ({stockTakes.filter((st) => st.type === "consumables").length})
+                    </button>
+                  </div>
 
                   {consumables.some((it) => it.qty <= it.threshold) && (
                     <div
@@ -16498,6 +16612,7 @@ export default function TankLog() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && selectedPackageType && (
           <PackageTypeDetail
             packageType={selectedPackageType}
+            consumables={consumables}
             onBack={() => setSelectedPackageTypeId(null)}
             onDelete={deletePackageType}
           />
@@ -16634,7 +16749,7 @@ export default function TankLog() {
       )}
       {showStockTakeHistory && (
         <StockTakeHistoryModal
-          stockTakes={stockTakes}
+          stockTakes={stockTakes.filter((st) => st.type !== "consumables")}
           onClose={() => setShowStockTakeHistory(false)}
           onOpenReport={(st) => {
             setViewingStockTake(st);
@@ -16644,6 +16759,22 @@ export default function TankLog() {
       )}
       {viewingStockTake && (
         <StockTakeReportModal stockTake={viewingStockTake} onClose={() => setViewingStockTake(null)} />
+      )}
+      {showConsumablesStockTake && (
+        <StockTakeModal inventory={consumables} itemLabel="item" onClose={() => setShowConsumablesStockTake(false)} onComplete={completeConsumablesStockTake} />
+      )}
+      {showConsumablesStockTakeHistory && (
+        <StockTakeHistoryModal
+          stockTakes={stockTakes.filter((st) => st.type === "consumables")}
+          onClose={() => setShowConsumablesStockTakeHistory(false)}
+          onOpenReport={(st) => {
+            setViewingConsumablesStockTake(st);
+            setShowConsumablesStockTakeHistory(false);
+          }}
+        />
+      )}
+      {viewingConsumablesStockTake && (
+        <StockTakeReportModal stockTake={viewingConsumablesStockTake} onClose={() => setViewingConsumablesStockTake(null)} />
       )}
       {activeChecklistTemplate && (
         <FoodSafetyChecklistModal
