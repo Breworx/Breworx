@@ -13872,9 +13872,9 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-109";
+const APP_VERSION = "2026-07-31-111";
 
-function UpdateBanner({ onRefresh }) {
+function UpdateBanner({ onRefresh, runningVersion, latestVersion }) {
   const [refreshing, setRefreshing] = useState(false);
   return (
     <div
@@ -13897,6 +13897,11 @@ function UpdateBanner({ onRefresh }) {
       <CheckCircle2 size={14} color="#8FCB6C" />
       <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
         A new version of Brewpoint is available.
+        {runningVersion && latestVersion && (
+          <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+            {" "}(running {runningVersion}, latest {latestVersion})
+          </span>
+        )}
       </span>
       <button
         onClick={() => {
@@ -14114,12 +14119,14 @@ function TankLogApp() {
   // open — important for the installed PWA, which otherwise keeps showing a
   // stale cached version until the user manually reinstalls it.
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [latestVersionSeen, setLatestVersionSeen] = useState(null);
   useEffect(() => {
     const checkForUpdate = async () => {
       try {
         const res = await fetch(`/version.txt?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) return;
         const latest = (await res.text()).trim();
+        setLatestVersionSeen(latest);
         if (latest && latest !== APP_VERSION) setUpdateAvailable(true);
       } catch {
         // Network hiccup or offline — not worth surfacing, just skip this check.
@@ -14283,6 +14290,8 @@ function TankLogApp() {
   const [xeroItemMappings, setXeroItemMappings] = useState([]);
   const [xeroAccounts, setXeroAccounts] = useState([]);
   const [xeroItems, setXeroItems] = useState([]);
+  const [xeroContacts, setXeroContacts] = useState([]);
+  const [xeroContactLinkTarget, setXeroContactLinkTarget] = useState(null);
   const [xeroMappingQueue, setXeroMappingQueue] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -14296,6 +14305,7 @@ function TankLogApp() {
   const [scaleRecipeTarget, setScaleRecipeTarget] = useState(null);
   const [viewingSupplierDocs, setViewingSupplierDocs] = useState(null);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
+  const [salesModuleEnabled, setSalesModuleEnabled] = useState(true);
   const [teammates, setTeammates] = useState([]);
   const [inviteLink, setInviteLink] = useState("");
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -14404,7 +14414,7 @@ function TankLogApp() {
       setProfile(myProfile);
 
       const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes] = await Promise.all([
-        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by").eq("id", myProfile.companyId).single(),
+        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
@@ -14430,6 +14440,7 @@ function TankLogApp() {
         setCompanyName(companyRes.data.name);
         setCompanyLogo(companyRes.data.logo_url || "");
         setFoodSafetyDisclaimerAcceptedAt(companyRes.data.food_safety_disclaimer_accepted_at || null);
+        setSalesModuleEnabled(companyRes.data.sales_module_enabled !== false);
       }
       if (teammatesRes.error) console.error(teammatesRes.error);
       else setTeammates(teammatesRes.data.map(rowToProfile));
@@ -14934,6 +14945,17 @@ function TankLogApp() {
     setFoodSafetyDisclaimerAcceptedAt(acceptedAt);
   };
 
+  // Sales (Customers + Orders) is a genuinely optional module — plenty of
+  // breweries run their sales through something else entirely (Upstock,
+  // spreadsheets, whatever), so this just hides the whole section rather
+  // than forcing it on everyone.
+  const toggleSalesModule = async (enabled) => {
+    const { error } = await supabase.from("companies").update({ sales_module_enabled: enabled }).eq("id", profile.companyId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setSalesModuleEnabled(enabled);
+    if (!enabled && (view === "customers" || view === "salesOrders")) setView("home");
+  };
+
   const disconnectXero = async () => {
     const { error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -14958,6 +14980,48 @@ function TankLogApp() {
       return;
     }
     setXeroAccounts(data.accounts || []);
+  };
+
+  // Opens the link-a-customer-to-Xero picker — fetches the current Xero
+  // contact list fresh each time, since it's cheap and avoids showing a
+  // stale list if someone's added contacts directly in Xero since.
+  const openXeroContactLink = async (customer) => {
+    setXeroContactLinkTarget(customer);
+    const data = await callXeroApi("listContacts");
+    if (data.error) {
+      showToast("error", "Couldn't load Xero contacts — check your Xero connection.");
+      return;
+    }
+    setXeroContacts(data.contacts || []);
+  };
+
+  const linkCustomerToXero = async (customerId, xeroContactId, xeroContactName) => {
+    const { error } = await supabase
+      .from("customers")
+      .update({ xero_contact_id: xeroContactId, xero_contact_name: xeroContactName })
+      .eq("id", customerId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, xeroContactId, xeroContactName } : c)));
+    setXeroContactLinkTarget(null);
+    showToast("success", `Linked to ${xeroContactName} in Xero.`);
+  };
+
+  const unlinkCustomerFromXero = async (customerId) => {
+    const { error } = await supabase.from("customers").update({ xero_contact_id: null, xero_contact_name: null }).eq("id", customerId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, xeroContactId: null, xeroContactName: null } : c)));
+  };
+
+  // Creates a brand-new contact in Xero from a Brewpoint customer's
+  // details, then immediately links the two — for a customer that doesn't
+  // already exist in Xero at all.
+  const createXeroContactForCustomer = async (customer) => {
+    const result = await callXeroApi("createContact", { name: customer.name, email: customer.email || null });
+    if (result.error) {
+      showToast("error", "Couldn't create the Xero contact — check your Xero connection.");
+      return;
+    }
+    await linkCustomerToXero(customer.id, result.contactId, result.contactName || customer.name);
   };
 
   const saveXeroAdjustmentAccount = async (code, name) => {
@@ -15239,11 +15303,47 @@ function TankLogApp() {
     logActivity("created", "sales order", order.orderNumber, `Sales order ${order.orderNumber} created`);
   };
 
+  // Fires once an order is marked Fulfilled — reuses the same item mappings
+  // already built up from packaging sync, and either matches or creates a
+  // Xero contact for the customer server-side. If Xero isn't connected,
+  // this just quietly does nothing, same as the packaging sync does.
+  const syncOrderToXero = async (order) => {
+    if (!xeroConnection) return;
+    const customer = customers.find((c) => c.id === order.customerId);
+    if (!customer) return;
+    const lineItems = (order.lines || []).map((l) => {
+      const mapping = xeroItemMappings.find((m) => m.product_key === productKeyFor(l.batchName, l.containerKey));
+      return {
+        description: `${l.batchName} — ${l.containerLabel}`,
+        quantity: l.qty,
+        unitAmount: l.unitPrice,
+        itemCode: mapping ? mapping.xero_item_code : null,
+      };
+    });
+    const result = await callXeroApi("createInvoice", {
+      contactId: customer.xeroContactId || null,
+      customerName: customer.name,
+      customerEmail: customer.email || null,
+      reference: order.orderNumber,
+      lineItems,
+    });
+    if (result.error) {
+      console.error("Xero invoice sync failed:", result.error, result.detail);
+      showToast("error", "Order fulfilled, but the Xero invoice couldn't be created — check your Xero connection.");
+    } else {
+      showToast("success", "Invoice sent to Xero.");
+    }
+  };
+
   const advanceSalesOrderStatus = async (id, status) => {
     const { error } = await supabase.from("sales_orders").update({ status }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSalesOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
     showToast("success", status === "Fulfilled" ? "Order marked fulfilled — stock updated." : `Order ${status.toLowerCase()}.`);
+    if (status === "Fulfilled") {
+      const order = salesOrders.find((o) => o.id === id);
+      if (order) syncOrderToXero({ ...order, status });
+    }
   };
 
   const cancelSalesOrder = (id) => {
@@ -16196,6 +16296,8 @@ function TankLogApp() {
       `}</style>
       {updateAvailable && (
         <UpdateBanner
+          runningVersion={APP_VERSION}
+          latestVersion={latestVersionSeen}
           onRefresh={async () => {
             // Installed home-screen apps on iOS can hang onto a cached copy
             // even when the server says not to — this throws everything we
@@ -16340,7 +16442,7 @@ function TankLogApp() {
                   ["recipeAnalytics", "Recipe Analytics", TrendingUp],
                 ],
               },
-              {
+              salesModuleEnabled && {
                 label: "Sales",
                 items: [
                   ["customers", "Customers", Users],
@@ -16358,7 +16460,7 @@ function TankLogApp() {
               },
               { label: "Compliance", items: [["foodsafety", "Food Safety", CheckCircle2], ["excise", "Excise", FileText]] },
               { items: [["settings", "Settings", Settings]] },
-            ].map((group, gi) => (
+            ].filter(Boolean).map((group, gi) => (
               <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {group.label && (
                   <div
@@ -17348,6 +17450,28 @@ function TankLogApp() {
                   >
                     Take the getting-started tour again
                   </button>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+                    Modules
+                  </div>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+                    <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
+                      <span>
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324" }}>Sales & Orders</div>
+                        <div style={{ color: "#5C6B54", fontSize: 12, marginTop: 2 }}>
+                          Customers and Orders in the sidebar. Turn this off if you sell through something else and don't need it here.
+                        </div>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={salesModuleEnabled}
+                        onChange={(e) => toggleSalesModule(e.target.checked)}
+                        style={{ width: 18, height: 18, accentColor: "#5C9A3C", cursor: "pointer", flexShrink: 0 }}
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 <div>
