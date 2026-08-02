@@ -396,7 +396,7 @@ const HELP_ARTICLES = [
   {
     category: "Getting started",
     question: "How do I brew a batch?",
-    answer: "On Fermentation, tap \"New batch.\" Pick a saved recipe (it pre-fills everything) or enter details manually, choose a tank and brew date, then start it.",
+    answer: "On Batches, tap \"New batch.\" Pick a saved recipe (it pre-fills everything) or enter details manually, choose a tank and brew date, then start it.",
   },
   {
     category: "Getting started",
@@ -461,7 +461,7 @@ const HELP_ARTICLES = [
   {
     category: "Stock",
     question: "How do I export my data?",
-    answer: "Inventory, Purchase Orders, and Batches (on the Fermentation screen) each have an \"Export CSV\" link above their list, which respects whatever search filter is active.",
+    answer: "Inventory, Purchase Orders, and Batches each have an \"Export CSV\" link above their list, which respects whatever search filter is active.",
   },
   {
     category: "Compliance",
@@ -538,7 +538,7 @@ const TOUR_STEPS = [
   },
   {
     title: "Then brew a batch",
-    body: "On Fermentation, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself. Brew day timers for mash, boil, and whirlpool are right there on the batch page.",
+    body: "On Batches, tap \"New batch.\" Pick a saved recipe and it pre-fills everything, or enter the details yourself. Brew day timers for mash, boil, and whirlpool are right there on the batch page.",
     target: "nav-batches",
     needsSidebar: true,
   },
@@ -12106,7 +12106,7 @@ function HomeView({
 
       {fermentingBatches.length === 0 && conditioningBatches.length === 0 && inProgressBatches.length === 0 && packagedBatches.length === 0 && (
         <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
-          Nothing brewing yet — head to Fermentation to start your first batch.
+          Nothing brewing yet — head to Batches to start your first batch.
         </div>
       )}
     </div>
@@ -12617,7 +12617,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-91";
+const APP_VERSION = "2026-07-31-92";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14819,7 +14819,7 @@ export default function TankLog() {
               {
                 label: "Production",
                 items: [
-                  ["batches", "Fermentation", Droplet],
+                  ["batches", "Batches", Droplet],
                   ["packaged", "Finished Stock", Package],
                   ["production", "Production", Calendar],
                   ["brewery", "Brewery", Warehouse],
