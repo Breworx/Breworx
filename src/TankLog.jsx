@@ -7899,7 +7899,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
@@ -8168,6 +8168,27 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             </div>
           </button>
         ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 18, marginBottom: 22, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", color: "#5C6B54", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+          <input
+            type="checkbox"
+            checked={!!batch.hopDumpDone}
+            onChange={(e) => onSetBrewDayCheckbox(batch.id, "hopDumpDone", e.target.checked)}
+            style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
+          />
+          Hop dump done
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", color: "#5C6B54", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+          <input
+            type="checkbox"
+            checked={!!batch.yeastDumpDone}
+            onChange={(e) => onSetBrewDayCheckbox(batch.id, "yeastDumpDone", e.target.checked)}
+            style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
+          />
+          Yeast dump done
+        </label>
       </div>
 
       {batch.ingredients && batch.ingredients.length > 0 && (
@@ -12463,7 +12484,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-07-31-84";
+const APP_VERSION = "2026-07-31-85";
 
 function UpdateBanner({ onRefresh, refreshDidntWork }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -14344,6 +14365,15 @@ export default function TankLog() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, carbonationChecked: checked } : b)));
   };
 
+  // Optional brew-day checkboxes — hop dump, yeast dump. Purely
+  // informational, never blocks anything.
+  const setBrewDayCheckbox = async (id, field, checked) => {
+    const column = field === "hopDumpDone" ? "hop_dump_done" : "yeast_dump_done";
+    const { error } = await supabase.from("batches").update({ [column]: checked }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: checked } : b)));
+  };
+
   // Cancels a packaging run that was started but never finished. Nothing
   // gets deducted until logPackagingSession actually runs (that only
   // happens on "Finish packaging"), so there's genuinely nothing to give
@@ -16021,6 +16051,7 @@ export default function TankLog() {
             onStartPackaging={setStartPackagingTarget}
             onCancelPackagingRun={cancelPackagingRun}
             onSetCarbonationChecked={setCarbonationChecked}
+            onSetBrewDayCheckbox={setBrewDayCheckbox}
           />
         )}
 
