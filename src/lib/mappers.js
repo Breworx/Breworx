@@ -40,6 +40,8 @@ export function rowToBatch(row) {
     brewStage: row.brew_stage || null,
     ingredientCost: row.ingredient_cost ?? 0,
     plannedDays: row.planned_days ?? null,
+    tastingLog: row.tasting_log || [],
+    volumeTopups: row.volume_topups || [],
   };
 }
 
@@ -83,6 +85,8 @@ export function batchToRow(batch, userId, companyId) {
     brew_stage: batch.brewStage || null,
     ingredient_cost: batch.ingredientCost ?? 0,
     planned_days: batch.plannedDays ?? null,
+    tasting_log: batch.tastingLog || [],
+    volume_topups: batch.volumeTopups || [],
   };
 }
 
@@ -204,6 +208,7 @@ export function rowToTank(row) {
     type: row.type || "Fermenter",
     cleanStatus: row.clean_status || null,
     history: row.history || [],
+    barrelSource: row.barrel_source || null,
   };
 }
 
@@ -216,6 +221,7 @@ export function tankToRow(tank, companyId) {
     type: tank.type || "Fermenter",
     clean_status: tank.cleanStatus ?? null,
     history: tank.history || [],
+    barrel_source: tank.barrelSource || null,
   };
 }
 
