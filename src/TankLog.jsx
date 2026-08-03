@@ -15253,7 +15253,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-140";
+const APP_VERSION = "2026-08-03-141";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16800,7 +16800,7 @@ function TankLogApp() {
       const res = await fetch(`${supabaseUrl}/functions/v1/quick-endpoint`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-        body: JSON.stringify({ action: "generateInviteLink", staffJwt, customerId, email, redirectTo: `${window.location.origin}/order` }),
+        body: JSON.stringify({ action: "generateInviteLink", staffJwt, customerId, email }),
       });
       const result = await res.json();
       if (result.error) {
