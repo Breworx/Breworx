@@ -15253,7 +15253,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-141";
+const APP_VERSION = "2026-08-03-142";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18356,6 +18356,8 @@ function TankLogApp() {
                         setSelectedInventoryId(null);
                         setSelectedConsumableId(null);
                         setSelectedPackageTypeId(null);
+                        setSelectedCustomerId(null);
+                        setSelectedSalesOrderId(null);
                         setSidebarOpen(false);
                       }}
                       style={{
