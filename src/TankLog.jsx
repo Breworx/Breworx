@@ -9359,7 +9359,7 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const latest = latestReading(batch);
@@ -10447,6 +10447,36 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             </div>
           ))}
         </div>
+      )}
+
+      {batch.stage === "Aging" && currentTank?.type === "Barrel" && (
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 20,
+            padding: "12px 14px",
+            background: "#FFFFFF",
+            border: "1px solid #DDE0C8",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
+          <span>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, color: "#2A3324" }}>Still actively fermenting</div>
+            <div style={{ color: "#5C6B54", fontSize: 12, marginTop: 2 }}>
+              Turn this off once it's settled into quiet aging — matters most for wild or spontaneous fermentation straight from the kettle.
+            </div>
+          </span>
+          <input
+            type="checkbox"
+            checked={!!batch.stillFermenting}
+            onChange={(e) => onSetStillFermenting(batch.id, e.target.checked)}
+            style={{ width: 18, height: 18, accentColor: "#E08A3C", cursor: "pointer", flexShrink: 0 }}
+          />
+        </label>
       )}
 
       {batch.stage === "Aging" && (
@@ -11825,6 +11855,77 @@ function PackagedView({ batches, onOpenBatch }) {
 // A compact vessel graphic for the Brew Day cards — same steel-and-fill
 // visual language as the full tank cards, just squat and flat-bottomed
 // (mash tuns/kettles aren't conical) and small enough to sit as an icon.
+// A real barrel silhouette, not a relabeled tank — bulged sides, flat ends,
+// hoop bands. Fermenting shows small bubbles escaping the bunghole (active,
+// visible); resting/aging shows just one slow wisp every few seconds —
+// the stillness itself is the signal that nothing needs doing.
+function BarrelVesselIcon({ fermenting, size = 100, uid: idSeed = "barrel" }) {
+  const woodId = `barrel-wood-${idSeed}`;
+  const bodyPath = "M30 10 H90 C100 10 105 40 105 95 C105 150 100 180 90 180 H30 C20 180 15 150 15 95 C15 40 20 10 30 10 Z";
+  const bubbles = fermenting ? [0, 1, 2].map((i) => ({ delay: i * 0.9, dur: 2.2 + (i % 2) * 0.4 })) : [];
+
+  return (
+    <svg width={size} height={size * 1.9} viewBox="0 0 120 190" fill="none">
+      <defs>
+        <linearGradient id={woodId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#8A5A34" />
+          <stop offset="50%" stopColor="#B4794A" />
+          <stop offset="100%" stopColor="#8A5A34" />
+        </linearGradient>
+      </defs>
+      <path d={bodyPath} fill={`url(#${woodId})`} stroke="#5C3B20" strokeWidth="2" strokeLinejoin="round" />
+      {/* Stave lines — just enough to read as wood grain, not literal planks */}
+      {[42, 60, 78].map((x) => (
+        <line key={x} x1={x} y1="14" x2={x} y2="176" stroke="#6B4527" strokeWidth="1" opacity="0.35" />
+      ))}
+      {/* Hoop bands */}
+      <rect x="16" y="28" width="88" height="9" rx="2" fill="#3A2A1A" opacity="0.85" />
+      <rect x="14" y="152" width="92" height="9" rx="2" fill="#3A2A1A" opacity="0.85" />
+      {/* Bunghole */}
+      <circle cx="60" cy="60" r="4" fill="#2A1D12" />
+      {fermenting &&
+        bubbles.map((b, i) => (
+          <circle key={i} cx={60 + (i - 1) * 6} r="2" fill="#E8D9A0" opacity="0.8">
+            <animate attributeName="cy" from="58" to="6" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8;0.8;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+          </circle>
+        ))}
+      {!fermenting && (
+        <circle cx="60" r="1.6" fill="#E8D9A0" opacity="0.5">
+          <animate attributeName="cy" from="56" to="20" dur="6s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0;0.5;0" dur="6s" repeatCount="indefinite" />
+        </circle>
+      )}
+    </svg>
+  );
+}
+
+// Aging tanks are stainless, not wood — same flat-bottomed cylinder body
+// used elsewhere for Brite Tanks, but in the Aging stage's own colour so
+// it never gets confused with an active brite tank at a glance.
+function AgingTankVesselIcon({ size = 100, uid: idSeed = "agingtank" }) {
+  const gradId = `agingtank-grad-${idSeed}`;
+  const bodyPath = "M10 20 Q10 10 20 10 H100 Q110 10 110 20 V180 Q110 190 100 190 H20 Q10 190 10 180 Z";
+
+  return (
+    <svg width={size} height={size * 1.9} viewBox="0 0 120 200" fill="none">
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#A48CC7" />
+          <stop offset="100%" stopColor="#6F5290" />
+        </linearGradient>
+      </defs>
+      <path d={bodyPath} stroke="#8E6FB5" strokeWidth="2.1" strokeLinejoin="round" />
+      <path d={bodyPath} fill={`url(#${gradId})`} opacity="0.85" />
+      <rect x="16.5" y="18" width="3" height="21" rx="1.2" fill="#FFFFFF" opacity="0.3" />
+      <circle cx="60" r="1.6" fill="#F0E6FA" opacity="0.5">
+        <animate attributeName="cy" from="185" to="20" dur="7s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0;0.5;0" dur="7s" repeatCount="indefinite" />
+      </circle>
+    </svg>
+  );
+}
+
 function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) {
   const steelId = `bdv-steel-${idSeed}`;
   const fillId = `bdv-fill-${idSeed}`;
@@ -13149,6 +13250,100 @@ function ReminderDayModal({ date, reminders, onClose, onAdd, onToggle, onDelete 
         </div>
       </div>
     </Modal>
+  );
+}
+
+// The whole point of this page: something that's been sitting in a barrel
+// for eight months shouldn't feel like a forgotten spreadsheet row. One
+// glance tells you what's fermenting vs quietly aging, what's in it, and
+// when someone last actually tasted it.
+function AgingOverviewView({ batches, tanks, onOpenBatch }) {
+  const agingBatches = batches.filter((b) => b.stage === "Aging");
+
+  return (
+    <div>
+      {agingBatches.length === 0 ? (
+        <EmptyState
+          icon={Warehouse}
+          title="Nothing aging right now"
+          subtitle="Move a batch into a barrel or aging tank from its own page — from Primary, Brite Tank, or straight from the kettle — and it'll show up here."
+        />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
+          {agingBatches.map((b) => {
+            const tank = tanks.find((t) => t.id === b.tankId);
+            const isBarrel = tank?.type === "Barrel";
+            const days = daysBetween(b.startDate, today());
+            const sortedTasting = [...(b.tastingLog || [])].sort((a, c) => c.date.localeCompare(a.date));
+            const latest = sortedTasting[0];
+
+            return (
+              <button
+                key={b.id}
+                onClick={() => onOpenBatch(b.id)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 8,
+                  background: "#FFFFFF",
+                  border: "1px solid #DDE0C8",
+                  borderRadius: 10,
+                  padding: "18px 14px",
+                  cursor: "pointer",
+                  textAlign: "center",
+                }}
+              >
+                {isBarrel ? (
+                  <BarrelVesselIcon fermenting={!!b.stillFermenting} size={64} uid={b.id} />
+                ) : (
+                  <AgingTankVesselIcon size={64} uid={b.id} />
+                )}
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324", marginTop: 4 }}>{b.name}</div>
+                <div style={{ color: "#5C6B54", fontSize: 11.5 }}>
+                  {tank ? tank.name : "Unknown vessel"}
+                  {isBarrel && tank?.barrelSource ? ` · ${tank.barrelSource}` : ""}
+                </div>
+                <span
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 10.5,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: isBarrel && b.stillFermenting ? "#E08A3C" : "#8E6FB5",
+                    border: `1px solid ${isBarrel && b.stillFermenting ? "#E08A3C" : "#8E6FB5"}`,
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                  }}
+                >
+                  {isBarrel && b.stillFermenting ? "Fermenting" : "Aging"} · {days}d
+                </span>
+                {latest && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center", marginTop: 2 }}>
+                    {latest.tags.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        style={{
+                          background: TASTING_TAGS["Off-flavors"].includes(tag) ? "#FBE5D2" : "#EBF3E4",
+                          border: `1px solid ${TASTING_TAGS["Off-flavors"].includes(tag) ? "#E3B37A" : "#5C9A3C"}`,
+                          borderRadius: 20,
+                          padding: "2px 8px",
+                          color: TASTING_TAGS["Off-flavors"].includes(tag) ? "#7A3E1D" : "#2A3324",
+                          fontSize: 10.5,
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {!latest && <div style={{ color: "#C9D1AC", fontSize: 10.5 }}>No tasting logged yet</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -14794,7 +14989,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-127";
+const APP_VERSION = "2026-08-03-128";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15225,6 +15420,7 @@ function TankLogApp() {
   const [viewingSupplierDocs, setViewingSupplierDocs] = useState(null);
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [salesModuleEnabled, setSalesModuleEnabled] = useState(true);
+  const [barrelAgingModuleEnabled, setBarrelAgingModuleEnabled] = useState(true);
   const [teammates, setTeammates] = useState([]);
   const [inviteLink, setInviteLink] = useState("");
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -15337,7 +15533,7 @@ function TankLogApp() {
       setProfile(myProfile);
 
       const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes] = await Promise.all([
-        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled").eq("id", myProfile.companyId).single(),
+        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
@@ -15368,6 +15564,7 @@ function TankLogApp() {
         setCompanyLogo(companyRes.data.logo_url || "");
         setFoodSafetyDisclaimerAcceptedAt(companyRes.data.food_safety_disclaimer_accepted_at || null);
         setSalesModuleEnabled(companyRes.data.sales_module_enabled !== false);
+        setBarrelAgingModuleEnabled(companyRes.data.barrel_aging_module_enabled !== false);
       }
       if (teammatesRes.error) console.error(teammatesRes.error);
       else setTeammates(teammatesRes.data.map(rowToProfile));
@@ -17121,6 +17318,12 @@ function TankLogApp() {
     showToast("success", "Tasting note saved.");
   };
 
+  const setStillFermenting = async (id, value) => {
+    const { error } = await supabase.from("batches").update({ still_fermenting: value }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stillFermenting: value } : b)));
+  };
+
   // Cancels a packaging run that was started but never finished. Nothing
   // gets deducted until logPackagingSession actually runs (that only
   // happens on "Finish packaging"), so there's genuinely nothing to give
@@ -17413,6 +17616,7 @@ function TankLogApp() {
                   ["batches", "Batches", Droplet],
                   ["packaged", "Finished Stock", Package],
                   ["production", "Production", Calendar],
+                  ["aging", "Aging", Warehouse],
                   ["brewery", "Brewery", Warehouse],
                 ],
               },
@@ -17560,7 +17764,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -18395,6 +18599,17 @@ function TankLogApp() {
               </>
             )}
 
+            {!loadingData && view === "aging" && (
+              <AgingOverviewView
+                batches={batches}
+                tanks={tanks}
+                onOpenBatch={(id) => {
+                  setSelectedId(id);
+                  setView("batches");
+                }}
+              />
+            )}
+
             {activeReminderDay && (
               <ReminderDayModal
                 date={activeReminderDay}
@@ -18894,6 +19109,7 @@ function TankLogApp() {
             onAddNote={addBatchNote}
             onDeleteNote={deleteBatchNote}
             onOpenTastingLog={() => setShowTastingLog(true)}
+            onSetStillFermenting={setStillFermenting}
           />
         )}
         {showTastingLog && selected && (
