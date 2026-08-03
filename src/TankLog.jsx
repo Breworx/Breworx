@@ -3526,6 +3526,7 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
   const [inviteLink, setInviteLink] = useState(null);
   const [inviting, setInviting] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+  const [resendError, setResendError] = useState(null);
   const color = CUSTOMER_TYPE_COLOR[customer.type] || "#9BA88A";
   return (
     <div>
@@ -3629,23 +3630,39 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
               <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>{window.location.origin}/order</span>
             </div>
             {!inviteLink && (
-              <button
-                onClick={async () => {
-                  const emailToUse = inviteEmail.trim() || customer.email;
-                  if (!emailToUse) return;
-                  setInviting(true);
-                  try {
-                    const link = await onInviteToOrderOnline(customer.id, emailToUse);
-                    if (link) setInviteLink(link);
-                  } finally {
-                    setInviting(false);
-                  }
-                }}
-                disabled={inviting}
-                style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "7px 12px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: inviting ? "default" : "pointer" }}
-              >
-                {inviting ? "Sending…" : "Resend setup link"}
-              </button>
+              <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="Their email address"
+                    style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                  />
+                  <button
+                    onClick={async () => {
+                      const emailToUse = inviteEmail.trim() || customer.email;
+                      if (!emailToUse) {
+                        setResendError("Add an email address above first.");
+                        return;
+                      }
+                      setResendError(null);
+                      setInviting(true);
+                      try {
+                        const link = await onInviteToOrderOnline(customer.id, emailToUse);
+                        if (link) setInviteLink(link);
+                      } finally {
+                        setInviting(false);
+                      }
+                    }}
+                    disabled={inviting}
+                    style={{ flexShrink: 0, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "8px 14px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: inviting ? "default" : "pointer" }}
+                  >
+                    {inviting ? "Sending…" : "Resend setup link"}
+                  </button>
+                </div>
+                {resendError && <div style={{ color: "#B5502F", fontSize: 12, marginBottom: 8 }}>{resendError}</div>}
+              </>
             )}
             {inviteLink && (
               <>
@@ -15236,7 +15253,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-139";
+const APP_VERSION = "2026-08-03-140";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
