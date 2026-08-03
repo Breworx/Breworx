@@ -43,6 +43,7 @@ export function rowToBatch(row) {
     tastingLog: row.tasting_log || [],
     volumeTopups: row.volume_topups || [],
     stillFermenting: !!row.still_fermenting,
+    tankSettingsLog: row.tank_settings_log || [],
   };
 }
 
@@ -89,6 +90,7 @@ export function batchToRow(batch, userId, companyId) {
     tasting_log: batch.tastingLog || [],
     volume_topups: batch.volumeTopups || [],
     still_fermenting: !!batch.stillFermenting,
+    tank_settings_log: batch.tankSettingsLog || [],
   };
 }
 
