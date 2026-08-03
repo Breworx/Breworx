@@ -15162,7 +15162,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-133";
+const APP_VERSION = "2026-08-03-134";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15301,7 +15301,7 @@ function ToastStack({ toasts, onDismiss }) {
 async function callPortalApi(action, token, extra) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const res = await fetch(`${supabaseUrl}/functions/v1/customer-portal`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/quick-endpoint`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
     body: JSON.stringify({ action, token, ...extra }),
