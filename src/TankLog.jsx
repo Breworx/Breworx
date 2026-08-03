@@ -3520,8 +3520,12 @@ function CustomerPriceList({ customer, availableStock, customerPrices, onSavePri
   );
 }
 
-function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero, availableStock, customerPrices, onSavePrice, onGeneratePortalLink }) {
+function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero, availableStock, customerPrices, onSavePrice, onGeneratePortalLink, onInviteToOrderOnline }) {
   const [linkCopied, setLinkCopied] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState(customer.email || "");
+  const [inviteLink, setInviteLink] = useState(null);
+  const [inviting, setInviting] = useState(false);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const color = CUSTOMER_TYPE_COLOR[customer.type] || "#9BA88A";
   return (
     <div>
@@ -3617,44 +3621,65 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
       )}
 
       <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>Order link</div>
-        {customer.portalToken ? (
+        <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>Online ordering</div>
+        {customer.authUserId ? (
+          <div style={{ color: "#5C6B54", fontSize: 12.5 }}>
+            Account set up — {customer.name} can order anytime at{" "}
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>{window.location.origin}/order</span>
+          </div>
+        ) : (
           <>
-            <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 8 }}>
-              Share this link — {customer.name} can order directly from it, no login needed.
+            <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 10 }}>
+              Give {customer.name} their own login — they'll set a password once, then just log in themselves from then on, no link to keep track of.
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <input
-                readOnly
-                value={`${window.location.origin}/order/${customer.portalToken}`}
-                onClick={(e) => e.target.select()}
-                style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="Their email address"
+                style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
               />
               <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(`${window.location.origin}/order/${customer.portalToken}`);
-                  setLinkCopied(true);
-                  setTimeout(() => setLinkCopied(false), 2000);
+                onClick={async () => {
+                  if (!inviteEmail.trim()) return;
+                  setInviting(true);
+                  const link = await onInviteToOrderOnline(customer.id, inviteEmail.trim());
+                  setInviting(false);
+                  if (link) setInviteLink(link);
                 }}
-                style={{ flexShrink: 0, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                disabled={inviting || !inviteEmail.trim()}
+                style={{ flexShrink: 0, background: inviting ? "#E8E4D4" : "#5C9A3C", border: "none", borderRadius: 5, padding: "8px 14px", color: inviting ? "#A3AC94" : "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 12.5, cursor: inviting ? "default" : "pointer" }}
               >
-                {linkCopied ? "Copied!" : "Copy"}
+                {inviting ? "Creating…" : "Create login"}
               </button>
             </div>
-            <button
-              onClick={() => onGeneratePortalLink(customer.id)}
-              style={{ marginTop: 8, background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 11.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
-            >
-              Regenerate link (old one stops working)
-            </button>
+            {inviteLink && (
+              <>
+                <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 6 }}>
+                  Send this one-time link to {customer.name} — it lets them set their own password:
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    readOnly
+                    value={inviteLink}
+                    onClick={(e) => e.target.select()}
+                    style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(inviteLink);
+                      setInviteLinkCopied(true);
+                      setTimeout(() => setInviteLinkCopied(false), 2000);
+                    }}
+                    style={{ flexShrink: 0, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                  >
+                    {inviteLinkCopied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              </>
+            )}
           </>
-        ) : (
-          <button
-            onClick={() => onGeneratePortalLink(customer.id)}
-            style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px 14px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
-          >
-            Create order link
-          </button>
         )}
       </div>
 
@@ -15162,7 +15187,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-134";
+const APP_VERSION = "2026-08-03-135";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16554,6 +16579,33 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, portalToken: token } : c)));
     showToast("success", "Order link created.");
+  };
+
+  // Creates the customer's real login (via Supabase Auth, same underlying
+  // system staff accounts use) and returns a one-time link for them to set
+  // their own password. That link is only good once — after that, they
+  // just go to the shared /order page and log in normally from then on.
+  const inviteCustomerToOrderOnline = async (customerId, email) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const staffJwt = sessionData?.session?.access_token;
+    if (!staffJwt) {
+      showToast("error", "Please sign in again and try.");
+      return null;
+    }
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/quick-endpoint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+      body: JSON.stringify({ action: "generateInviteLink", staffJwt, customerId, email, redirectTo: `${window.location.origin}/order` }),
+    });
+    const result = await res.json();
+    if (result.error) {
+      showToast("error", result.error);
+      return null;
+    }
+    setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, authUserId: "pending" } : c)));
+    return result.link;
   };
 
   const saveCustomerPrice = async (customerId, productKey, unitPrice) => {
@@ -19617,6 +19669,7 @@ function TankLogApp() {
             customerPrices={customerPrices}
             onSavePrice={saveCustomerPrice}
             onGeneratePortalLink={generatePortalLink}
+            onInviteToOrderOnline={inviteCustomerToOrderOnline}
           />
         )}
 
