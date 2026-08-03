@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge } from "lucide-react";
 // Charts are lazy-loaded — recharts is one of the heaviest dependencies in
 // the app and most people never open a screen with a chart on it in a given
 // session, so there's no reason to make everyone download it upfront.
@@ -9600,9 +9600,20 @@ function BrewDayTimers({ timers, onStart, onStop }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting }) {
+// PSI <-> Bar, for showing a quick equivalent alongside whichever unit was
+// actually set — doesn't force everything into one unit, just makes the
+// other one visible at a glance.
+const psiToBar = (psi) => psi / 14.5038;
+const barToPsi = (bar) => bar * 14.5038;
+
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
+  const latestTankSettings = batch.tankSettingsLog && batch.tankSettingsLog.length > 0 ? [...batch.tankSettingsLog].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
+  const [setTempInput, setSetTempInput] = useState(latestTankSettings?.setTemp != null ? String(latestTankSettings.setTemp) : "");
+  const [setPressureInput, setSetPressureInput] = useState(latestTankSettings?.setPressure != null ? String(latestTankSettings.setPressure) : "");
+  const [pressureUnit, setPressureUnit] = useState(latestTankSettings?.pressureUnit || "PSI");
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
@@ -9618,6 +9629,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
   const chartData = batch.readings.map((r) => ({
     date: r.date.slice(5),
     gravity: r.gravity,
+    temp: r.temp,
   }));
 
   return (
@@ -10568,6 +10580,139 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         );
       })()}
 
+      <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: latestTankSettings || showTankSettingsForm ? 12 : 0 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Tank settings</div>
+          {!showTankSettingsForm && (
+            <button
+              onClick={() => setShowTankSettingsForm(true)}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              {latestTankSettings ? "Change" : "+ Set temp / pressure"}
+            </button>
+          )}
+        </div>
+
+        {latestTankSettings && !showTankSettingsForm && (
+          <div style={{ display: "flex", gap: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Thermometer size={16} color="#4AA8C9" />
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: "#2A3324" }}>{latestTankSettings.setTemp}°C</span>
+            </div>
+            {latestTankSettings.setPressure != null && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Gauge size={16} color="#8E6FB5" />
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: "#2A3324" }}>
+                  {latestTankSettings.setPressure} {latestTankSettings.pressureUnit}
+                </span>
+                <span style={{ color: "#9BA88A", fontSize: 12 }}>
+                  (
+                  {latestTankSettings.pressureUnit === "PSI"
+                    ? `${psiToBar(latestTankSettings.setPressure).toFixed(2)} Bar`
+                    : `${barToPsi(latestTankSettings.setPressure).toFixed(1)} PSI`}
+                  )
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showTankSettingsForm && (
+          <div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 100 }}>
+                <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Set temperature (°C)</div>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={setTempInput}
+                  onChange={(e) => setSetTempInput(e.target.value)}
+                  style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 14 }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 100 }}>
+                <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Set pressure</div>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={setPressureInput}
+                  onChange={(e) => setSetPressureInput(e.target.value)}
+                  style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 14 }}
+                />
+              </div>
+              <div>
+                <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Unit</div>
+                <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
+                  {["PSI", "Bar"].map((u) => (
+                    <button
+                      key={u}
+                      onClick={() => setPressureUnit(u)}
+                      style={{
+                        background: pressureUnit === u ? "#5C9A3C" : "#F5F1E4",
+                        border: "none",
+                        padding: "8px 12px",
+                        color: pressureUnit === u ? "#16191A" : "#5C6B54",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => {
+                  const setTemp = setTempInput.trim() ? Number(setTempInput) : null;
+                  const setPressure = setPressureInput.trim() ? Number(setPressureInput) : null;
+                  if (setTemp == null && setPressure == null) return;
+                  onUpdateTankSettings(batch.id, { date: today(), setTemp, setPressure, pressureUnit });
+                  setShowTankSettingsForm(false);
+                }}
+                style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setShowTankSettingsForm(false)}
+                style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {batch.tankSettingsLog && batch.tankSettingsLog.length > 1 && !showTankSettingsForm && (
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 12, fontFamily: "'Inter', sans-serif" }}>
+              View setting history ({batch.tankSettingsLog.length})
+            </summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8 }}>
+              {[...batch.tankSettingsLog]
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .map((s) => (
+                  <div
+                    key={s.id}
+                    style={{ display: "flex", gap: 14, fontSize: 12, padding: "6px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}
+                  >
+                    <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>{formatHistoryStamp(s.date)}</span>
+                    {s.setTemp != null && <span style={{ color: "#2A3324" }}>{s.setTemp}°C</span>}
+                    {s.setPressure != null && (
+                      <span style={{ color: "#2A3324" }}>
+                        {s.setPressure} {s.pressureUnit}
+                      </span>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </details>
+        )}
+      </div>
+
       {chartData.length > 1 && (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
@@ -10584,6 +10729,29 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                 labelStyle={{ color: "#5C6B54" }}
               />
               <Line type="monotone" dataKey="gravity" stroke="#5C9A3C" strokeWidth={2} dot={{ r: 3, fill: "#5C9A3C" }} />
+            </LineChart>
+          </ResponsiveContainer>
+          </Suspense>
+        </div>
+      )}
+
+      {chartData.filter((d) => d.temp != null).length > 1 && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <Thermometer size={13} /> Temperature trend
+          </div>
+          <Suspense fallback={<div style={{ height: 160 }} />}>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+              <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
+              <YAxis stroke="#9BA88A" fontSize={11} domain={["dataMin - 1", "dataMax + 1"]} tickFormatter={(v) => `${v}°`} />
+              <Tooltip
+                contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }}
+                labelStyle={{ color: "#5C6B54" }}
+                formatter={(v) => [`${v}°C`, "Temp"]}
+              />
+              <Line type="monotone" dataKey="temp" stroke="#4AA8C9" strokeWidth={2} dot={{ r: 3, fill: "#4AA8C9" }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
           </Suspense>
@@ -15253,7 +15421,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-142";
+const APP_VERSION = "2026-08-03-143";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17991,6 +18159,17 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stillFermenting: value } : b)));
   };
 
+  const updateTankSettings = async (id, entry) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const newEntry = { id: uid(), user: user.name, ...entry };
+    const tankSettingsLog = [...(batch.tankSettingsLog || []), newEntry];
+    const { error } = await supabase.from("batches").update({ tank_settings_log: tankSettingsLog }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, tankSettingsLog } : b)));
+    showToast("success", "Tank settings updated.");
+  };
+
   // Cancels a packaging run that was started but never finished. Nothing
   // gets deducted until logPackagingSession actually runs (that only
   // happens on "Finish packaging"), so there's genuinely nothing to give
@@ -19796,6 +19975,7 @@ function TankLogApp() {
             onDeleteNote={deleteBatchNote}
             onOpenTastingLog={() => setShowTastingLog(true)}
             onSetStillFermenting={setStillFermenting}
+            onUpdateTankSettings={updateTankSettings}
           />
         )}
         {showTastingLog && selected && (
