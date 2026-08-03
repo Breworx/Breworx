@@ -903,6 +903,23 @@ const PAGE_TOURS = {
       target: null,
     },
   ],
+  aging: [
+    {
+      title: "For the stuff that takes months, not weeks",
+      body: "Anything sitting in a Barrel or Aging Tank shows up here — not on Home, not on the Production calendar. This is a slower page for a slower process.",
+      target: null,
+    },
+    {
+      title: "Fermenting or aging?",
+      body: "A barrel can show either — useful for wild or spontaneous fermentation straight from the kettle. Flip the toggle on the batch itself once it settles into quiet aging.",
+      target: null,
+    },
+    {
+      title: "Log a tasting as you go",
+      body: "Open any batch here and log a tasting — pick from real barrel-aging flavors and off-flavors, or just write a note. The three most recent tags show right on the card.",
+      target: null,
+    },
+  ],
 };
 
 // Highlights a live element on screen by its data-tour attribute — finds
@@ -1179,6 +1196,17 @@ const CHANGELOG = [
       "A Reminders row on the Production calendar — add a task to any day, check it off, color-coded by who added it",
       "Today's reminders now show right on Home, with a quick way to add one",
       "A dedicated Stock page for finished goods, with its own stock take",
+    ],
+  },
+  {
+    id: 9,
+    title: "Barrel & Aging",
+    items: [
+      "Two new vessel types — Barrel and Aging Tank, with a barrel's previous contents tracked (bourbon, wine, sherry, virgin oak, and more)",
+      "Move a batch into aging from Primary, Brite Tank, or straight from the kettle",
+      "A dedicated Aging page with its own hand-drawn barrel and tank visuals — separate from Home and the Production calendar, since this can run for months or years",
+      "A real tasting log — pick from actual barrel-aging flavors and off-flavors, or write a free-text note",
+      "Genuinely optional — turn it off in Settings if you don't run a barrel or long-term aging program",
     ],
   },
 ];
@@ -4141,10 +4169,13 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
-function AddTankModal({ onClose, onAdd }) {
+function AddTankModal({ onClose, onAdd, barrelAgingEnabled = true }) {
   const [countInput, setCountInput] = useState("1");
   const [rows, setRows] = useState([{ id: uid(), name: "Tank 1", capacity: 20, type: "Fermenter" }]);
   const [saving, setSaving] = useState(false);
+  const tankTypeOptions = barrelAgingEnabled
+    ? ["Mash Tun", "Kettle", "Fermenter", "Brite Tank", "Barrel", "Aging Tank"]
+    : ["Mash Tun", "Kettle", "Fermenter", "Brite Tank"];
 
   const applyCount = (raw) => {
     setCountInput(raw);
@@ -4206,7 +4237,7 @@ function AddTankModal({ onClose, onAdd }) {
                 label="Type"
                 value={row.type || "Fermenter"}
                 onChange={(v) => updateRow(row.id, { type: v })}
-                options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank", "Barrel", "Aging Tank"]}
+                options={tankTypeOptions}
               />
               {row.type === "Barrel" && (
                 <SelectField
@@ -4244,11 +4275,17 @@ function AddTankModal({ onClose, onAdd }) {
   );
 }
 
-function EditTankModal({ tank, onClose, onSave }) {
+function EditTankModal({ tank, onClose, onSave, barrelAgingEnabled = true }) {
   const [name, setName] = useState(tank.name);
   const [capacity, setCapacity] = useState(tank.capacity);
   const [type, setType] = useState(tank.type || "Fermenter");
   const [barrelSource, setBarrelSource] = useState(tank.barrelSource || "Bourbon/Whiskey");
+  // Keep the option visible if this tank already is one, even if the
+  // module's since been switched off — don't strand an existing barrel.
+  const showBarrelTypes = barrelAgingEnabled || tank.type === "Barrel" || tank.type === "Aging Tank";
+  const tankTypeOptions = showBarrelTypes
+    ? ["Mash Tun", "Kettle", "Fermenter", "Brite Tank", "Barrel", "Aging Tank"]
+    : ["Mash Tun", "Kettle", "Fermenter", "Brite Tank"];
 
   const submit = () => {
     if (!name.trim()) return;
@@ -4261,7 +4298,7 @@ function EditTankModal({ tank, onClose, onSave }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Tank ID" value={name} onChange={setName} />
         <NumberField label="Capacity" value={capacity} onChange={setCapacity} step="1" suffix="L" />
-        <SelectField label="Type" value={type} onChange={setType} options={["Mash Tun", "Kettle", "Fermenter", "Brite Tank", "Barrel", "Aging Tank"]} />
+        <SelectField label="Type" value={type} onChange={setType} options={tankTypeOptions} />
         {type === "Barrel" && (
           <SelectField
             label="What did it hold before?"
@@ -14989,7 +15026,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-128";
+const APP_VERSION = "2026-08-03-129";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16101,6 +16138,13 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSalesModuleEnabled(enabled);
     if (!enabled && (view === "customers" || view === "salesOrders")) setView("home");
+  };
+
+  const toggleBarrelAgingModule = async (enabled) => {
+    const { error } = await supabase.from("companies").update({ barrel_aging_module_enabled: enabled }).eq("id", profile.companyId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBarrelAgingModuleEnabled(enabled);
+    if (!enabled && view === "aging") setView("home");
   };
 
   const disconnectXero = async () => {
@@ -17616,9 +17660,9 @@ function TankLogApp() {
                   ["batches", "Batches", Droplet],
                   ["packaged", "Finished Stock", Package],
                   ["production", "Production", Calendar],
-                  ["aging", "Aging", Warehouse],
+                  barrelAgingModuleEnabled && ["aging", "Aging", Warehouse],
                   ["brewery", "Brewery", Warehouse],
-                ],
+                ].filter(Boolean),
               },
               {
                 label: "Recipes",
@@ -18692,7 +18736,7 @@ function TankLogApp() {
                   <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
                     Modules
                   </div>
-                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+                  <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
                     <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
                       <span>
                         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324" }}>Sales & Orders</div>
@@ -18704,6 +18748,23 @@ function TankLogApp() {
                         type="checkbox"
                         checked={salesModuleEnabled}
                         onChange={(e) => toggleSalesModule(e.target.checked)}
+                        style={{ width: 18, height: 18, accentColor: "#5C9A3C", cursor: "pointer", flexShrink: 0 }}
+                      />
+                    </label>
+
+                    <div style={{ borderTop: "1px solid #EBE8D6" }} />
+
+                    <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
+                      <span>
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324" }}>Barrel & Aging</div>
+                        <div style={{ color: "#5C6B54", fontSize: 12, marginTop: 2 }}>
+                          Barrel and Aging Tank types, plus the Aging page. Turn this off if you don't run a barrel or long-term aging program.
+                        </div>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={barrelAgingModuleEnabled}
+                        onChange={(e) => toggleBarrelAgingModule(e.target.checked)}
                         style={{ width: 18, height: 18, accentColor: "#5C9A3C", cursor: "pointer", flexShrink: 0 }}
                       />
                     </label>
@@ -19531,9 +19592,9 @@ function TankLogApp() {
           onAddInventoryItem={addInventoryItem}
         />
       )}
-      {showAddTank && <AddTankModal onClose={() => setShowAddTank(false)} onAdd={addTank} />}
+      {showAddTank && <AddTankModal onClose={() => setShowAddTank(false)} onAdd={addTank} barrelAgingEnabled={barrelAgingModuleEnabled} />}
       {editTankTarget && (
-        <EditTankModal tank={editTankTarget} onClose={() => setEditTankTarget(null)} onSave={updateTank} />
+        <EditTankModal tank={editTankTarget} onClose={() => setEditTankTarget(null)} onSave={updateTank} barrelAgingEnabled={barrelAgingModuleEnabled} />
       )}
       {deleteTankTarget && (
         <ConfirmDeleteTankModal tank={deleteTankTarget} onClose={() => setDeleteTankTarget(null)} onConfirm={deleteTank} />
