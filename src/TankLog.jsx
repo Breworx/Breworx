@@ -15187,7 +15187,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-135";
+const APP_VERSION = "2026-08-03-136";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15323,22 +15323,24 @@ function ToastStack({ toasts, onDismiss }) {
 // Talks to the customer-portal Edge Function directly — no auth session,
 // no profile, just the token from the URL. This is the one place in the
 // whole app that legitimately has no signed-in user behind it.
-async function callPortalApi(action, token, extra) {
+async function callPortalApi(action, credential, extra) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   const res = await fetch(`${supabaseUrl}/functions/v1/quick-endpoint`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-    body: JSON.stringify({ action, token, ...extra }),
+    body: JSON.stringify({ action, ...credential, ...extra }),
   });
   return res.json();
 }
 
 // The public, no-login ordering page — this is what a customer actually
-// sees when they open their link. Deliberately kept separate from the main
-// app shell: no sidebar, no other company's data ever in reach, nothing
-// that assumes a signed-in brewery staff member.
-function CustomerPortalPage({ token }) {
+// sees once they're in. Deliberately kept separate from the main app
+// shell: no sidebar, no other company's data ever in reach, nothing that
+// assumes a signed-in brewery staff member. `credential` is either
+// {token: "..."} for the older link-based route, or {customerJwt: "..."}
+// for a real logged-in session — the API treats them the same way.
+function CustomerPortalPage({ credential }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [company, setCompany] = useState(null);
@@ -15351,7 +15353,7 @@ function CustomerPortalPage({ token }) {
 
   useEffect(() => {
     (async () => {
-      const data = await callPortalApi("getCatalog", token);
+      const data = await callPortalApi("getCatalog", credential);
       if (data.error) {
         setError(data.error);
         setLoading(false);
@@ -15365,7 +15367,7 @@ function CustomerPortalPage({ token }) {
       setPrices((data.prices || []).map(rowToCustomerPrice));
       setLoading(false);
     })();
-  }, [token]);
+  }, [credential?.token, credential?.customerJwt]);
 
   const products = {};
   stock
@@ -15397,7 +15399,7 @@ function CustomerPortalPage({ token }) {
       qty: l.qty,
       unitPrice: l.price || 0,
     }));
-    const result = await callPortalApi("submitOrder", token, { lines });
+    const result = await callPortalApi("submitOrder", credential, { lines });
     setSubmitting(false);
     if (result.error) {
       setError(result.error);
@@ -15518,6 +15520,133 @@ function CustomerPortalPage({ token }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// The shared /order page — no token in the URL, just a normal login. Also
+// doubles as the "set your password" step right after someone clicks their
+// one-time invite link, since Supabase quietly turns that into a real
+// session before this even mounts; the URL's leftover type=invite/recovery
+// marker is what tells this to ask for a password instead of skipping
+// straight to the catalog.
+function CustomerAccountFlow() {
+  const [phase, setPhase] = useState("loading");
+  const [session, setSession] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const isInviteOrRecovery = /type=(invite|recovery)/.test(window.location.hash);
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        setSession(data.session);
+        setPhase(isInviteOrRecovery ? "setPassword" : "ready");
+      } else {
+        setPhase("login");
+      }
+    })();
+  }, []);
+
+  const doLogin = async () => {
+    setError(null);
+    setBusy(true);
+    const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
+    setBusy(false);
+    if (err) {
+      setError("Email or password didn't match — try again.");
+      return;
+    }
+    setSession(data.session);
+    setPhase("ready");
+  };
+
+  const doSetPassword = async () => {
+    setError(null);
+    if (password.length < 8) {
+      setError("Use at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setBusy(true);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (err) {
+      setError("Couldn't set your password — try again.");
+      return;
+    }
+    window.history.replaceState(null, "", window.location.pathname);
+    setPhase("ready");
+  };
+
+  const pageStyle = { minHeight: "100vh", background: "#F5F1E4", fontFamily: "'Inter', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 };
+  const cardStyle = { width: "100%", maxWidth: 360, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 10, padding: "28px 24px", boxSizing: "border-box" };
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "10px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14, marginBottom: 10 };
+  const buttonStyle = (disabled) => ({ width: "100%", background: disabled ? "#E8E4D4" : "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: disabled ? "#A3AC94" : "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, cursor: disabled ? "default" : "pointer" });
+  const errorBox = <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 5, padding: "8px 10px", color: "#7A3E1D", fontSize: 12.5, marginBottom: 10 }}>{error}</div>;
+
+  if (phase === "loading") {
+    return (
+      <div style={pageStyle}>
+        <BrewpointLoadingMark size={52} label="Loading…" />
+      </div>
+    );
+  }
+
+  if (phase === "ready") {
+    return <CustomerPortalPage credential={{ customerJwt: session.access_token }} />;
+  }
+
+  if (phase === "setPassword") {
+    return (
+      <div style={pageStyle}>
+        <div style={cardStyle}>
+          <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 19, color: "#2A3324", margin: "0 0 6px" }}>Set your password</h1>
+          <p style={{ color: "#5C6B54", fontSize: 13, margin: "0 0 18px" }}>One quick step, then you're in.</p>
+          {error && errorBox}
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New password" style={inputStyle} />
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm password" style={inputStyle} />
+          <button onClick={doSetPassword} disabled={busy} style={buttonStyle(busy)}>
+            {busy ? "Saving…" : "Set password & continue"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={pageStyle}>
+      <div style={cardStyle}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 19, color: "#2A3324", margin: "0 0 18px" }}>Order online</h1>
+        {error && errorBox}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" style={inputStyle} />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" style={inputStyle} />
+        <button onClick={doLogin} disabled={busy} style={buttonStyle(busy)}>
+          {busy ? "Signing in…" : "Log in"}
+        </button>
+        <button
+          onClick={async () => {
+            if (!email.trim()) {
+              setError("Enter your email first, then tap this again.");
+              return;
+            }
+            setBusy(true);
+            const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/order` });
+            setBusy(false);
+            setError(err ? "Couldn't send that — try again." : "Check your email for a reset link.");
+          }}
+          style={{ marginTop: 10, background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, fontFamily: "'Inter', sans-serif", padding: 0, display: "block", marginLeft: "auto", marginRight: "auto" }}
+        >
+          Forgot password?
+        </button>
+      </div>
     </div>
   );
 }
@@ -20118,14 +20247,24 @@ function TankLogApp() {
 }
 
 export default function TankLog() {
-  // The one URL in the whole app that isn't the authenticated shell — a
-  // customer's order link. Checked before anything else even tries to load
-  // a session, since there isn't one for this page and there never should be.
-  const portalMatch = window.location.pathname.match(/^\/order\/([a-zA-Z0-9-]+)/);
+  // The URLs in this app that aren't the authenticated staff shell — a
+  // customer's order link, or the token-based one for links already sent
+  // out before real logins existed. Checked before anything else even
+  // tries to load a staff session, since there isn't one for these pages
+  // and there never should be.
+  const path = window.location.pathname;
+  const portalMatch = path.match(/^\/order\/([a-zA-Z0-9-]+)/);
   if (portalMatch) {
     return (
       <BrewpointErrorBoundary>
-        <CustomerPortalPage token={portalMatch[1]} />
+        <CustomerPortalPage credential={{ token: portalMatch[1] }} />
+      </BrewpointErrorBoundary>
+    );
+  }
+  if (path === "/order" || path === "/order/") {
+    return (
+      <BrewpointErrorBoundary>
+        <CustomerAccountFlow />
       </BrewpointErrorBoundary>
     );
   }
