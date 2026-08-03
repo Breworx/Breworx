@@ -9606,7 +9606,67 @@ function BrewDayTimers({ timers, onStart, onStop }) {
 const psiToBar = (psi) => psi / 14.5038;
 const barToPsi = (bar) => bar * 14.5038;
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings }) {
+// Ticking logs who did it and when; unticking undoes just that — the most
+// recent tick, not the whole history. That's what makes it safe to redo:
+// a genuine second hop dump later the same day is just another tick, and
+// past entries stay put in the log regardless of today's checkbox state.
+function DumpLogCheckbox({ label, log, onLog, onUndo }) {
+  const [pulsing, setPulsing] = useState(false);
+  const latest = log && log.length > 0 ? log[log.length - 1] : null;
+  const latestIsToday = latest && (latest.at || "").slice(0, 10) === today();
+
+  const handleTick = () => {
+    onLog();
+    setPulsing(true);
+    setTimeout(() => setPulsing(false), 500);
+  };
+
+  return (
+    <div>
+      <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", color: "#5C6B54", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+        <input
+          type="checkbox"
+          checked={pulsing}
+          onChange={(e) => e.target.checked && handleTick()}
+          style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
+        />
+        {label}
+        {latest && (
+          <span style={{ color: "#9BA88A", fontSize: 11.5 }}>
+            — {formatHistoryStamp(latest.at)} by {latest.user}
+          </span>
+        )}
+        {latestIsToday && !pulsing && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              onUndo();
+            }}
+            style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 11, fontFamily: "'Inter', sans-serif", padding: 0 }}
+          >
+            Undo
+          </button>
+        )}
+      </label>
+      {log && log.length > 0 && (
+        <details style={{ marginTop: 4, marginLeft: 23 }}>
+          <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 11, fontFamily: "'Inter', sans-serif" }}>
+            History ({log.length})
+          </summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+            {[...log].reverse().map((e) => (
+              <div key={e.id} style={{ fontSize: 11.5, color: "#5C6B54" }}>
+                {formatHistoryStamp(e.at)} — {e.user}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -9905,25 +9965,19 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 18, marginBottom: 22, flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", color: "#5C6B54", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
-          <input
-            type="checkbox"
-            checked={!!batch.hopDumpDone}
-            onChange={(e) => onSetBrewDayCheckbox(batch.id, "hopDumpDone", e.target.checked)}
-            style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
-          />
-          Hop dump done
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", color: "#5C6B54", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
-          <input
-            type="checkbox"
-            checked={!!batch.yeastDumpDone}
-            onChange={(e) => onSetBrewDayCheckbox(batch.id, "yeastDumpDone", e.target.checked)}
-            style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
-          />
-          Yeast dump done
-        </label>
+      <div style={{ display: "flex", gap: 24, marginBottom: 22, flexWrap: "wrap" }}>
+        <DumpLogCheckbox
+          label="Hop dump done"
+          log={batch.hopDumpLog}
+          onLog={() => onLogDump(batch.id, "hopDumpLog")}
+          onUndo={() => onUndoDump(batch.id, "hopDumpLog")}
+        />
+        <DumpLogCheckbox
+          label="Yeast dump done"
+          log={batch.yeastDumpLog}
+          onLog={() => onLogDump(batch.id, "yeastDumpLog")}
+          onUndo={() => onUndoDump(batch.id, "yeastDumpLog")}
+        />
       </div>
 
       {batch.ingredients && batch.ingredients.length > 0 && (
@@ -15421,7 +15475,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-143";
+const APP_VERSION = "2026-08-03-145";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18123,6 +18177,31 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: checked } : b)));
   };
 
+  const dumpColumn = (field) => (field === "hopDumpLog" ? "hop_dump_log" : "yeast_dump_log");
+
+  const logDump = async (id, field) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const entry = { id: uid(), at: new Date().toISOString(), user: user.name };
+    const log = [...(batch[field] || []), entry];
+    const { error } = await supabase.from("batches").update({ [dumpColumn(field)]: log }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: log } : b)));
+  };
+
+  // The checkbox's "undo" — removes just the most recent entry, which is
+  // always today's tick if there is one, since new entries only ever get
+  // appended. Past days' entries are never touched by this.
+  const undoDump = async (id, field) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const log = [...(batch[field] || [])];
+    log.pop();
+    const { error } = await supabase.from("batches").update({ [dumpColumn(field)]: log }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: log } : b)));
+  };
+
   const addBatchNote = async (id, text) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
@@ -19976,6 +20055,8 @@ function TankLogApp() {
             onOpenTastingLog={() => setShowTastingLog(true)}
             onSetStillFermenting={setStillFermenting}
             onUpdateTankSettings={updateTankSettings}
+            onLogDump={logDump}
+            onUndoDump={undoDump}
           />
         )}
         {showTastingLog && selected && (
