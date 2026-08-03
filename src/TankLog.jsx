@@ -33,6 +33,8 @@ import {
   supplierToRow,
   rowToCustomer,
   customerToRow,
+  rowToCustomerPrice,
+  customerPriceToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -3454,7 +3456,72 @@ function XeroContactLinkModal({ customer, contacts, onClose, onLink, onCreate })
   );
 }
 
-function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero }) {
+// Same product-key format used for Xero item mapping (beer name + container,
+// lowercased) — reused here so a price set once lines up correctly with
+// every batch of that same beer, not just the specific batch in stock today.
+const priceProductKey = (batchName, containerKey) => `${batchName.trim().toLowerCase()}::${containerKey}`;
+
+function CustomerPriceList({ customer, availableStock, customerPrices, onSavePrice }) {
+  const seen = new Set();
+  const products = [];
+  availableStock.forEach((s) => {
+    const key = priceProductKey(s.batchName, s.containerKey);
+    if (seen.has(key)) return;
+    seen.add(key);
+    products.push({ key, label: `${s.batchName} — ${s.containerLabel}` });
+  });
+  products.sort((a, b) => a.label.localeCompare(b.label));
+
+  const [drafts, setDrafts] = useState({});
+
+  const priceFor = (key) => {
+    if (drafts[key] !== undefined) return drafts[key];
+    const existing = customerPrices.find((p) => p.customerId === customer.id && p.productKey === key);
+    return existing ? String(existing.unitPrice) : "";
+  };
+
+  const commit = (key) => {
+    const value = drafts[key];
+    if (value === undefined) return;
+    const num = Number(value);
+    if (!isNaN(num) && num >= 0) onSavePrice(customer.id, key, num);
+  };
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+        Prices for {customer.name}
+      </div>
+      {products.length === 0 ? (
+        <div style={{ color: "#9BA88A", fontSize: 13 }}>Nothing packaged yet — prices can be set once there's stock to sell.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {products.map((p) => (
+            <div key={p.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 5 }}>
+              <span style={{ color: "#2A3324", fontSize: 13 }}>{p.label}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                <span style={{ color: "#9BA88A", fontSize: 13 }}>$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={priceFor(p.key)}
+                  onChange={(e) => setDrafts((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                  onBlur={() => commit(p.key)}
+                  placeholder="0.00"
+                  style={{ width: 72, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "6px 8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "right" }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero, availableStock, customerPrices, onSavePrice, onGeneratePortalLink }) {
+  const [linkCopied, setLinkCopied] = useState(false);
   const color = CUSTOMER_TYPE_COLOR[customer.type] || "#9BA88A";
   return (
     <div>
@@ -3547,6 +3614,52 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
             </button>
           )}
         </div>
+      )}
+
+      <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
+        <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>Order link</div>
+        {customer.portalToken ? (
+          <>
+            <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 8 }}>
+              Share this link — {customer.name} can order directly from it, no login needed.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                readOnly
+                value={`${window.location.origin}/order/${customer.portalToken}`}
+                onClick={(e) => e.target.select()}
+                style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(`${window.location.origin}/order/${customer.portalToken}`);
+                  setLinkCopied(true);
+                  setTimeout(() => setLinkCopied(false), 2000);
+                }}
+                style={{ flexShrink: 0, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+              >
+                {linkCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <button
+              onClick={() => onGeneratePortalLink(customer.id)}
+              style={{ marginTop: 8, background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 11.5, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              Regenerate link (old one stops working)
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => onGeneratePortalLink(customer.id)}
+            style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px 14px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Create order link
+          </button>
+        )}
+      </div>
+
+      {availableStock && (
+        <CustomerPriceList customer={customer} availableStock={availableStock} customerPrices={customerPrices} onSavePrice={onSavePrice} />
       )}
 
       <div style={{ color: "#9BA88A", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
@@ -10537,16 +10650,18 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </label>
       )}
 
-      {batch.stage === "Aging" && (
+      {(batch.stage === "Aging" || (batch.tastingLog || []).length > 0) && (
         <div style={{ marginBottom: 26 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Tasting log</div>
-            <button
-              onClick={onOpenTastingLog}
-              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
-            >
-              + Log a tasting
-            </button>
+            {batch.stage === "Aging" && (
+              <button
+                onClick={onOpenTastingLog}
+                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+              >
+                + Log a tasting
+              </button>
+            )}
           </div>
           {(batch.tastingLog || []).length === 0 ? (
             <div style={{ color: "#9BA88A", fontSize: 13 }}>Nothing logged yet — since this could sit here for months, it's worth checking in on periodically.</div>
@@ -15047,7 +15162,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-130";
+const APP_VERSION = "2026-08-03-133";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15180,6 +15295,208 @@ function ToastStack({ toasts, onDismiss }) {
 // Catches any render-time crash and shows the actual error instead of a
 // blank white screen — critical for diagnosing issues on iPad, where
 // there's no easy way to open dev tools and see what actually happened.
+// Talks to the customer-portal Edge Function directly — no auth session,
+// no profile, just the token from the URL. This is the one place in the
+// whole app that legitimately has no signed-in user behind it.
+async function callPortalApi(action, token, extra) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(`${supabaseUrl}/functions/v1/customer-portal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+    body: JSON.stringify({ action, token, ...extra }),
+  });
+  return res.json();
+}
+
+// The public, no-login ordering page — this is what a customer actually
+// sees when they open their link. Deliberately kept separate from the main
+// app shell: no sidebar, no other company's data ever in reach, nothing
+// that assumes a signed-in brewery staff member.
+function CustomerPortalPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [company, setCompany] = useState(null);
+  const [customerName, setCustomerName] = useState("");
+  const [stock, setStock] = useState([]);
+  const [prices, setPrices] = useState([]);
+  const [cart, setCart] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [orderNumber, setOrderNumber] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const data = await callPortalApi("getCatalog", token);
+      if (data.error) {
+        setError(data.error);
+        setLoading(false);
+        return;
+      }
+      setCompany(data.company);
+      setCustomerName(data.customer.name);
+      const batches = (data.batches || []).map(rowToBatch);
+      const salesOrders = (data.salesOrders || []).map(rowToSalesOrder);
+      setStock(availableStockList(batches, salesOrders));
+      setPrices((data.prices || []).map(rowToCustomerPrice));
+      setLoading(false);
+    })();
+  }, [token]);
+
+  const products = {};
+  stock
+    .filter((s) => s.available > 0)
+    .forEach((s) => {
+      const key = priceProductKey(s.batchName, s.containerKey);
+      const price = prices.find((p) => p.productKey === key);
+      if (!products[key]) {
+        products[key] = { key, label: `${s.batchName} — ${s.containerLabel}`, available: 0, price: price ? price.unitPrice : null, batchId: s.batchId, containerKey: s.containerKey, containerLabel: s.containerLabel, batchName: s.batchName };
+      }
+      products[key].available += s.available;
+    });
+  const productList = Object.values(products).sort((a, b) => a.label.localeCompare(b.label));
+
+  const cartLines = Object.entries(cart)
+    .filter(([, qty]) => Number(qty) > 0)
+    .map(([key, qty]) => ({ ...products[key], qty: Number(qty) }));
+  const total = cartLines.reduce((sum, l) => sum + l.qty * (l.price || 0), 0);
+
+  const submit = async () => {
+    if (cartLines.length === 0) return;
+    setSubmitting(true);
+    const lines = cartLines.map((l) => ({
+      id: crypto.randomUUID(),
+      batchId: l.batchId,
+      batchName: l.batchName,
+      containerKey: l.containerKey,
+      containerLabel: l.containerLabel,
+      qty: l.qty,
+      unitPrice: l.price || 0,
+    }));
+    const result = await callPortalApi("submitOrder", token, { lines });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setOrderNumber(result.orderNumber);
+    setCart({});
+  };
+
+  const pageStyle = { minHeight: "100vh", background: "#F5F1E4", fontFamily: "'Inter', sans-serif" };
+
+  if (loading) {
+    return (
+      <div style={{ ...pageStyle, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <BrewpointLoadingMark size={52} label="Loading…" />
+      </div>
+    );
+  }
+
+  if (error && !company) {
+    return (
+      <div style={{ ...pageStyle, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+        <div style={{ color: "#5C6B54", fontSize: 15 }}>{error}</div>
+      </div>
+    );
+  }
+
+  if (orderNumber) {
+    return (
+      <div style={{ ...pageStyle, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", gap: 10 }}>
+        <CheckCircle2 size={40} color="#5C9A3C" />
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: 0 }}>Order sent</h1>
+        <div style={{ color: "#5C6B54", fontSize: 14 }}>
+          {orderNumber} — {company?.name} has it now and will be in touch.
+        </div>
+        <button
+          onClick={() => setOrderNumber(null)}
+          style={{ marginTop: 12, background: "#5C9A3C", border: "none", borderRadius: 5, padding: "10px 20px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer" }}
+        >
+          Place another order
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={pageStyle}>
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "32px 20px 100px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+          {company?.logo_url ? (
+            <img src={company.logo_url} alt={company.name} style={{ maxHeight: 48, maxWidth: 160, objectFit: "contain" }} />
+          ) : (
+            <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 22, color: "#2A3324", margin: 0 }}>{company?.name}</h1>
+          )}
+        </div>
+        <div style={{ color: "#5C6B54", fontSize: 13.5, marginBottom: 24 }}>Ordering as {customerName}</div>
+
+        {error && (
+          <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "10px 12px", color: "#7A3E1D", fontSize: 13, marginBottom: 16 }}>
+            {error}
+          </div>
+        )}
+
+        {productList.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 14, textAlign: "center", padding: "40px 0" }}>Nothing available to order right now — check back soon.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {productList.map((p) => (
+              <div key={p.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 8, padding: "14px 16px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>{p.label}</div>
+                  <div style={{ color: "#9BA88A", fontSize: 12 }}>
+                    {p.price != null ? `$${p.price.toFixed(2)} each` : "Contact brewery for pricing"} · {p.available} available
+                  </div>
+                </div>
+                {p.price != null && (
+                  <input
+                    type="number"
+                    min="0"
+                    max={p.available}
+                    step="1"
+                    value={cart[p.key] || ""}
+                    onChange={(e) => setCart((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                    placeholder="0"
+                    style={{ width: 60, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 14, textAlign: "center", flexShrink: 0 }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {cartLines.length > 0 && (
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#FFFFFF", borderTop: "1px solid #DDE0C8", padding: "14px 20px", boxShadow: "0 -4px 16px rgba(0,0,0,0.08)" }}>
+          <div style={{ maxWidth: 560, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div style={{ color: "#9BA88A", fontSize: 11.5 }}>{cartLines.length} item{cartLines.length !== 1 ? "s" : ""}</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2A3324" }}>${total.toFixed(2)}</div>
+            </div>
+            <button
+              onClick={submit}
+              disabled={submitting}
+              style={{
+                background: submitting ? "#E8E4D4" : "#5C9A3C",
+                border: "none",
+                borderRadius: 6,
+                padding: "13px 26px",
+                color: submitting ? "#A3AC94" : "#16191A",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 15,
+                cursor: submitting ? "default" : "pointer",
+              }}
+            >
+              {submitting ? "Sending…" : "Place order"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 class BrewpointErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -15338,6 +15655,7 @@ function TankLogApp() {
   const [batches, setBatches] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [customerPrices, setCustomerPrices] = useState([]);
   const [activeReminderDay, setActiveReminderDay] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -15590,7 +15908,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -15611,6 +15929,7 @@ function TankLogApp() {
         supabase.from("customers").select("*").order("name", { ascending: true }),
         supabase.from("sales_orders").select("*").order("created_at", { ascending: false }),
         supabase.from("reminders").select("*").order("due_date", { ascending: true }),
+        supabase.from("customer_prices").select("*"),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -15662,6 +15981,8 @@ function TankLogApp() {
       else setSalesOrders(salesOrdersRes.data.map(rowToSalesOrder));
       if (remindersRes.error) console.error(remindersRes.error);
       else setReminders(remindersRes.data.map(rowToReminder));
+      if (customerPricesRes.error) console.error(customerPricesRes.error);
+      else setCustomerPrices(customerPricesRes.data.map(rowToCustomerPrice));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -16222,6 +16543,27 @@ function TankLogApp() {
     const { error } = await supabase.from("customers").update({ xero_contact_id: null, xero_contact_name: null }).eq("id", customerId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, xeroContactId: null, xeroContactName: null } : c)));
+  };
+
+  // A single random UUID is plenty of entropy for an unguessable link —
+  // this is the only thing standing in for a password on the order page,
+  // so regenerating it (below) is the way to revoke a link that's leaked.
+  const generatePortalLink = async (customerId) => {
+    const token = crypto.randomUUID();
+    const { error } = await supabase.from("customers").update({ portal_token: token }).eq("id", customerId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, portalToken: token } : c)));
+    showToast("success", "Order link created.");
+  };
+
+  const saveCustomerPrice = async (customerId, productKey, unitPrice) => {
+    const existing = customerPrices.find((p) => p.customerId === customerId && p.productKey === productKey);
+    const row = customerPriceToRow({ id: existing?.id, customerId, productKey, unitPrice }, profile.companyId);
+    if (!existing) delete row.id;
+    const { data, error } = await supabase.from("customer_prices").upsert(row, { onConflict: "customer_id,product_key" }).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    const saved = rowToCustomerPrice(data);
+    setCustomerPrices((prev) => (existing ? prev.map((p) => (p.id === saved.id ? saved : p)) : [...prev, saved]));
   };
 
   // Creates a brand-new contact in Xero from a Brewpoint customer's
@@ -19271,6 +19613,10 @@ function TankLogApp() {
             xeroConnected={!!xeroConnection}
             onLinkXero={openXeroContactLink}
             onUnlinkXero={unlinkCustomerFromXero}
+            availableStock={availableStock}
+            customerPrices={customerPrices}
+            onSavePrice={saveCustomerPrice}
+            onGeneratePortalLink={generatePortalLink}
           />
         )}
 
@@ -19719,6 +20065,18 @@ function TankLogApp() {
 }
 
 export default function TankLog() {
+  // The one URL in the whole app that isn't the authenticated shell — a
+  // customer's order link. Checked before anything else even tries to load
+  // a session, since there isn't one for this page and there never should be.
+  const portalMatch = window.location.pathname.match(/^\/order\/([a-zA-Z0-9-]+)/);
+  if (portalMatch) {
+    return (
+      <BrewpointErrorBoundary>
+        <CustomerPortalPage token={portalMatch[1]} />
+      </BrewpointErrorBoundary>
+    );
+  }
+
   return (
     <BrewpointErrorBoundary>
       <TankLogApp />
