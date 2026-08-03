@@ -3634,9 +3634,12 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
                   const emailToUse = inviteEmail.trim() || customer.email;
                   if (!emailToUse) return;
                   setInviting(true);
-                  const link = await onInviteToOrderOnline(customer.id, emailToUse);
-                  setInviting(false);
-                  if (link) setInviteLink(link);
+                  try {
+                    const link = await onInviteToOrderOnline(customer.id, emailToUse);
+                    if (link) setInviteLink(link);
+                  } finally {
+                    setInviting(false);
+                  }
                 }}
                 disabled={inviting}
                 style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "7px 12px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: inviting ? "default" : "pointer" }}
@@ -3687,9 +3690,12 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
                 onClick={async () => {
                   if (!inviteEmail.trim()) return;
                   setInviting(true);
-                  const link = await onInviteToOrderOnline(customer.id, inviteEmail.trim());
-                  setInviting(false);
-                  if (link) setInviteLink(link);
+                  try {
+                    const link = await onInviteToOrderOnline(customer.id, inviteEmail.trim());
+                    if (link) setInviteLink(link);
+                  } finally {
+                    setInviting(false);
+                  }
                 }}
                 disabled={inviting || !inviteEmail.trim()}
                 style={{ flexShrink: 0, background: inviting ? "#E8E4D4" : "#5C9A3C", border: "none", borderRadius: 5, padding: "8px 14px", color: inviting ? "#A3AC94" : "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 12.5, cursor: inviting ? "default" : "pointer" }}
@@ -15230,7 +15236,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-137";
+const APP_VERSION = "2026-08-03-139";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -15584,11 +15590,18 @@ function CustomerAccountFlow() {
 
   useEffect(() => {
     (async () => {
-      const isInviteOrRecovery = /type=(invite|recovery)/.test(window.location.hash);
+      // Supabase can hand off an invite/recovery link one of two ways
+      // depending on project settings — older-style tokens in the URL
+      // hash, or a "code" in the query string that needs exchanging for a
+      // session explicitly. Check for both rather than assume one.
+      const hadAuthParams = /access_token=|type=invite|type=recovery/.test(window.location.hash) || /[?&]code=/.test(window.location.search);
+      if (window.location.search.includes("code=")) {
+        await supabase.auth.exchangeCodeForSession(window.location.href);
+      }
       const { data } = await supabase.auth.getSession();
       if (data?.session) {
         setSession(data.session);
-        setPhase(isInviteOrRecovery ? "setPassword" : "ready");
+        setPhase(hadAuthParams ? "setPassword" : "ready");
       } else {
         setPhase("login");
       }
@@ -16758,26 +16771,32 @@ function TankLogApp() {
   // their own password. That link is only good once — after that, they
   // just go to the shared /order page and log in normally from then on.
   const inviteCustomerToOrderOnline = async (customerId, email) => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const staffJwt = sessionData?.session?.access_token;
-    if (!staffJwt) {
-      showToast("error", "Please sign in again and try.");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const staffJwt = sessionData?.session?.access_token;
+      if (!staffJwt) {
+        showToast("error", "Please sign in again and try.");
+        return null;
+      }
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/quick-endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+        body: JSON.stringify({ action: "generateInviteLink", staffJwt, customerId, email, redirectTo: `${window.location.origin}/order` }),
+      });
+      const result = await res.json();
+      if (result.error) {
+        showToast("error", result.error);
+        return null;
+      }
+      setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, authUserId: "pending" } : c)));
+      return result.link;
+    } catch (err) {
+      console.error(err);
+      showToast("error", `Couldn't reach the server: ${(err && err.message) || String(err)}`);
       return null;
     }
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const res = await fetch(`${supabaseUrl}/functions/v1/quick-endpoint`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-      body: JSON.stringify({ action: "generateInviteLink", staffJwt, customerId, email, redirectTo: `${window.location.origin}/order` }),
-    });
-    const result = await res.json();
-    if (result.error) {
-      showToast("error", result.error);
-      return null;
-    }
-    setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, authUserId: "pending" } : c)));
-    return result.link;
   };
 
   const saveCustomerPrice = async (customerId, productKey, unitPrice) => {
