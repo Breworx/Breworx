@@ -9480,45 +9480,66 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 22, padding: "0 4px" }}>
-        {stages.map((s, i) => {
-          const done = i < stageIdx;
-          const current = i === stageIdx;
-          const color = done || current ? STAGE_COLOR[s] || "#5C9A3C" : "#DDE0C8";
-          return (
-            <React.Fragment key={s}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
-                <div
-                  style={{
-                    width: current ? 16 : 12,
-                    height: current ? 16 : 12,
-                    borderRadius: "50%",
-                    background: done || current ? color : "#FFFFFF",
-                    border: `2px solid ${color}`,
-                    boxShadow: current ? `0 0 0 4px ${color}33` : "none",
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontFamily: "'JetBrains Mono', monospace",
-                    letterSpacing: "0.03em",
-                    textTransform: "uppercase",
-                    color: done || current ? color : "#C9D1AC",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {s}
-                </span>
-              </div>
-              {i < stages.length - 1 && (
-                <div style={{ flex: 1, height: 2, background: i < stageIdx ? STAGE_COLOR[stages[i]] || "#5C9A3C" : "#DDE0C8", margin: "0 4px 16px" }} />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
+      {batch.stage === "Aging" ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 22,
+            padding: "12px 14px",
+            background: "#F5F1FA",
+            border: "1px solid #8E6FB5",
+            borderRadius: 6,
+          }}
+        >
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#8E6FB5", flexShrink: 0 }} />
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase", color: "#6F5290" }}>
+            {currentTank?.type === "Barrel" && batch.stillFermenting ? "Fermenting in barrel" : "Aging"}
+            {currentTank ? ` · ${currentTank.name}` : ""}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 22, padding: "0 4px" }}>
+          {stages.map((s, i) => {
+            const done = i < stageIdx;
+            const current = i === stageIdx;
+            const color = done || current ? STAGE_COLOR[s] || "#5C9A3C" : "#DDE0C8";
+            return (
+              <React.Fragment key={s}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: current ? 16 : 12,
+                      height: current ? 16 : 12,
+                      borderRadius: "50%",
+                      background: done || current ? color : "#FFFFFF",
+                      border: `2px solid ${color}`,
+                      boxShadow: current ? `0 0 0 4px ${color}33` : "none",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      letterSpacing: "0.03em",
+                      textTransform: "uppercase",
+                      color: done || current ? color : "#C9D1AC",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {s}
+                  </span>
+                </div>
+                {i < stages.length - 1 && (
+                  <div style={{ flex: 1, height: 2, background: i < stageIdx ? STAGE_COLOR[stages[i]] || "#5C9A3C" : "#DDE0C8", margin: "0 4px 16px" }} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         {[
@@ -15026,7 +15047,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-129";
+const APP_VERSION = "2026-08-03-130";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
