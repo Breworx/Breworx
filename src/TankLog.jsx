@@ -3623,10 +3623,53 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
       <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
         <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>Online ordering</div>
         {customer.authUserId ? (
-          <div style={{ color: "#5C6B54", fontSize: 12.5 }}>
-            Account set up — {customer.name} can order anytime at{" "}
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>{window.location.origin}/order</span>
-          </div>
+          <>
+            <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 10 }}>
+              Account set up — {customer.name} can order anytime at{" "}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>{window.location.origin}/order</span>
+            </div>
+            {!inviteLink && (
+              <button
+                onClick={async () => {
+                  const emailToUse = inviteEmail.trim() || customer.email;
+                  if (!emailToUse) return;
+                  setInviting(true);
+                  const link = await onInviteToOrderOnline(customer.id, emailToUse);
+                  setInviting(false);
+                  if (link) setInviteLink(link);
+                }}
+                disabled={inviting}
+                style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "7px 12px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: inviting ? "default" : "pointer" }}
+              >
+                {inviting ? "Sending…" : "Resend setup link"}
+              </button>
+            )}
+            {inviteLink && (
+              <>
+                <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 6 }}>
+                  Send this fresh link to {customer.name} so they can get in:
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    readOnly
+                    value={inviteLink}
+                    onClick={(e) => e.target.select()}
+                    style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(inviteLink);
+                      setInviteLinkCopied(true);
+                      setTimeout(() => setInviteLinkCopied(false), 2000);
+                    }}
+                    style={{ flexShrink: 0, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                  >
+                    {inviteLinkCopied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              </>
+            )}
+          </>
         ) : (
           <>
             <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 10 }}>
@@ -15187,7 +15230,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-136";
+const APP_VERSION = "2026-08-03-137";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
