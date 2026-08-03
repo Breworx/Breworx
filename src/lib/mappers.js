@@ -42,6 +42,7 @@ export function rowToBatch(row) {
     plannedDays: row.planned_days ?? null,
     tastingLog: row.tasting_log || [],
     volumeTopups: row.volume_topups || [],
+    stillFermenting: !!row.still_fermenting,
   };
 }
 
@@ -87,6 +88,7 @@ export function batchToRow(batch, userId, companyId) {
     planned_days: batch.plannedDays ?? null,
     tasting_log: batch.tastingLog || [],
     volume_topups: batch.volumeTopups || [],
+    still_fermenting: !!batch.stillFermenting,
   };
 }
 
