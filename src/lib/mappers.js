@@ -323,6 +323,8 @@ export function rowToCustomer(row) {
     notes: row.notes,
     xeroContactId: row.xero_contact_id || null,
     xeroContactName: row.xero_contact_name || null,
+    portalToken: row.portal_token || null,
+    authUserId: row.auth_user_id || null,
     createdAt: row.created_at || null,
   };
 }
@@ -340,6 +342,24 @@ export function customerToRow(customer, companyId) {
     notes: customer.notes || null,
     xero_contact_id: customer.xeroContactId || null,
     xero_contact_name: customer.xeroContactName || null,
+    portal_token: customer.portalToken || null,
+  };
+}
+export function rowToCustomerPrice(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    productKey: row.product_key,
+    unitPrice: row.unit_price,
+  };
+}
+export function customerPriceToRow(price, companyId) {
+  return {
+    id: price.id,
+    company_id: companyId,
+    customer_id: price.customerId,
+    product_key: price.productKey,
+    unit_price: price.unitPrice,
   };
 }
 export function rowToSalesOrder(row) {
