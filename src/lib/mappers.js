@@ -44,6 +44,8 @@ export function rowToBatch(row) {
     volumeTopups: row.volume_topups || [],
     stillFermenting: !!row.still_fermenting,
     tankSettingsLog: row.tank_settings_log || [],
+    hopDumpLog: row.hop_dump_log || [],
+    yeastDumpLog: row.yeast_dump_log || [],
   };
 }
 
@@ -91,6 +93,8 @@ export function batchToRow(batch, userId, companyId) {
     volume_topups: batch.volumeTopups || [],
     still_fermenting: !!batch.stillFermenting,
     tank_settings_log: batch.tankSettingsLog || [],
+    hop_dump_log: batch.hopDumpLog || [],
+    yeast_dump_log: batch.yeastDumpLog || [],
   };
 }
 
