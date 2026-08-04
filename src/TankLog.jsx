@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge, Pencil } from "lucide-react";
 // Charts are lazy-loaded — recharts is one of the heaviest dependencies in
 // the app and most people never open a screen with a chart on it in a given
 // session, so there's no reason to make everyone download it upfront.
@@ -4139,11 +4139,41 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete }) {
+// A single-field rename, reusable anywhere an item's name was locked in
+// at creation and never editable again — a typo shouldn't be permanent.
+function RenameModal({ title, currentName, onClose, onSave }) {
+  const [name, setName] = useState(currentName);
+
+  const submit = () => {
+    if (!name.trim() || name.trim() === currentName) {
+      onClose();
+      return;
+    }
+    onSave(name.trim());
+    onClose();
+  };
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Name" value={name} onChange={setName} />
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
   const [costDraft, setCostDraft] = useState(item.costPerUnit ?? "");
+  const [showRename, setShowRename] = useState(false);
 
   const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)", stocktake: "Stock take correction" };
   const typeColor = { batch: "#5C9A3C", manual: "#5C6B54", received: "#D9A441", restored: "#D9A441", stocktake: "#D4A24C" };
@@ -4174,7 +4204,24 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           {item.name}
         </h1>
         {low && <AlertTriangle size={16} color="#5C9A3C" />}
+        {onRename && (
+          <button
+            onClick={() => setShowRename(true)}
+            aria-label="Rename"
+            style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+          >
+            <Pencil size={15} />
+          </button>
+        )}
       </div>
+      {showRename && (
+        <RenameModal
+          title="Rename item"
+          currentName={item.name}
+          onClose={() => setShowRename(false)}
+          onSave={(newName) => onRename(item.id, newName)}
+        />
+      )}
       <div
         style={{
           fontFamily: "'JetBrains Mono', monospace",
@@ -5499,7 +5546,8 @@ function AddPackageTypeModal({ onClose, onAdd, consumables }) {
   );
 }
 
-function PackageTypeDetail({ packageType, consumables, onBack, onDelete }) {
+function PackageTypeDetail({ packageType, consumables, onBack, onDelete, onRename }) {
+  const [showRename, setShowRename] = useState(false);
   const costableItems = packageType.items.filter((it) => !it.matchLabelByRecipeName);
   const hasVariableLabel = packageType.items.some((it) => it.matchLabelByRecipeName);
   const allCosted = costableItems.length > 0 && costableItems.every((it) => {
@@ -5532,9 +5580,28 @@ function PackageTypeDetail({ packageType, consumables, onBack, onDelete }) {
         <ChevronLeft size={16} /> All package types
       </button>
 
-      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: "0 0 20px" }}>
-        {packageType.name}
-      </h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: 0 }}>
+          {packageType.name}
+        </h1>
+        {onRename && (
+          <button
+            onClick={() => setShowRename(true)}
+            aria-label="Rename"
+            style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+          >
+            <Pencil size={15} />
+          </button>
+        )}
+      </div>
+      {showRename && (
+        <RenameModal
+          title="Rename package type"
+          currentName={packageType.name}
+          onClose={() => setShowRename(false)}
+          onSave={(newName) => onRename(packageType.id, newName)}
+        />
+      )}
 
       {costableItems.length > 0 && (
         <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
@@ -15612,7 +15679,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-147";
+const APP_VERSION = "2026-08-03-148";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17744,6 +17811,12 @@ function TankLogApp() {
     showToast("success", `${item.name} added to inventory.`);
   };
 
+  const renameInventoryItem = async (id, name) => {
+    const { error } = await supabase.from("inventory_items").update({ name }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, name } : it)));
+  };
+
   const deleteInventoryItem = (item) => {
     askConfirm(
       `Delete ${item.name}? You'll have a few seconds to undo right after.`,
@@ -17851,6 +17924,12 @@ function TankLogApp() {
     showToast("success", "Cost updated.");
   };
 
+  const renameConsumable = async (id, name) => {
+    const { error } = await supabase.from("consumables").update({ name }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, name } : it)));
+  };
+
   const adjustConsumable = async (id, delta) => {
     const item = consumables.find((it) => it.id === id);
     if (!item) return;
@@ -17887,6 +17966,12 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPackageTypes((prev) => [rowToPackageType(data), ...prev]);
     showToast("success", `${packageType.name} added.`);
+  };
+
+  const renamePackageType = async (id, name) => {
+    const { error } = await supabase.from("package_types").update({ name }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setPackageTypes((prev) => prev.map((pt) => (pt.id === id ? { ...pt, name } : pt)));
   };
 
   const deletePackageType = async (id) => {
@@ -20265,6 +20350,7 @@ function TankLogApp() {
             suppliers={suppliers}
             onChangeSupplier={updateInventorySupplier}
             onDelete={deleteInventoryItem}
+            onRename={renameInventoryItem}
           />
         )}
 
@@ -20280,6 +20366,7 @@ function TankLogApp() {
             showCost
             onChangeCost={updateConsumableCost}
             onDelete={deleteConsumable}
+            onRename={renameConsumable}
           />
         )}
 
@@ -20289,6 +20376,7 @@ function TankLogApp() {
             consumables={consumables}
             onBack={() => setSelectedPackageTypeId(null)}
             onDelete={deletePackageType}
+            onRename={renamePackageType}
           />
         )}
 
