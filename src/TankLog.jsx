@@ -2871,11 +2871,10 @@ function TastingLogModal({ onClose, onSave }) {
 }
 
 const PEST_ACTIVITY_OPTIONS = [
-  ["none", "Nothing found"],
-  ["droppings", "Droppings"],
-  ["gnawing", "Gnawing / damage"],
-  ["dead_pest", "Dead pest"],
-  ["live_pest", "Live pest"],
+  ["none", "None", "#5C9A3C"],
+  ["light", "Light", "#D9A441"],
+  ["medium", "Medium", "#E08A3C"],
+  ["heavy", "Heavy", "#B5502F"],
 ];
 
 function PestStationsModal({ stations, onClose, onAdd, onUpdate }) {
@@ -2940,6 +2939,7 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
   const [stationId, setStationId] = useState("");
   const [date, setDate] = useState(today());
   const [activity, setActivity] = useState("none");
+  const [baitReplaced, setBaitReplaced] = useState(false);
   const [notes, setNotes] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [completedBy, setCompletedBy] = useState("");
@@ -2951,12 +2951,17 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
     if (!completedBy.trim()) return;
     if (needsAction && !correctiveAction.trim()) return;
     const station = activeStations.find((s) => s.id === stationId);
+    const noteParts = [
+      station ? `${station.label} — ${station.location || ""}.` : "General sighting.",
+      baitReplaced ? "Bait replaced." : "",
+      notes.trim(),
+    ].filter(Boolean);
     onSave({
       category: "Pest control",
       date,
       stationId: station ? station.id : null,
       pestActivity: activity,
-      notes: (station ? `${station.label} — ${station.location || ""}. ` : "General sighting. ") + notes.trim(),
+      notes: noteParts.join(" "),
       completedBy: completedBy.trim(),
       correctiveAction: needsAction ? correctiveAction.trim() : null,
       correctiveActionResolved: !needsAction,
@@ -2985,15 +2990,15 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
         </div>
         <TextField label="Date" type="date" value={date} onChange={setDate} />
         <div>
-          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>What did you find?</div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Activity level</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {PEST_ACTIVITY_OPTIONS.map(([key, label]) => (
+            {PEST_ACTIVITY_OPTIONS.map(([key, label, color]) => (
               <button
                 key={key}
                 onClick={() => setActivity(key)}
                 style={{
-                  background: activity === key ? (key === "none" ? "#5C9A3C" : "#E08A3C") : "#F5F1E4",
-                  border: `1px solid ${activity === key ? (key === "none" ? "#5C9A3C" : "#E08A3C") : "#DDE0C8"}`,
+                  background: activity === key ? color : "#F5F1E4",
+                  border: `1px solid ${activity === key ? color : "#DDE0C8"}`,
                   borderRadius: 20,
                   padding: "6px 12px",
                   color: activity === key ? "#16191A" : "#5C6B54",
@@ -3007,7 +3012,16 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
             ))}
           </div>
         </div>
-        <TextField label="Notes (optional)" value={notes} onChange={setNotes} placeholder="Bait replaced, anything worth noting" />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={baitReplaced}
+            onChange={(e) => setBaitReplaced(e.target.checked)}
+            style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
+          />
+          <span style={{ color: "#5C6B54", fontSize: 13 }}>Bait replaced</span>
+        </label>
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} placeholder="Anything else worth noting" />
         {needsAction && (
           <TextField
             label="Corrective action (required — something was found)"
@@ -16700,7 +16714,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-162";
+const APP_VERSION = "2026-08-03-163";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
