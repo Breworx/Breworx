@@ -44,6 +44,7 @@ export function rowToBatch(row) {
     volumeTopups: row.volume_topups || [],
     stillFermenting: !!row.still_fermenting,
     tankSettingsLog: row.tank_settings_log || [],
+    pitchedYeastHarvestId: row.pitched_yeast_harvest_id || null,
     hopDumpLog: row.hop_dump_log || [],
     yeastDumpLog: row.yeast_dump_log || [],
   };
@@ -93,6 +94,7 @@ export function batchToRow(batch, userId, companyId) {
     volume_topups: batch.volumeTopups || [],
     still_fermenting: !!batch.stillFermenting,
     tank_settings_log: batch.tankSettingsLog || [],
+    pitched_yeast_harvest_id: batch.pitchedYeastHarvestId || null,
     hop_dump_log: batch.hopDumpLog || [],
     yeast_dump_log: batch.yeastDumpLog || [],
   };
@@ -351,6 +353,43 @@ export function customerToRow(customer, companyId) {
     portal_token: customer.portalToken || null,
   };
 }
+export function rowToYeastHarvest(row) {
+  return {
+    id: row.id,
+    strainName: row.strain_name,
+    generation: row.generation,
+    amount: row.amount,
+    unit: row.unit,
+    sourceBatchId: row.source_batch_id,
+    sourceBatchName: row.source_batch_name,
+    harvestDate: row.harvest_date,
+    notes: row.notes,
+    used: !!row.used,
+    usedInBatchId: row.used_in_batch_id,
+    usedDate: row.used_date,
+    userName: row.user_name || null,
+  };
+}
+export function yeastHarvestToRow(h, userId, userName, companyId) {
+  return {
+    id: h.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: userName,
+    strain_name: h.strainName,
+    generation: h.generation,
+    amount: h.amount,
+    unit: h.unit,
+    source_batch_id: h.sourceBatchId || null,
+    source_batch_name: h.sourceBatchName || null,
+    harvest_date: h.harvestDate,
+    notes: h.notes || null,
+    used: !!h.used,
+    used_in_batch_id: h.usedInBatchId || null,
+    used_date: h.usedDate || null,
+  };
+}
+
 export function rowToCustomerPrice(row) {
   return {
     id: row.id,
