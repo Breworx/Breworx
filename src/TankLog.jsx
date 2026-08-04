@@ -2344,30 +2344,38 @@ function latestReading(batch) {
 function Tank({ batch }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
-  const color = STAGE_COLOR[batch.stage];
+  const color = STAGE_COLOR[batch.stage] || "#5C9A3C";
+  const gradId = `tank-grad-${batch.id}`;
+  const clipId = `clip-${batch.id}`;
+  const fillTop = 84 - (78 * Math.max(4, pct)) / 100;
+  const fermenting = batch.stage === "Brewing" || batch.stage === "Primary";
+  const settled = batch.stage === "Cooling" || batch.stage === "Brite Tank";
+  const bubbles = fermenting ? [14, 23, 32].map((x, i) => ({ x, delay: i * 0.6, dur: 1.8 + (i % 2) * 0.4 })) : [];
+
   return (
     <div style={{ width: 46, height: 88, position: "relative", flexShrink: 0 }}>
       <svg width="46" height="88" viewBox="0 0 46 88">
         <defs>
-          <clipPath id={`clip-${batch.id}`}>
+          <clipPath id={clipId}>
             <path d="M6 6 H40 V52 L23 84 L6 52 Z" />
           </clipPath>
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={color} stopOpacity="0.65" />
+            <stop offset="50%" stopColor={color} stopOpacity="0.95" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.65" />
+          </linearGradient>
         </defs>
-        <path
-          d="M6 6 H40 V52 L23 84 L6 52 Z"
-          fill="none"
-          stroke="#C9D1AC"
-          strokeWidth="2"
-        />
-        <g clipPath={`url(#clip-${batch.id})`}>
-          <rect
-            x="0"
-            y={84 - (78 * pct) / 100}
-            width="46"
-            height="88"
-            fill={color}
-            opacity="0.85"
-          />
+        <path d="M6 6 H40 V52 L23 84 L6 52 Z" fill="none" stroke="#C9D1AC" strokeWidth="2" />
+        <g clipPath={`url(#${clipId})`}>
+          <rect x="0" y={fillTop} width="46" height="88" fill={`url(#${gradId})`} />
+          {fermenting &&
+            bubbles.map((b, i) => (
+              <circle key={i} cx={b.x} r="1.3" fill="#F5F1E4" opacity="0.7">
+                <animate attributeName="cy" from="82" to={fillTop + 3} dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.7;0.7;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+              </circle>
+            ))}
+          {settled && <rect x="0" y={fillTop} width="46" height="2" fill="#FFFFFF" opacity="0.35" />}
         </g>
       </svg>
     </div>
@@ -16509,7 +16517,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-157";
+const APP_VERSION = "2026-08-03-158";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
