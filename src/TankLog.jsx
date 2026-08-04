@@ -6213,21 +6213,34 @@ function POCard({ po, onOpen }) {
   );
 }
 
-function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, nextOrderNumber }) {
+function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, mixedPackStock, nextOrderNumber }) {
   const [customerId, setCustomerId] = useState("");
   const [orderDate, setOrderDate] = useState(today());
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState([{ id: uid(), batchId: "", containerKey: "", qty: "", unitPrice: "" }]);
+  const [lines, setLines] = useState([{ id: uid(), value: "", qty: "", unitPrice: "" }]);
   const [saving, setSaving] = useState(false);
 
   const stockOptions = availableStock.filter((s) => s.available > 0);
+  const packOptions = (mixedPackStock || []).filter((t) => t.available > 0);
+
+  const resolveValue = (value) => {
+    if (!value) return null;
+    if (value.startsWith("pack::")) {
+      const packId = value.slice(6);
+      const pack = packOptions.find((t) => t.id === packId);
+      return pack ? { kind: "pack", pack } : null;
+    }
+    const [batchId, containerKey] = value.split("::");
+    const stock = stockOptions.find((s) => s.batchId === batchId && s.containerKey === containerKey);
+    return stock ? { kind: "stock", stock } : null;
+  };
 
   const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  const addLine = () => setLines((prev) => [...prev, { id: uid(), batchId: "", containerKey: "", qty: "", unitPrice: "" }]);
+  const addLine = () => setLines((prev) => [...prev, { id: uid(), value: "", qty: "", unitPrice: "" }]);
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
 
   const submit = async () => {
-    const cleanLines = lines.filter((l) => l.batchId && l.containerKey && Number(l.qty) > 0);
+    const cleanLines = lines.filter((l) => l.value && Number(l.qty) > 0);
     if (!customerId || cleanLines.length === 0) return;
     setSaving(true);
     const customer = customers.find((c) => c.id === customerId);
@@ -6239,13 +6252,22 @@ function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, nextOrd
       orderDate,
       notes: notes.trim(),
       lines: cleanLines.map((l) => {
-        const stock = availableStock.find((s) => s.batchId === l.batchId && s.containerKey === l.containerKey);
+        const resolved = resolveValue(l.value);
+        if (resolved?.kind === "pack") {
+          return {
+            id: l.id,
+            mixedPackTypeId: resolved.pack.id,
+            mixedPackTypeName: resolved.pack.name,
+            qty: Number(l.qty),
+            unitPrice: l.unitPrice === "" ? resolved.pack.price || 0 : Number(l.unitPrice),
+          };
+        }
         return {
           id: l.id,
-          batchId: l.batchId,
-          batchName: stock ? stock.batchName : "",
-          containerKey: l.containerKey,
-          containerLabel: stock ? stock.containerLabel : "",
+          batchId: resolved ? resolved.stock.batchId : "",
+          batchName: resolved ? resolved.stock.batchName : "",
+          containerKey: resolved ? resolved.stock.containerKey : "",
+          containerLabel: resolved ? resolved.stock.containerLabel : "",
           qty: Number(l.qty),
           unitPrice: l.unitPrice === "" ? 0 : Number(l.unitPrice),
         };
@@ -6288,35 +6310,46 @@ function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, nextOrd
         </label>
 
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Order lines</div>
-        {stockOptions.length === 0 && (
+        {stockOptions.length === 0 && packOptions.length === 0 && (
           <div style={{ color: "#9BA88A", fontSize: 13 }}>Nothing packaged and available to sell yet — package a batch first.</div>
         )}
-        {stockOptions.length > 0 &&
+        {(stockOptions.length > 0 || packOptions.length > 0) &&
           lines.map((line) => {
-            const chosen = availableStock.find((s) => s.batchId === line.batchId && s.containerKey === line.containerKey);
+            const resolved = resolveValue(line.value);
+            const maxQty = resolved?.kind === "pack" ? resolved.pack.available : resolved?.kind === "stock" ? resolved.stock.available : undefined;
             return (
               <div key={line.id} style={{ display: "flex", flexDirection: "column", gap: 6, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: 10 }}>
                 <select
-                  value={line.batchId && line.containerKey ? `${line.batchId}::${line.containerKey}` : ""}
-                  onChange={(e) => {
-                    const [batchId, containerKey] = e.target.value.split("::");
-                    updateLine(line.id, { batchId: batchId || "", containerKey: containerKey || "" });
-                  }}
+                  value={line.value}
+                  onChange={(e) => updateLine(line.id, { value: e.target.value })}
                   style={{ width: "100%", boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
                 >
                   <option value="">Choose stock…</option>
-                  {stockOptions.map((s) => (
-                    <option key={`${s.batchId}::${s.containerKey}`} value={`${s.batchId}::${s.containerKey}`}>
-                      {s.batchName} — {s.containerLabel} ({s.available} available)
-                    </option>
-                  ))}
+                  {packOptions.length > 0 && (
+                    <optgroup label="Mixed packs">
+                      {packOptions.map((t) => (
+                        <option key={t.id} value={`pack::${t.id}`}>
+                          {t.name} ({t.available} available)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {stockOptions.length > 0 && (
+                    <optgroup label="Beers">
+                      {stockOptions.map((s) => (
+                        <option key={`${s.batchId}::${s.containerKey}`} value={`${s.batchId}::${s.containerKey}`}>
+                          {s.batchName} — {s.containerLabel} ({s.available} available)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <div style={{ display: "flex", gap: 6 }}>
                   <input
                     type="number"
                     step="1"
                     min="1"
-                    max={chosen ? chosen.available : undefined}
+                    max={maxQty}
                     value={line.qty}
                     onChange={(e) => updateLine(line.id, { qty: e.target.value })}
                     placeholder="Qty"
@@ -6327,7 +6360,7 @@ function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, nextOrd
                     step="0.01"
                     value={line.unitPrice}
                     onChange={(e) => updateLine(line.id, { unitPrice: e.target.value })}
-                    placeholder="Price each ($)"
+                    placeholder={resolved?.kind === "pack" && resolved.pack.price != null ? `Price each (default $${resolved.pack.price.toFixed(2)})` : "Price each ($)"}
                     style={{ flex: 1, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}
                   />
                   {lines.length > 1 && (
@@ -6339,7 +6372,7 @@ function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, nextOrd
               </div>
             );
           })}
-        {stockOptions.length > 0 && (
+        {(stockOptions.length > 0 || packOptions.length > 0) && (
           <button
             onClick={addLine}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
@@ -6522,7 +6555,7 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
         {(order.lines || []).map((l) => (
           <div key={l.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
-            <span>{l.batchName} — {l.containerLabel}</span>
+            <span>{l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>
               {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
             </span>
@@ -16405,7 +16438,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-155";
+const APP_VERSION = "2026-08-03-156";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18374,6 +18407,9 @@ function TankLogApp() {
     const customer = customers.find((c) => c.id === order.customerId);
     if (!customer) return;
     const lineItems = (order.lines || []).map((l) => {
+      if (l.mixedPackTypeId) {
+        return { description: l.mixedPackTypeName, quantity: l.qty, unitAmount: l.unitPrice, itemCode: null };
+      }
       const mapping = xeroItemMappings.find((m) => m.product_key === productKeyFor(l.batchName, l.containerKey));
       return {
         description: `${l.batchName} — ${l.containerLabel}`,
@@ -21481,6 +21517,7 @@ function TankLogApp() {
           onAdd={addSalesOrder}
           customers={customers}
           availableStock={availableStock}
+          mixedPackStock={mixedPackStock}
           nextOrderNumber={nextSalesOrderNumber}
         />
       )}
