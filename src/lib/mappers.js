@@ -353,6 +353,52 @@ export function customerToRow(customer, companyId) {
     portal_token: customer.portalToken || null,
   };
 }
+export function rowToMixedPackType(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    totalUnits: row.total_units,
+    mode: row.mode || "flexible",
+    fixedComposition: row.fixed_composition || [],
+    price: row.price,
+  };
+}
+export function mixedPackTypeToRow(t, companyId) {
+  return {
+    id: t.id,
+    company_id: companyId,
+    name: t.name,
+    total_units: t.totalUnits,
+    mode: t.mode || "flexible",
+    fixed_composition: t.fixedComposition || [],
+    price: t.price ?? null,
+  };
+}
+export function rowToMixedPackAssembly(row) {
+  return {
+    id: row.id,
+    mixedPackTypeId: row.mixed_pack_type_id,
+    mixedPackTypeName: row.mixed_pack_type_name,
+    quantity: row.quantity,
+    composition: row.composition || [],
+    assembledDate: row.assembled_date,
+    userName: row.user_name || null,
+  };
+}
+export function mixedPackAssemblyToRow(a, userId, userName, companyId) {
+  return {
+    id: a.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: userName,
+    mixed_pack_type_id: a.mixedPackTypeId,
+    mixed_pack_type_name: a.mixedPackTypeName,
+    quantity: a.quantity,
+    composition: a.composition || [],
+    assembled_date: a.assembledDate,
+  };
+}
+
 export function rowToYeastHarvest(row) {
   return {
     id: row.id,
