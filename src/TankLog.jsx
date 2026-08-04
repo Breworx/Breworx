@@ -2341,14 +2341,23 @@ function latestReading(batch) {
   return batch.readings[batch.readings.length - 1];
 }
 
-function Tank({ batch }) {
+function Tank({ batch, vesselType }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const color = STAGE_COLOR[batch.stage] || "#5C9A3C";
+
+  if (vesselType === "Barrel") return <BarrelVesselIcon fermenting={!!batch.stillFermenting} size={46} uid={batch.id} />;
+  if (vesselType === "Aging Tank") return <AgingTankVesselIcon size={46} uid={batch.id} />;
+
   const gradId = `tank-grad-${batch.id}`;
   const clipId = `clip-${batch.id}`;
-  const fillTop = 84 - (78 * Math.max(4, pct)) / 100;
-  const fermenting = batch.stage === "Brewing" || batch.stage === "Primary";
+  const isBrite = vesselType === "Brite Tank";
+  // Brite tanks are flat-bottomed cylinders, not cones — a real shape
+  // difference (matching the tank wall's own vessel art), not just a
+  // recolor of the same fermenter outline.
+  const bodyPath = isBrite ? "M4 8 Q4 4 8 4 H38 Q42 4 42 8 V80 Q42 84 38 84 H8 Q4 84 4 80 Z" : "M6 6 H40 V52 L23 84 L6 52 Z";
+  const fillTop = isBrite ? 84 - (76 * Math.max(4, pct)) / 100 : 84 - (78 * Math.max(4, pct)) / 100;
+  const fermenting = !isBrite && (batch.stage === "Brewing" || batch.stage === "Primary");
   const settled = batch.stage === "Cooling" || batch.stage === "Brite Tank";
   const bubbles = fermenting ? [14, 23, 32].map((x, i) => ({ x, delay: i * 0.6, dur: 1.8 + (i % 2) * 0.4 })) : [];
 
@@ -2357,7 +2366,7 @@ function Tank({ batch }) {
       <svg width="46" height="88" viewBox="0 0 46 88">
         <defs>
           <clipPath id={clipId}>
-            <path d="M6 6 H40 V52 L23 84 L6 52 Z" />
+            <path d={bodyPath} />
           </clipPath>
           <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor={color} stopOpacity="0.65" />
@@ -2365,7 +2374,7 @@ function Tank({ batch }) {
             <stop offset="100%" stopColor={color} stopOpacity="0.65" />
           </linearGradient>
         </defs>
-        <path d="M6 6 H40 V52 L23 84 L6 52 Z" fill="none" stroke="#C9D1AC" strokeWidth="2" />
+        <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2" />
         <g clipPath={`url(#${clipId})`}>
           <rect x="0" y={fillTop} width="46" height="88" fill={`url(#${gradId})`} />
           {fermenting &&
@@ -2402,10 +2411,11 @@ function StagePill({ stage }) {
   );
 }
 
-function BatchCard({ batch, onOpen }) {
+function BatchCard({ batch, onOpen, tanks }) {
   const latest = latestReading(batch);
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
+  const vesselType = tanks ? tanks.find((t) => t.id === batch.tankId)?.type : null;
   return (
     <button
       onClick={() => onOpen(batch.id)}
@@ -2425,7 +2435,7 @@ function BatchCard({ batch, onOpen }) {
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
     >
-      <Tank batch={batch} />
+      <Tank batch={batch} vesselType={vesselType} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
@@ -10645,7 +10655,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       </button>
 
       <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 22 }}>
-        <Tank batch={batch} />
+        <Tank batch={batch} vesselType={currentTank?.type} />
         <div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 13 }}>
             Batch #{batch.number}
@@ -16517,7 +16527,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-158";
+const APP_VERSION = "2026-08-03-159";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20087,7 +20097,7 @@ function TankLogApp() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (fCond.length || fProg.length || fPack.length) ? 26 : 0 }}>
                     {fFerm.map((b) => (
-                      <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                      <BatchCard key={b.id} batch={b} onOpen={setSelectedId} tanks={tanks} />
                     ))}
                     {fFerm.length === 0 && !noMatches && (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
@@ -20103,7 +20113,7 @@ function TankLogApp() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: (fProg.length || fPack.length) ? 26 : 0 }}>
                         {fCond.map((b) => (
-                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} tanks={tanks} />
                         ))}
                       </div>
                     </>
@@ -20116,7 +20126,7 @@ function TankLogApp() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: fPack.length ? 26 : 0 }}>
                         {fProg.map((b) => (
-                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} tanks={tanks} />
                         ))}
                       </div>
                     </>
@@ -20129,7 +20139,7 @@ function TankLogApp() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {fPack.map((b) => (
-                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} />
+                          <BatchCard key={b.id} batch={b} onOpen={setSelectedId} tanks={tanks} />
                         ))}
                       </div>
                     </>
