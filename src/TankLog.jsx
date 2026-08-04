@@ -41,6 +41,8 @@ import {
   mixedPackTypeToRow,
   rowToMixedPackAssembly,
   mixedPackAssemblyToRow,
+  rowToPestStation,
+  pestStationToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -2862,6 +2864,164 @@ function TastingLogModal({ onClose, onSave }) {
           style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
         >
           Save tasting note
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const PEST_ACTIVITY_OPTIONS = [
+  ["none", "Nothing found"],
+  ["droppings", "Droppings"],
+  ["gnawing", "Gnawing / damage"],
+  ["dead_pest", "Dead pest"],
+  ["live_pest", "Live pest"],
+];
+
+function PestStationsModal({ stations, onClose, onAdd, onUpdate }) {
+  const [label, setLabel] = useState("");
+  const [location, setLocation] = useState("");
+  const [type, setType] = useState("bait");
+
+  const submit = () => {
+    if (!label.trim()) return;
+    onAdd({ id: uid(), label: label.trim(), location: location.trim(), type, active: true });
+    setLabel("");
+    setLocation("");
+  };
+
+  return (
+    <Modal title="Pest control stations" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          A numbered register — check the same physical points every time, so there's a real record of where and when, not just "checked for pests."
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {stations.map((s) => (
+            <div
+              key={s.id}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: s.active ? "#F8F5EA" : "#F5F1E4", border: "1px solid #EBE8D6", borderRadius: 5, opacity: s.active ? 1 : 0.55 }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ color: "#2A3324", fontSize: 13.5 }}>{s.label}</div>
+                {s.location && <div style={{ color: "#9BA88A", fontSize: 11.5 }}>{s.location}</div>}
+              </div>
+              <button
+                onClick={() => onUpdate(s.id, { active: !s.active })}
+                style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 20, padding: "4px 10px", color: "#5C6B54", fontSize: 11, fontFamily: "'Inter', sans-serif", cursor: "pointer" }}
+              >
+                {s.active ? "Retire" : "Reactivate"}
+              </button>
+            </div>
+          ))}
+          {stations.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No stations added yet.</div>}
+        </div>
+
+        <div style={{ borderTop: "1px solid #EBE8D6", paddingTop: 14 }}>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 8 }}>Add a station</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <TextField label="Label (e.g. Station 1)" value={label} onChange={setLabel} />
+            <TextField label="Location" value={location} onChange={setLocation} placeholder="e.g. Loading dock door" />
+            <SelectField label="Type" value={type} onChange={setType} options={["bait", "trap", "other"]} />
+            <button
+              onClick={submit}
+              style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "10px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer" }}
+            >
+              Add station
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function LogPestCheckModal({ stations, onClose, onSave }) {
+  const [stationId, setStationId] = useState("");
+  const [date, setDate] = useState(today());
+  const [activity, setActivity] = useState("none");
+  const [notes, setNotes] = useState("");
+  const [correctiveAction, setCorrectiveAction] = useState("");
+  const [completedBy, setCompletedBy] = useState("");
+
+  const activeStations = stations.filter((s) => s.active);
+  const needsAction = activity !== "none";
+
+  const submit = () => {
+    if (!completedBy.trim()) return;
+    if (needsAction && !correctiveAction.trim()) return;
+    const station = activeStations.find((s) => s.id === stationId);
+    onSave({
+      category: "Pest control",
+      date,
+      stationId: station ? station.id : null,
+      pestActivity: activity,
+      notes: (station ? `${station.label} — ${station.location || ""}. ` : "General sighting. ") + notes.trim(),
+      completedBy: completedBy.trim(),
+      correctiveAction: needsAction ? correctiveAction.trim() : null,
+      correctiveActionResolved: !needsAction,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log a pest check" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Station (or leave as General for an ad-hoc sighting)</div>
+          <select
+            value={stationId}
+            onChange={(e) => setStationId(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            <option value="">General sighting</option>
+            {activeStations.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+                {s.location ? ` — ${s.location}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>What did you find?</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {PEST_ACTIVITY_OPTIONS.map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setActivity(key)}
+                style={{
+                  background: activity === key ? (key === "none" ? "#5C9A3C" : "#E08A3C") : "#F5F1E4",
+                  border: `1px solid ${activity === key ? (key === "none" ? "#5C9A3C" : "#E08A3C") : "#DDE0C8"}`,
+                  borderRadius: 20,
+                  padding: "6px 12px",
+                  color: activity === key ? "#16191A" : "#5C6B54",
+                  fontSize: 12.5,
+                  fontFamily: "'Inter', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} placeholder="Bait replaced, anything worth noting" />
+        {needsAction && (
+          <TextField
+            label="Corrective action (required — something was found)"
+            value={correctiveAction}
+            onChange={setCorrectiveAction}
+            placeholder="What was done about it"
+          />
+        )}
+        <TextField label="Completed by" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save
         </button>
       </div>
     </Modal>
@@ -12641,7 +12801,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -12846,6 +13006,8 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         <button onClick={() => onStartNote("water", "Log water test")} style={secondaryBtnStyle}>Water test</button>
         <button onClick={() => onStartNote("recall", "Log mock recall")} style={secondaryBtnStyle}>Mock recall</button>
         <button onClick={onStartIllness} style={{ ...secondaryBtnStyle, background: "#FBE5DC", borderColor: "#E3B3A0", color: "#B5502F" }}>Staff sickness</button>
+        <button onClick={onLogPestCheck} style={secondaryBtnStyle}>Log pest check</button>
+        <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStationCount})</button>
         <button onClick={() => onStartNote("incident", "Something went wrong")} style={secondaryBtnStyle}>
           Something went wrong
         </button>
@@ -16538,7 +16700,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-160";
+const APP_VERSION = "2026-08-03-161";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17171,6 +17333,7 @@ function TankLogApp() {
   const [yeastHarvests, setYeastHarvests] = useState([]);
   const [mixedPackTypes, setMixedPackTypes] = useState([]);
   const [mixedPackAssemblies, setMixedPackAssemblies] = useState([]);
+  const [pestStations, setPestStations] = useState([]);
   const [editingMixedPackType, setEditingMixedPackType] = useState(null);
   const [showNewMixedPackType, setShowNewMixedPackType] = useState(false);
   const [assemblingMixedPackType, setAssemblingMixedPackType] = useState(null);
@@ -17325,6 +17488,8 @@ function TankLogApp() {
   const [foodSafetyRecords, setFoodSafetyRecords] = useState([]);
   const [activeChecklistTemplate, setActiveChecklistTemplate] = useState(null);
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+  const [showPestStationsModal, setShowPestStationsModal] = useState(false);
+  const [showLogPestCheckModal, setShowLogPestCheckModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
@@ -17429,7 +17594,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -17454,6 +17619,7 @@ function TankLogApp() {
         supabase.from("yeast_harvests").select("*").order("harvest_date", { ascending: false }),
         supabase.from("mixed_pack_types").select("*"),
         supabase.from("mixed_pack_assemblies").select("*").order("assembled_date", { ascending: false }),
+        supabase.from("pest_stations").select("*").order("label", { ascending: true }),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -17513,6 +17679,8 @@ function TankLogApp() {
       else setMixedPackTypes(mixedPackTypesRes.data.map(rowToMixedPackType));
       if (mixedPackAssembliesRes.error) console.error(mixedPackAssembliesRes.error);
       else setMixedPackAssemblies(mixedPackAssembliesRes.data.map(rowToMixedPackAssembly));
+      if (pestStationsRes.error) console.error(pestStationsRes.error);
+      else setPestStations(pestStationsRes.data.map(rowToPestStation));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -18366,6 +18534,23 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setStockTakes((prev) => [rowToStockTake(data), ...prev]);
     showToast("success", "Stock take saved.");
+  };
+
+  const addPestStation = async (station) => {
+    const { data, error } = await supabase.from("pest_stations").insert(pestStationToRow(station, profile.companyId)).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setPestStations((prev) => [...prev, rowToPestStation(data)].sort((a, b) => a.label.localeCompare(b.label)));
+    showToast("success", `${station.label} added.`);
+  };
+
+  const updatePestStation = async (id, patch) => {
+    const row = {};
+    if ("active" in patch) row.active = patch.active;
+    if ("label" in patch) row.label = patch.label;
+    if ("location" in patch) row.location = patch.location;
+    const { error } = await supabase.from("pest_stations").update(row).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setPestStations((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
 
   const addFoodSafetyRecord = async (record) => {
@@ -20036,8 +20221,26 @@ function TankLogApp() {
                   onOpenSupplier={setViewingSupplierDocs}
                   onResolveCorrectiveAction={resolveCorrectiveAction}
                   companyName={companyName}
+                  onLogPestCheck={() => setShowLogPestCheckModal(true)}
+                  onManagePestStations={() => setShowPestStationsModal(true)}
+                  pestStationCount={pestStations.filter((s) => s.active).length}
                 />
               </>
+            )}
+            {showLogPestCheckModal && (
+              <LogPestCheckModal
+                stations={pestStations}
+                onClose={() => setShowLogPestCheckModal(false)}
+                onSave={addFoodSafetyRecord}
+              />
+            )}
+            {showPestStationsModal && (
+              <PestStationsModal
+                stations={pestStations}
+                onClose={() => setShowPestStationsModal(false)}
+                onAdd={addPestStation}
+                onUpdate={updatePestStation}
+              />
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
