@@ -16700,7 +16700,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-161";
+const APP_VERSION = "2026-08-03-162";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18537,7 +18537,9 @@ function TankLogApp() {
   };
 
   const addPestStation = async (station) => {
-    const { data, error } = await supabase.from("pest_stations").insert(pestStationToRow(station, profile.companyId)).select().single();
+    const row = pestStationToRow(station, profile.companyId);
+    delete row.id; // let Postgres generate the real UUID, same fix as customers/sales_orders
+    const { data, error } = await supabase.from("pest_stations").insert(row).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPestStations((prev) => [...prev, rowToPestStation(data)].sort((a, b) => a.label.localeCompare(b.label)));
     showToast("success", `${station.label} added.`);
@@ -19603,11 +19605,9 @@ function TankLogApp() {
       notes: entry.notes || null,
       used: false,
     };
-    const { data, error } = await supabase
-      .from("yeast_harvests")
-      .insert(yeastHarvestToRow(record, user.id, user.name, profile.companyId))
-      .select()
-      .single();
+    const row = yeastHarvestToRow(record, user.id, user.name, profile.companyId);
+    delete row.id; // let Postgres generate the real UUID, same fix as customers/sales_orders
+    const { data, error } = await supabase.from("yeast_harvests").insert(row).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setYeastHarvests((prev) => [rowToYeastHarvest(data), ...prev]);
     showToast("success", `Harvested — Generation ${generation}.`);
@@ -19632,7 +19632,9 @@ function TankLogApp() {
       if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
       setMixedPackTypes((prev) => prev.map((x) => (x.id === t.id ? t : x)));
     } else {
-      const { data, error } = await supabase.from("mixed_pack_types").insert(row).select().single();
+      const insertRow = { ...row };
+      delete insertRow.id; // let Postgres generate the real UUID, same fix as customers/sales_orders
+      const { data, error } = await supabase.from("mixed_pack_types").insert(insertRow).select().single();
       if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
       setMixedPackTypes((prev) => [...prev, rowToMixedPackType(data)]);
     }
@@ -19652,11 +19654,9 @@ function TankLogApp() {
       composition,
       assembledDate: today(),
     };
-    const { data, error } = await supabase
-      .from("mixed_pack_assemblies")
-      .insert(mixedPackAssemblyToRow(record, user.id, user.name, profile.companyId))
-      .select()
-      .single();
+    const row = mixedPackAssemblyToRow(record, user.id, user.name, profile.companyId);
+    delete row.id; // let Postgres generate the real UUID, same fix as customers/sales_orders
+    const { data, error } = await supabase.from("mixed_pack_assemblies").insert(row).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setMixedPackAssemblies((prev) => [rowToMixedPackAssembly(data), ...prev]);
     showToast("success", `${quantity} × ${mixedPackType.name} assembled.`);
