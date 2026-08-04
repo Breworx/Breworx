@@ -277,6 +277,8 @@ export function rowToFoodSafetyRecord(row) {
     completedBy: row.completed_by || null,
     correctiveAction: row.corrective_action || null,
     correctiveActionResolved: row.corrective_action_resolved !== false,
+    stationId: row.station_id || null,
+    pestActivity: row.pest_activity || null,
     createdAt: row.created_at || null,
   };
 }
@@ -302,6 +304,28 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     completed_by: record.completedBy || null,
     corrective_action: record.correctiveAction || null,
     corrective_action_resolved: record.correctiveActionResolved !== false,
+    station_id: record.stationId || null,
+    pest_activity: record.pestActivity || null,
+  };
+}
+
+export function rowToPestStation(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    location: row.location,
+    type: row.type || "bait",
+    active: row.active !== false,
+  };
+}
+export function pestStationToRow(s, companyId) {
+  return {
+    id: s.id,
+    company_id: companyId,
+    label: s.label,
+    location: s.location || null,
+    type: s.type || "bait",
+    active: s.active !== false,
   };
 }
 
