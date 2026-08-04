@@ -279,6 +279,7 @@ export function rowToFoodSafetyRecord(row) {
     correctiveActionResolved: row.corrective_action_resolved !== false,
     stationId: row.station_id || null,
     pestActivity: row.pest_activity || null,
+    photoUrl: row.photo_url || null,
     createdAt: row.created_at || null,
   };
 }
@@ -306,6 +307,7 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     corrective_action_resolved: record.correctiveActionResolved !== false,
     station_id: record.stationId || null,
     pest_activity: record.pestActivity || null,
+    photo_url: record.photoUrl || null,
   };
 }
 
