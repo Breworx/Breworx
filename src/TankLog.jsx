@@ -7595,66 +7595,85 @@ function ScaleRecipeModal({ recipe, onClose, onScale }) {
 // existing recipe's own page — same modal either way, since the check
 // itself is identical: recipe's ingredient list against what's already
 // in Inventory.
-function MissingIngredientsModal({ missing, sourceLabel, onClose, onAdd }) {
-  const [checked, setChecked] = useState(() => new Set(missing.map((m) => m.name)));
+function MissingIngredientsModal({ missing, sourceLabel, inventory, onClose, onAdd, onMatch }) {
+  const [decisions, setDecisions] = useState(() => {
+    const initial = {};
+    missing.forEach((m) => {
+      initial[m.name] = "add";
+    });
+    return initial;
+  });
   const [saving, setSaving] = useState(false);
 
-  const toggle = (name) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
-      return next;
-    });
+  const setDecision = (name, value) => setDecisions((prev) => ({ ...prev, [name]: value }));
 
   const submit = async () => {
-    const toAdd = missing.filter((m) => checked.has(m.name));
-    if (toAdd.length === 0) { onClose(); return; }
     setSaving(true);
-    for (const m of toAdd) {
-      await onAdd({ id: uid(), name: m.name, category: m.category, qty: 0, unit: m.unit, threshold: 0 });
+    for (const m of missing) {
+      const decision = decisions[m.name];
+      if (decision === "skip") continue;
+      if (decision === "add") {
+        await onAdd({ id: uid(), name: m.name, category: m.category, qty: 0, unit: m.unit, threshold: 0 });
+      } else {
+        const matchedItem = inventory.find((it) => it.id === decision);
+        if (matchedItem) await onMatch(m.name, matchedItem);
+      }
     }
     setSaving(false);
     onClose();
   };
 
+  const pillStyle = (active, activeColor) => ({
+    background: active ? activeColor : "#FFFFFF",
+    border: `1px solid ${active ? activeColor : "#DDE0C8"}`,
+    borderRadius: 20,
+    padding: "5px 12px",
+    color: active ? "#FFFFFF" : "#5C6B54",
+    fontSize: 12,
+    fontFamily: "'Inter', sans-serif",
+    cursor: "pointer",
+  });
+
   return (
     <Modal title="New ingredients found" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
-          {sourceLabel} uses {missing.length} ingredient{missing.length !== 1 ? "s" : ""} not yet in your Inventory. Add them now — they'll start at 0 on hand, ready to stock up.
+          {sourceLabel} uses {missing.length} ingredient{missing.length !== 1 ? "s" : ""} not yet matched to your Inventory. Where something similar already exists, match to it instead of creating a duplicate.
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {missing.map((m) => (
-            <label
-              key={m.name}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, cursor: "pointer" }}
-            >
-              <input
-                type="checkbox"
-                checked={checked.has(m.name)}
-                onChange={() => toggle(m.name)}
-                style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
-              />
-              <span style={{ flex: 1, color: "#2A3324", fontSize: 13.5 }}>{m.name}</span>
-              <span style={{ color: "#9BA88A", fontSize: 11.5 }}>{m.category}</span>
-            </label>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {missing.map((m) => {
+            const similar = inventory.filter((it) => areNamesSimilar(m.name, it.name)).slice(0, 4);
+            const decision = decisions[m.name];
+            return (
+              <div key={m.name} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ color: "#2A3324", fontSize: 13.5, fontWeight: 500 }}>{m.name}</span>
+                  <span style={{ color: "#9BA88A", fontSize: 11.5 }}>{m.category}</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button onClick={() => setDecision(m.name, "add")} style={pillStyle(decision === "add", "#5C9A3C")}>
+                    + Add as new
+                  </button>
+                  {similar.map((it) => (
+                    <button key={it.id} onClick={() => setDecision(m.name, it.id)} style={pillStyle(decision === it.id, "#8E6FB5")}>
+                      Match: {it.name}
+                    </button>
+                  ))}
+                  <button onClick={() => setDecision(m.name, "skip")} style={pillStyle(decision === "skip", "#9BA88A")}>
+                    Skip
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={submit}
-            disabled={saving}
-            style={{ flex: 1, background: saving ? "#E8E4D4" : "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: saving ? "#A3AC94" : "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, cursor: saving ? "default" : "pointer" }}
-          >
-            {saving ? "Adding…" : `Add ${checked.size || ""} to inventory`}
-          </button>
-          <button
-            onClick={onClose}
-            style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "12px 18px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 14, cursor: "pointer" }}
-          >
-            Skip
-          </button>
-        </div>
+        <button
+          onClick={submit}
+          disabled={saving}
+          style={{ background: saving ? "#E8E4D4" : "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: saving ? "#A3AC94" : "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, cursor: saving ? "default" : "pointer" }}
+        >
+          {saving ? "Saving…" : "Done"}
+        </button>
       </div>
     </Modal>
   );
@@ -15765,7 +15784,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-149";
+const APP_VERSION = "2026-08-03-150";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17098,7 +17117,7 @@ function TankLogApp() {
     logActivity("created", "recipe", newRecipe.name, `${version > 1 ? "New version of" : "Recipe"} ${newRecipe.name} saved`);
 
     const missing = findMissingIngredients(newRecipe.ingredients, inventory);
-    if (missing.length > 0) setMissingIngredientsPrompt({ missing, sourceLabel: newRecipe.name });
+    if (missing.length > 0) setMissingIngredientsPrompt({ missing, sourceLabel: newRecipe.name, recipeId: newRecipe.id });
 
     return newRecipe;
   };
@@ -17113,7 +17132,24 @@ function TankLogApp() {
       showToast("success", "Every ingredient in this recipe is already in your Inventory.");
       return;
     }
-    setMissingIngredientsPrompt({ missing, sourceLabel: recipe.name });
+    setMissingIngredientsPrompt({ missing, sourceLabel: recipe.name, recipeId: recipe.id });
+  };
+
+  // "This ingredient the recipe calls for isn't new — it's actually this
+  // one already on the shelf, just spelled differently." Renames the
+  // recipe's own ingredient line to match the existing item exactly,
+  // rather than creating a duplicate in Inventory.
+  const matchRecipeIngredient = async (recipeId, oldName, matchedItem) => {
+    const recipe = recipes.find((r) => r.id === recipeId);
+    if (!recipe) return;
+    const ingredients = recipe.ingredients.map((l) =>
+      l.name.trim().toLowerCase() === oldName.trim().toLowerCase()
+        ? { ...l, name: matchedItem.name, category: matchedItem.category, unit: matchedItem.unit }
+        : l
+    );
+    const { error } = await supabase.from("recipes").update({ ingredients }).eq("id", recipeId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setRecipes((prev) => prev.map((r) => (r.id === recipeId ? { ...r, ingredients } : r)));
   };
 
   const saveAndBrewRecipe = async (r) => {
@@ -20422,8 +20458,10 @@ function TankLogApp() {
           <MissingIngredientsModal
             missing={missingIngredientsPrompt.missing}
             sourceLabel={missingIngredientsPrompt.sourceLabel}
+            inventory={inventory}
             onClose={() => setMissingIngredientsPrompt(null)}
             onAdd={addInventoryItem}
+            onMatch={(oldName, matchedItem) => matchRecipeIngredient(missingIngredientsPrompt.recipeId, oldName, matchedItem)}
           />
         )}
 
