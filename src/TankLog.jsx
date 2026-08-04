@@ -2934,18 +2934,24 @@ function PestStationsModal({ stations, records, onClose, onAdd, onUpdate }) {
                       history.map((r) => {
                         const level = PEST_ACTIVITY_OPTIONS.find(([key]) => key === r.pestActivity);
                         return (
-                          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4 }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A", flexShrink: 0 }}>{formatHistoryStamp(r.date)}</span>
-                            {level && (
-                              <span style={{ fontSize: 11, color: level[2], border: `1px solid ${level[2]}`, borderRadius: 20, padding: "1px 8px", flexShrink: 0 }}>
-                                {level[1]}
-                              </span>
+                          <div key={r.id} style={{ padding: "8px 10px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A" }}>{formatHistoryStamp(r.date)}</span>
+                              {level && (
+                                <span style={{ fontSize: 11, color: level[2], border: `1px solid ${level[2]}`, borderRadius: 20, padding: "1px 8px" }}>
+                                  {level[1]}
+                                </span>
+                              )}
+                              <span style={{ fontSize: 11.5, color: "#9BA88A" }}>{r.completedBy}</span>
+                            </div>
+                            {r.notes && <div style={{ fontSize: 12, color: "#5C6B54" }}>{r.notes}</div>}
+                            {r.correctiveAction && (
+                              <div style={{ fontSize: 12, color: r.correctiveActionResolved ? "#5C9A3C" : "#B5502F", marginTop: 3 }}>
+                                Action: {r.correctiveAction}{!r.correctiveActionResolved && " (open)"}
+                              </div>
                             )}
-                            <span style={{ flex: 1, fontSize: 12, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {r.completedBy}
-                            </span>
                             {r.photoUrl && (
-                              <img src={r.photoUrl} alt="" style={{ width: 26, height: 26, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                              <img src={r.photoUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, marginTop: 5 }} />
                             )}
                           </div>
                         );
@@ -13260,6 +13266,26 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                   </>
                 )}
                 {(r.category === "water" || r.category === "recall" || r.category === "incident") && (r.notes || "—")}
+                {r.category === "Pest control" &&
+                  (() => {
+                    const level = PEST_ACTIVITY_OPTIONS.find(([key]) => key === r.pestActivity);
+                    return (
+                      <>
+                        {level && (
+                          <span style={{ color: level[2], border: `1px solid ${level[2]}`, borderRadius: 20, padding: "1px 8px", fontSize: 11, marginRight: 6 }}>
+                            {level[1]}
+                          </span>
+                        )}
+                        {r.notes || "—"}
+                        {r.correctiveAction && (
+                          <div style={{ color: r.correctiveActionResolved ? "#5C9A3C" : "#B5502F", marginTop: 3 }}>
+                            Action: {r.correctiveAction}{!r.correctiveActionResolved && " (open)"}
+                          </div>
+                        )}
+                        {r.photoUrl && <img src={r.photoUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, marginTop: 5 }} />}
+                      </>
+                    );
+                  })()}
                 {r.category === "illness" && (() => {
                   const symptoms = (r.items || []).filter((i) => i.checked).map((i) => i.label);
                   return (
@@ -16825,7 +16851,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-165";
+const APP_VERSION = "2026-08-03-166";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
