@@ -16060,7 +16060,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-153";
+const APP_VERSION = "2026-08-03-154";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18902,14 +18902,14 @@ function TankLogApp() {
     showToast("success", "Top-up logged.");
   };
 
-  // Generation ticks up automatically: if this batch was itself pitched
-  // from a harvest, whatever comes out of it is one generation later than
-  // that. Fresh yeast (no prior harvest behind it) always starts at 1.
+  // Generation follows how brewers actually talk about it: the original
+  // fresh pitch is Generation 1, so the first harvest and repitch off it
+  // is Generation 2, the next Generation 3, and so on.
   const harvestYeast = async (sourceBatch, entry) => {
     const parentHarvest = sourceBatch.pitchedYeastHarvestId
       ? yeastHarvests.find((h) => h.id === sourceBatch.pitchedYeastHarvestId)
       : null;
-    const generation = parentHarvest ? (parentHarvest.generation || 1) + 1 : 1;
+    const generation = parentHarvest ? (parentHarvest.generation || 1) + 1 : 2;
     const record = {
       id: uid(),
       strainName: entry.strainName,
