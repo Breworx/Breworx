@@ -8357,7 +8357,7 @@ function ConfirmDialogModal({ title = "Are you sure?", message, confirmLabel = "
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate }) {
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, yeastHarvests, onUseHarvest }) {
   const mashTuns = tanks.filter((t) => t.type === "Mash Tun");
   const tankChoices = mashTuns.length > 0 ? mashTuns : tanks;
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
@@ -8384,6 +8384,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [batchIngredients, setBatchIngredients] = useState(
     presetRecipe ? presetRecipe.ingredients.map((i) => ({ ...i })) : []
   );
+  const [selectedHarvestId, setSelectedHarvestId] = useState("");
   const [batchSchedule, setBatchSchedule] = useState(
     presetRecipe ? (presetRecipe.schedule || []).map((s) => ({ ...s, done: false, doneAt: null })) : []
   );
@@ -8487,8 +8488,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
         doneAt: null,
       }));
     setSaving(true);
+    const newBatchId = uid();
     await onAdd({
-      id: uid(),
+      id: newBatchId,
       number: batchNumber.trim() || nextNumber,
       name: name.trim(),
       style: style.trim() || "Unspecified",
@@ -8513,7 +8515,9 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       schedule: [...mashSteps, ...batchSchedule],
       readings: [{ id: uid(), date: startDate || today(), gravity: Number(og), temp: Number(temp), note: "Brew day, pitched yeast" }],
       plannedDays: plannedDays === "" ? null : Number(plannedDays),
+      pitchedYeastHarvestId: selectedHarvestId || null,
     });
+    if (selectedHarvestId) await onUseHarvest(selectedHarvestId, newBatchId);
     setSaving(false);
     onClose();
   };
@@ -8900,6 +8904,59 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           <NumberField label="Original gravity" value={og} onChange={setOg} step="0.001" />
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
         </div>
+        {(yeastHarvests || []).filter((h) => !h.used).length > 0 && (
+          <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+              Pitching yeast — reuse a harvest instead of fresh, if you'd like
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <button
+                onClick={() => setSelectedHarvestId("")}
+                style={{
+                  background: !selectedHarvestId ? "#5C9A3C" : "#FFFFFF",
+                  border: `1px solid ${!selectedHarvestId ? "#5C9A3C" : "#DDE0C8"}`,
+                  borderRadius: 20,
+                  padding: "6px 12px",
+                  color: !selectedHarvestId ? "#16191A" : "#5C6B54",
+                  fontSize: 12,
+                  fontFamily: "'Inter', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                Fresh yeast
+              </button>
+              {yeastHarvests
+                .filter((h) => !h.used)
+                .sort((a, b) => b.generation - a.generation)
+                .map((h) => (
+                  <button
+                    key={h.id}
+                    onClick={() => {
+                      setSelectedHarvestId(h.id);
+                      setBatchIngredients((prev) => {
+                        const hasYeastLine = prev.some((ing) => ing.category === "Yeast");
+                        return hasYeastLine
+                          ? prev.map((ing) => (ing.category === "Yeast" ? { ...ing, name: h.strainName } : ing))
+                          : [...prev, { id: uid(), name: h.strainName, category: "Yeast", qty: 1, unit: "ea" }];
+                      });
+                    }}
+                    style={{
+                      background: selectedHarvestId === h.id ? "#8E6FB5" : "#FFFFFF",
+                      border: `1px solid ${selectedHarvestId === h.id ? "#8E6FB5" : "#DDE0C8"}`,
+                      borderRadius: 20,
+                      padding: "6px 12px",
+                      color: selectedHarvestId === h.id ? "#FFFFFF" : "#5C6B54",
+                      fontSize: 12,
+                      fontFamily: "'Inter', sans-serif",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {h.strainName} — Gen {h.generation} ({h.amount}{h.unit})
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
         <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
           <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
             Ingredients — swap, adjust, or add extras for this brew day
@@ -14188,6 +14245,89 @@ function ReminderDayModal({ date, reminders, onClose, onAdd, onToggle, onDelete 
 // for eight months shouldn't feel like a forgotten spreadsheet row. One
 // glance tells you what's fermenting vs quietly aging, what's in it, and
 // when someone last actually tasted it.
+// What's actually sitting in the fridge ready to reuse, grouped by strain
+// so you can see every generation of a given yeast at a glance — and a
+// collapsed history of what's already been pitched, for the record.
+function YeastView({ yeastHarvests, onOpenSourceBatch }) {
+  const available = (yeastHarvests || []).filter((h) => !h.used);
+  const used = (yeastHarvests || []).filter((h) => h.used);
+
+  const grouped = {};
+  available.forEach((h) => {
+    if (!grouped[h.strainName]) grouped[h.strainName] = [];
+    grouped[h.strainName].push(h);
+  });
+  const strains = Object.keys(grouped).sort();
+
+  return (
+    <div>
+      {strains.length === 0 ? (
+        <EmptyState
+          icon={FlaskConical}
+          title="Nothing harvested yet"
+          subtitle={'Open a batch in Primary, Cooling, Brite Tank, or Aging and tap "Harvest yeast from this batch" — it\'ll show up here, ready to reuse.'}
+        />
+      ) : (
+        strains.map((strain) => (
+          <div key={strain} style={{ marginBottom: 22 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, color: "#2A3324", marginBottom: 8 }}>{strain}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {grouped[strain]
+                .sort((a, b) => b.generation - a.generation)
+                .map((h) => (
+                  <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}>
+                    <span
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 11,
+                        letterSpacing: "0.04em",
+                        color: "#8E6FB5",
+                        border: "1px solid #8E6FB5",
+                        borderRadius: 20,
+                        padding: "3px 9px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      GEN {h.generation}
+                    </span>
+                    <span style={{ flex: 1, color: "#2A3324", fontSize: 13.5 }}>
+                      {h.amount} {h.unit}
+                    </span>
+                    <button
+                      onClick={() => onOpenSourceBatch(h.sourceBatchId)}
+                      style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 11.5, fontFamily: "'Inter', sans-serif", padding: 0, textAlign: "right", flexShrink: 0 }}
+                    >
+                      from {h.sourceBatchName}
+                      <br />
+                      {formatHistoryStamp(h.harvestDate)}
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ))
+      )}
+
+      {used.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+            Already pitched ({used.length})
+          </summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8 }}>
+            {[...used].sort((a, b) => (b.usedDate || "").localeCompare(a.usedDate || "")).map((h) => (
+              <div key={h.id} style={{ display: "flex", gap: 12, fontSize: 12, padding: "6px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>GEN {h.generation}</span>
+                <span style={{ color: "#2A3324" }}>{h.strainName}</span>
+                <span style={{ color: "#9BA88A", marginLeft: "auto" }}>{h.usedDate ? formatHistoryStamp(h.usedDate) : ""}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function AgingOverviewView({ batches, tanks, onOpenBatch }) {
   const agingBatches = batches.filter((b) => b.stage === "Aging");
 
@@ -15920,7 +16060,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-152";
+const APP_VERSION = "2026-08-03-153";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17223,6 +17363,21 @@ function TankLogApp() {
         nextInventory[i] = { ...item, qty, lots, history: newHistory };
       }
       setInventory(nextInventory);
+
+      // If this batch was started from a harvested yeast, deleting it
+      // shouldn't strand that yeast as permanently "used" — free it back
+      // up so it can genuinely be pitched again.
+      if (batch.pitchedYeastHarvestId) {
+        const { error: harvestError } = await supabase
+          .from("yeast_harvests")
+          .update({ used: false, used_in_batch_id: null, used_date: null })
+          .eq("id", batch.pitchedYeastHarvestId);
+        if (!harvestError) {
+          setYeastHarvests((prev) =>
+            prev.map((h) => (h.id === batch.pitchedYeastHarvestId ? { ...h, used: false, usedInBatchId: null, usedDate: null } : h))
+          );
+        }
+      }
 
       const { error } = await supabase.from("batches").delete().eq("id", id);
       if (error) showToast("error", "Something didn't save — check your connection and try again.");
@@ -19098,6 +19253,7 @@ function TankLogApp() {
                   ["packaged", "Finished Stock", Package],
                   ["production", "Production", Calendar],
                   barrelAgingModuleEnabled && ["aging", "Aging", Warehouse],
+                  ["yeast", "Yeast", FlaskConical],
                   ["brewery", "Brewery", Warehouse],
                 ].filter(Boolean),
               },
@@ -19247,7 +19403,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -20093,6 +20249,17 @@ function TankLogApp() {
               />
             )}
 
+            {!loadingData && view === "yeast" && (
+              <YeastView
+                yeastHarvests={yeastHarvests}
+                onOpenSourceBatch={(batchId) => {
+                  if (!batchId) return;
+                  setSelectedId(batchId);
+                  setView("batches");
+                }}
+              />
+            )}
+
             {activeReminderDay && (
               <ReminderDayModal
                 date={activeReminderDay}
@@ -20766,6 +20933,8 @@ function TankLogApp() {
           onAddInventoryItem={addInventoryItem}
           presetTankId={batchPreset ? batchPreset.tankId : null}
           presetStartDate={batchPreset ? batchPreset.startDate : null}
+          yeastHarvests={yeastHarvests}
+          onUseHarvest={markYeastHarvestUsed}
         />
       )}
       {editScheduledBatchId && (() => {
