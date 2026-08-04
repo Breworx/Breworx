@@ -600,7 +600,32 @@ const HELP_ARTICLES = [
   {
     category: "Recipes",
     question: "New ingredients in a recipe — do I have to add them to Inventory separately?",
-    answer: "Not anymore. As you type an ingredient into a recipe, you can add it to Inventory right from that same dropdown if it doesn't already exist. And when you save a recipe, anything still missing gets offered as a one-tap batch add. Already got a recipe brewing? Open it and tap \"Check ingredients against inventory\" to run the same check any time — the batch's stage doesn't matter.",
+    answer: "Not anymore. As you type an ingredient into a recipe, you can add it to Inventory right from that same dropdown if it doesn't already exist. And when you save a recipe, anything still missing gets offered as a one-tap batch add — or matched to something similar already in stock instead of creating a duplicate. Already got a recipe brewing? Open it and tap \"Check ingredients against inventory\" to run the same check any time — the batch's stage doesn't matter.",
+  },
+  {
+    category: "Stock",
+    question: "Can I rename an ingredient, consumable, or package type after I've added it?",
+    answer: "Yes — open the item and tap the pencil icon next to its name. A typo doesn't have to be permanent, and nothing else about the item's history changes.",
+  },
+  {
+    category: "Production",
+    question: "Can I set a target temperature or pressure for a tank?",
+    answer: "Yes — on any batch, look for \"Tank settings\" above the gravity and temperature charts. Set a target temperature and pressure (PSI or Bar, with the other unit's conversion shown alongside), and every change is logged with a history you can look back through.",
+  },
+  {
+    category: "Production",
+    question: "How do I reuse yeast from a previous batch?",
+    answer: "Open a batch that's in Primary, Cooling, Brite Tank, or Aging, and tap \"Harvest yeast from this batch.\" It logs the strain, amount, and works out the generation automatically. When starting a new batch, a \"Pitching yeast\" section lets you pick that harvest instead of fresh — check the Yeast page under Production to see everything currently available to reuse.",
+  },
+  {
+    category: "Sales",
+    question: "How do I let a customer order online?",
+    answer: "Open the customer and use \"Create login\" under Online ordering — this sets them up with a real account (email and password), not just a link. They log in anytime at the shared /order page, with password reset built in if they forget it. If they never finish setting it up, \"Resend setup link\" sends a fresh one.",
+  },
+  {
+    category: "Sales",
+    question: "Can I sell a mixed or variety pack?",
+    answer: "Yes — set one up from the Stock page under \"Mixed packs.\" Choose Fixed (always the same beers and quantities) or Flexible (pick what goes in each time), give it its own price, then tap \"Assemble\" whenever you want to actually build some — it deducts real stock from each beer it contains. Once assembled, it shows up as its own item when creating a Sales Order.",
   },
   {
     category: "Stock",
@@ -1250,6 +1275,52 @@ const CHANGELOG = [
       "A dedicated Aging page with its own hand-drawn barrel and tank visuals — separate from Home and the Production calendar, since this can run for months or years",
       "A real tasting log — pick from actual barrel-aging flavors and off-flavors, or write a free-text note",
       "Genuinely optional — turn it off in Settings if you don't run a barrel or long-term aging program",
+    ],
+  },
+  {
+    id: 10,
+    title: "Real customer logins",
+    items: [
+      "Customers can now order online with their own email and password, not a link that can get lost",
+      "One shared page to log in, with self-service password reset built in",
+      "Set up from any customer's page — send a one-time link for them to set their password, or resend it any time",
+    ],
+  },
+  {
+    id: 11,
+    title: "Smarter ingredients",
+    items: [
+      "Rename any item in Inventory, Consumables, or Package Types after the fact — typos don't have to be permanent",
+      "Typing a recipe now suggests similar existing ingredients (different spelling, extra words) before offering to add something new",
+      "Saving a recipe with new ingredients now lets you match each one to something similar already in stock, instead of just adding duplicates",
+      "BeerXML imports now auto-fill potential, color, alpha acid, and attenuation from the reference library where a match is found",
+    ],
+  },
+  {
+    id: 12,
+    title: "Tank settings & daily logs",
+    items: [
+      "Set and log a tank's target temperature and pressure (PSI or Bar, with the conversion shown alongside)",
+      "Hop and yeast dump checkboxes now log who did it and when, and reset themselves so they're ready to log again the same day",
+      "Barrels can log volume top-ups, for tracking evaporation loss over a long aging stint",
+    ],
+  },
+  {
+    id: 13,
+    title: "Yeast reuse",
+    items: [
+      "Harvest yeast from any fermenting or conditioning batch — generation tracked automatically",
+      "A dedicated Yeast page shows what's available to repitch, grouped by strain and generation",
+      "Starting a new batch lets you pitch a harvested strain instead of fresh — closing the loop on generation tracking",
+    ],
+  },
+  {
+    id: 14,
+    title: "Mixed packs",
+    items: [
+      "Build a variety pack from beers already in stock — fixed recipe, or put together fresh each time",
+      "Assembling one deducts real stock from each beer it contains and gives the pack its own stock and price",
+      "Sellable through Orders alongside your regular beers",
     ],
   },
 ];
@@ -16438,7 +16509,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-156";
+const APP_VERSION = "2026-08-03-157";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
