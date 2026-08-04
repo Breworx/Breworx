@@ -9666,6 +9666,60 @@ function DumpLogCheckbox({ label, log, onLog, onUndo }) {
   );
 }
 
+// A hand-built trend line, same approach as every other visual in this
+// app — no external charting library, no container-measuring quirks that
+// can silently render blank. Fixed viewBox scaled by the browser itself,
+// so it can't end up with a zero-size drawing surface.
+function TrendChart({ points, valueKey, color, formatValue }) {
+  const clean = points.filter((p) => p[valueKey] != null);
+  if (clean.length < 2) return null;
+
+  const values = clean.map((p) => p[valueKey]);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV;
+  const pad = range === 0 ? Math.abs(minV) * 0.05 || 1 : range * 0.15;
+  const lo = minV - pad;
+  const hi = maxV + pad;
+
+  const W = 600;
+  const H = 160;
+  const marginL = 46;
+  const marginB = 22;
+  const marginT = 10;
+  const plotW = W - marginL - 14;
+  const plotH = H - marginB - marginT;
+
+  const xFor = (i) => marginL + (clean.length === 1 ? plotW / 2 : (i / (clean.length - 1)) * plotW);
+  const yFor = (v) => marginT + plotH - ((v - lo) / (hi - lo)) * plotH;
+
+  const linePath = clean.map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i).toFixed(1)} ${yFor(p[valueKey]).toFixed(1)}`).join(" ");
+  const gridValues = [lo + (hi - lo) * 0.1, lo + (hi - lo) * 0.5, lo + (hi - lo) * 0.9];
+
+  return (
+    <div>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: "block", overflow: "visible" }}>
+        {gridValues.map((v, i) => (
+          <g key={i}>
+            <line x1={marginL} x2={W} y1={yFor(v)} y2={yFor(v)} stroke="#EBE8D6" strokeWidth="1" />
+            <text x="0" y={yFor(v) + 4} fontSize="11" fontFamily="'JetBrains Mono', monospace" fill="#9BA88A">
+              {formatValue(v)}
+            </text>
+          </g>
+        ))}
+        <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {clean.map((p, i) => (
+          <circle key={p.id || i} cx={xFor(i)} cy={yFor(p[valueKey])} r="3.5" fill={color} />
+        ))}
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", marginLeft: marginL, marginTop: 2 }}>
+        <span>{clean[0].date}</span>
+        <span>{clean[clean.length - 1].date}</span>
+      </div>
+    </div>
+  );
+}
+
 function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
