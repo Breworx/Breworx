@@ -2349,43 +2349,54 @@ function Tank({ batch, vesselType }) {
   if (vesselType === "Barrel") return <BarrelVesselIcon fermenting={!!batch.stillFermenting} size={46} uid={batch.id} />;
   if (vesselType === "Aging Tank") return <AgingTankVesselIcon size={46} uid={batch.id} />;
 
-  const gradId = `tank-grad-${batch.id}`;
   const clipId = `clip-${batch.id}`;
+  const gradId = `tank-grad-${batch.id}`;
+  const steelId = `tank-steel-${batch.id}`;
   const isBrite = vesselType === "Brite Tank";
-  // Brite tanks are flat-bottomed cylinders, not cones — a real shape
-  // difference (matching the tank wall's own vessel art), not just a
-  // recolor of the same fermenter outline.
-  const bodyPath = isBrite ? "M4 8 Q4 4 8 4 H38 Q42 4 42 8 V80 Q42 84 38 84 H8 Q4 84 4 80 Z" : "M6 6 H40 V52 L23 84 L6 52 Z";
-  const fillTop = isBrite ? 84 - (76 * Math.max(4, pct)) / 100 : 84 - (78 * Math.max(4, pct)) / 100;
+  // Same two vessel shapes as the tank wall on Home — a fermenter's real
+  // cone, or a brite tank's flat-bottomed cylinder — at the exact same
+  // 120x200 proportions, just rendered smaller.
+  const bodyPath = isBrite
+    ? "M10 20 Q10 10 20 10 H100 Q110 10 110 20 V180 Q110 190 100 190 H20 Q10 190 10 180 Z"
+    : "M10 10 H110 V140 L60 190 L10 140 Z";
+  const surfaceY = 10 + (180 - 10) * (1 - Math.max(4, pct) / 100);
   const fermenting = !isBrite && (batch.stage === "Brewing" || batch.stage === "Primary");
-  const settled = batch.stage === "Cooling" || batch.stage === "Brite Tank";
-  const bubbles = fermenting ? [14, 23, 32].map((x, i) => ({ x, delay: i * 0.6, dur: 1.8 + (i % 2) * 0.4 })) : [];
+  const bubbles = fermenting ? [30, 60, 90].map((x, i) => ({ x, delay: i * 0.6, dur: 1.9 + (i % 2) * 0.4 })) : [];
 
   return (
-    <div style={{ width: 46, height: 88, position: "relative", flexShrink: 0 }}>
-      <svg width="46" height="88" viewBox="0 0 46 88">
+    <div style={{ width: 46, height: 77, position: "relative", flexShrink: 0 }}>
+      <svg width="46" height="77" viewBox="0 0 120 200">
         <defs>
           <clipPath id={clipId}>
             <path d={bodyPath} />
           </clipPath>
-          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={color} stopOpacity="0.65" />
-            <stop offset="50%" stopColor={color} stopOpacity="0.95" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.65" />
+          <linearGradient id={steelId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#E4E0D0" />
+            <stop offset="35%" stopColor="#F8F6EE" />
+            <stop offset="55%" stopColor="#FDFCF7" />
+            <stop offset="100%" stopColor="#DDD8C4" />
+          </linearGradient>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.55" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.9" />
           </linearGradient>
         </defs>
-        <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2" />
+
+        <rect x="24" y="2" width="72" height="9" rx="4" fill={`url(#${steelId})`} stroke="#C9D1AC" strokeWidth="1.5" />
+        <path d={bodyPath} fill={`url(#${steelId})`} stroke="#C9D1AC" strokeWidth="2.5" />
+
         <g clipPath={`url(#${clipId})`}>
-          <rect x="0" y={fillTop} width="46" height="88" fill={`url(#${gradId})`} />
+          <rect x="0" y={surfaceY} width="120" height="200" fill={`url(#${gradId})`} />
           {fermenting &&
             bubbles.map((b, i) => (
-              <circle key={i} cx={b.x} r="1.3" fill="#F5F1E4" opacity="0.7">
-                <animate attributeName="cy" from="82" to={fillTop + 3} dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
-                <animate attributeName="opacity" values="0.7;0.7;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+              <circle key={i} cx={b.x} cy="185" r="2.6" fill="#FFFFFF" opacity="0.6">
+                <animate attributeName="cy" from="185" to={surfaceY + 6} dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0;0.65;0" dur={`${b.dur}s`} begin={`${b.delay}s`} repeatCount="indefinite" />
               </circle>
             ))}
-          {settled && <rect x="0" y={fillTop} width="46" height="2" fill="#FFFFFF" opacity="0.35" />}
         </g>
+
+        <path d={bodyPath} fill="none" stroke="#C9D1AC" strokeWidth="2.5" />
       </svg>
     </div>
   );
@@ -16527,7 +16538,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-159";
+const APP_VERSION = "2026-08-03-160";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
