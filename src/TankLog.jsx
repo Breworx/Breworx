@@ -10822,47 +10822,20 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       </div>
 
       {chartData.length > 1 && (
-        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
             <TrendingDown size={13} /> Gravity trend
           </div>
-          <Suspense fallback={<div style={{ height: 160 }} />}>
-          <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
-              <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
-              <YAxis stroke="#9BA88A" fontSize={11} domain={["dataMin - 0.003", "dataMax + 0.003"]} tickFormatter={(v) => v.toFixed(3)} />
-              <Tooltip
-                contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }}
-                labelStyle={{ color: "#5C6B54" }}
-              />
-              <Line type="monotone" dataKey="gravity" stroke="#5C9A3C" strokeWidth={2} dot={{ r: 3, fill: "#5C9A3C" }} />
-            </LineChart>
-          </ResponsiveContainer>
-          </Suspense>
+          <TrendChart points={chartData} valueKey="gravity" color="#5C9A3C" formatValue={(v) => v.toFixed(3)} />
         </div>
       )}
 
       {chartData.filter((d) => d.temp != null).length > 1 && (
-        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
             <Thermometer size={13} /> Temperature trend
           </div>
-          <Suspense fallback={<div style={{ height: 160 }} />}>
-          <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={chartData} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
-              <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="#9BA88A" fontSize={11} />
-              <YAxis stroke="#9BA88A" fontSize={11} domain={["dataMin - 1", "dataMax + 1"]} tickFormatter={(v) => `${v}°`} />
-              <Tooltip
-                contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }}
-                labelStyle={{ color: "#5C6B54" }}
-                formatter={(v) => [`${v}°C`, "Temp"]}
-              />
-              <Line type="monotone" dataKey="temp" stroke="#4AA8C9" strokeWidth={2} dot={{ r: 3, fill: "#4AA8C9" }} connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
-          </Suspense>
+          <TrendChart points={chartData} valueKey="temp" color="#4AA8C9" formatValue={(v) => `${v.toFixed(1)}°`} />
         </div>
       )}
 
@@ -15529,7 +15502,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-145";
+const APP_VERSION = "2026-08-03-146";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
