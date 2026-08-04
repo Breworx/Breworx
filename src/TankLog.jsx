@@ -2877,10 +2877,11 @@ const PEST_ACTIVITY_OPTIONS = [
   ["heavy", "Heavy", "#B5502F"],
 ];
 
-function PestStationsModal({ stations, onClose, onAdd, onUpdate }) {
+function PestStationsModal({ stations, records, onClose, onAdd, onUpdate }) {
   const [label, setLabel] = useState("");
   const [location, setLocation] = useState("");
   const [type, setType] = useState("bait");
+  const [expandedStationId, setExpandedStationId] = useState(null);
 
   const submit = () => {
     if (!label.trim()) return;
@@ -2889,6 +2890,9 @@ function PestStationsModal({ stations, onClose, onAdd, onUpdate }) {
     setLocation("");
   };
 
+  const historyFor = (stationId) =>
+    (records || []).filter((r) => r.category === "Pest control" && r.stationId === stationId).sort((a, b) => b.date.localeCompare(a.date));
+
   return (
     <Modal title="Pest control stations" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -2896,23 +2900,62 @@ function PestStationsModal({ stations, onClose, onAdd, onUpdate }) {
           A numbered register — check the same physical points every time, so there's a real record of where and when, not just "checked for pests."
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {stations.map((s) => (
-            <div
-              key={s.id}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: s.active ? "#F8F5EA" : "#F5F1E4", border: "1px solid #EBE8D6", borderRadius: 5, opacity: s.active ? 1 : 0.55 }}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ color: "#2A3324", fontSize: 13.5 }}>{s.label}</div>
-                {s.location && <div style={{ color: "#9BA88A", fontSize: 11.5 }}>{s.location}</div>}
+          {stations.map((s) => {
+            const history = historyFor(s.id);
+            const expanded = expandedStationId === s.id;
+            return (
+              <div key={s.id} style={{ background: s.active ? "#F8F5EA" : "#F5F1E4", border: "1px solid #EBE8D6", borderRadius: 5, opacity: s.active ? 1 : 0.55 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px" }}>
+                  <button
+                    onClick={() => setExpandedStationId(expanded ? null : s.id)}
+                    style={{ flex: 1, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}
+                  >
+                    <div style={{ color: "#2A3324", fontSize: 13.5 }}>{s.label}</div>
+                    {s.location && <div style={{ color: "#9BA88A", fontSize: 11.5 }}>{s.location}</div>}
+                  </button>
+                  <button
+                    onClick={() => setExpandedStationId(expanded ? null : s.id)}
+                    style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 20, padding: "4px 10px", color: "#5C6B54", fontSize: 11, fontFamily: "'Inter', sans-serif", cursor: "pointer" }}
+                  >
+                    History ({history.length})
+                  </button>
+                  <button
+                    onClick={() => onUpdate(s.id, { active: !s.active })}
+                    style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 20, padding: "4px 10px", color: "#5C6B54", fontSize: 11, fontFamily: "'Inter', sans-serif", cursor: "pointer" }}
+                  >
+                    {s.active ? "Retire" : "Reactivate"}
+                  </button>
+                </div>
+                {expanded && (
+                  <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {history.length === 0 ? (
+                      <div style={{ color: "#9BA88A", fontSize: 12 }}>No checks logged for this station yet.</div>
+                    ) : (
+                      history.map((r) => {
+                        const level = PEST_ACTIVITY_OPTIONS.find(([key]) => key === r.pestActivity);
+                        return (
+                          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A", flexShrink: 0 }}>{formatHistoryStamp(r.date)}</span>
+                            {level && (
+                              <span style={{ fontSize: 11, color: level[2], border: `1px solid ${level[2]}`, borderRadius: 20, padding: "1px 8px", flexShrink: 0 }}>
+                                {level[1]}
+                              </span>
+                            )}
+                            <span style={{ flex: 1, fontSize: 12, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {r.completedBy}
+                            </span>
+                            {r.photoUrl && (
+                              <img src={r.photoUrl} alt="" style={{ width: 26, height: 26, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => onUpdate(s.id, { active: !s.active })}
-                style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 20, padding: "4px 10px", color: "#5C6B54", fontSize: 11, fontFamily: "'Inter', sans-serif", cursor: "pointer" }}
-              >
-                {s.active ? "Retire" : "Reactivate"}
-              </button>
-            </div>
-          ))}
+            );
+          })}
           {stations.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No stations added yet.</div>}
         </div>
 
@@ -2935,7 +2978,7 @@ function PestStationsModal({ stations, onClose, onAdd, onUpdate }) {
   );
 }
 
-function LogPestCheckModal({ stations, onClose, onSave }) {
+function LogPestCheckModal({ stations, onClose, onSave, onUploadPhoto, onCreateReminder }) {
   const [stationId, setStationId] = useState("");
   const [date, setDate] = useState(today());
   const [activity, setActivity] = useState("none");
@@ -2943,9 +2986,20 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
   const [notes, setNotes] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [completedBy, setCompletedBy] = useState("");
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [remindAgain, setRemindAgain] = useState(true);
 
   const activeStations = stations.filter((s) => s.active);
   const needsAction = activity !== "none";
+
+  const handlePhotoSelect = async (file) => {
+    if (!file) return;
+    setUploadingPhoto(true);
+    const url = await onUploadPhoto(file);
+    setUploadingPhoto(false);
+    if (url) setPhotoUrl(url);
+  };
 
   const submit = () => {
     if (!completedBy.trim()) return;
@@ -2965,7 +3019,12 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
       completedBy: completedBy.trim(),
       correctiveAction: needsAction ? correctiveAction.trim() : null,
       correctiveActionResolved: !needsAction,
+      photoUrl,
     });
+    if (remindAgain) {
+      const what = station ? station.label : "pest stations";
+      onCreateReminder(`Check ${what}`, addDays(date, 7));
+    }
     onClose();
   };
 
@@ -3030,7 +3089,57 @@ function LogPestCheckModal({ stations, onClose, onSave }) {
             placeholder="What was done about it"
           />
         )}
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Photo evidence (optional)</div>
+          {photoUrl ? (
+            <div style={{ position: "relative", width: 90 }}>
+              <img src={photoUrl} alt="" style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 6, border: "1px solid #DDE0C8" }} />
+              <button
+                onClick={() => setPhotoUrl(null)}
+                aria-label="Remove photo"
+                style={{ position: "absolute", top: -6, right: -6, background: "#B5502F", border: "none", borderRadius: "50%", width: 20, height: 20, color: "#FFFFFF", cursor: "pointer", fontSize: 12, lineHeight: "20px", padding: 0 }}
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "#F5F1E4",
+                border: "1px dashed #C9D1AC",
+                borderRadius: 5,
+                padding: "9px 14px",
+                color: "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: uploadingPhoto ? "default" : "pointer",
+              }}
+            >
+              {uploadingPhoto ? "Uploading…" : "+ Add a photo"}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => handlePhotoSelect(e.target.files?.[0])}
+                disabled={uploadingPhoto}
+                style={{ display: "none" }}
+              />
+            </label>
+          )}
+        </div>
         <TextField label="Completed by" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={remindAgain}
+            onChange={(e) => setRemindAgain(e.target.checked)}
+            style={{ width: 16, height: 16, accentColor: "#5C9A3C", cursor: "pointer" }}
+          />
+          <span style={{ color: "#5C6B54", fontSize: 13 }}>Remind me to check again in 7 days</span>
+        </label>
         <button
           onClick={submit}
           style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
@@ -16716,7 +16825,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-164";
+const APP_VERSION = "2026-08-03-165";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17857,6 +17966,19 @@ function TankLogApp() {
       },
       { confirmLabel: "Remove", destructive: true }
     );
+  };
+
+  // Same bucket batch photos already use — just object storage, no reason
+  // to stand up a separate one for a different kind of record.
+  const uploadFoodSafetyPhoto = async (file) => {
+    const path = `${profile.companyId}/food-safety/${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from("batch-photos").upload(path, file);
+    if (error) {
+      showToast("error", `Couldn't upload photo: ${error.message || "unknown error"}`);
+      return null;
+    }
+    const { data } = supabase.storage.from("batch-photos").getPublicUrl(path);
+    return data.publicUrl;
   };
 
   const uploadBatchPhoto = async (batchId, file) => {
@@ -20248,11 +20370,14 @@ function TankLogApp() {
                 stations={pestStations}
                 onClose={() => setShowLogPestCheckModal(false)}
                 onSave={addFoodSafetyRecord}
+                onUploadPhoto={uploadFoodSafetyPhoto}
+                onCreateReminder={addReminder}
               />
             )}
             {showPestStationsModal && (
               <PestStationsModal
                 stations={pestStations}
+                records={foodSafetyRecords}
                 onClose={() => setShowPestStationsModal(false)}
                 onAdd={addPestStation}
                 onUpdate={updatePestStation}
