@@ -35,6 +35,8 @@ import {
   customerToRow,
   rowToCustomerPrice,
   customerPriceToRow,
+  rowToYeastHarvest,
+  yeastHarvestToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -1874,17 +1876,31 @@ function parseBeerXML(xmlText) {
   const fg = num(recipeEl, "FG") ?? 1.01;
 
   const ingredients = [];
+  // Exact match first (safest); fall back to the same fuzzy similarity
+  // check used elsewhere, since BeerXML names are often more verbose or
+  // differently ordered than the library's ("Weyermann Pilsner" vs
+  // "Weyermann Pilsner Malt"). Never guesses across categories.
+  const findLibraryMatch = (name, library) => {
+    const q = name.trim().toLowerCase();
+    return library.find((it) => it.name.trim().toLowerCase() === q) || library.find((it) => areNamesSimilar(name, it.name)) || null;
+  };
   const collect = (containerTag, itemTag, category, unit, qtyFn) => {
     const container = recipeEl.getElementsByTagName(containerTag)[0];
     if (!container) return;
     Array.from(container.getElementsByTagName(itemTag)).forEach((el) => {
-      ingredients.push({
-        id: uid(),
-        name: text(el, "NAME") || itemTag,
-        category,
-        qty: qtyFn(el),
-        unit,
-      });
+      const itemName = text(el, "NAME") || itemTag;
+      const entry = { id: uid(), name: itemName, category, qty: qtyFn(el), unit };
+      if (category === "Grain") {
+        const match = findLibraryMatch(itemName, MALT_LIBRARY_FLAT);
+        if (match) { entry.potential = match.potential; entry.colorLovibond = match.colorLovibond; entry.libSourced = true; }
+      } else if (category === "Hops") {
+        const match = findLibraryMatch(itemName, HOP_LIBRARY_FLAT);
+        if (match) { entry.alphaAcid = match.alphaAcid; entry.libSourced = true; }
+      } else if (category === "Yeast") {
+        const match = findLibraryMatch(itemName, YEAST_LIBRARY_FLAT);
+        if (match) { entry.attenuation = match.attenuation; entry.libSourced = true; }
+      }
+      ingredients.push(entry);
     });
   };
 
@@ -2590,6 +2606,71 @@ const TASTING_TAGS = {
   Character: ["Vanilla", "Oak", "Coconut", "Bourbon/Whiskey", "Vinous/Wine", "Sherry", "Tannin", "Spice/Clove", "Brett/Funk", "Sour/Tart", "Earthy", "Caramel"],
   "Off-flavors": ["Oxidation", "Over-oaked", "Acetic/Vinegar", "Mouldy", "Solventy", "Mousy"],
 };
+
+function HarvestYeastModal({ defaultStrainName, onClose, onSave }) {
+  const [strainName, setStrainName] = useState(defaultStrainName || "");
+  const [amount, setAmount] = useState("");
+  const [unit, setUnit] = useState("L");
+  const [notes, setNotes] = useState("");
+
+  const submit = () => {
+    if (!strainName.trim() || !amount || Number(amount) <= 0) return;
+    onSave({ strainName: strainName.trim(), amount: Number(amount), unit, notes: notes.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title="Harvest yeast" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Strain" value={strainName} onChange={setStrainName} placeholder="e.g. US-05, WLP001" />
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <NumberField label="Amount collected" value={amount} onChange={setAmount} step="0.1" />
+          </div>
+          <div style={{ width: 90 }}>
+            <SelectField label="Unit" value={unit} onChange={setUnit} options={["L", "mL", "kg", "g"]} />
+          </div>
+        </div>
+        <TextField label="Notes (optional)" value={notes} onChange={setNotes} placeholder="Slurry condition, how it was washed, anything worth remembering" />
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save harvest
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function TopUpModal({ onClose, onSave }) {
+  const [date, setDate] = useState(today());
+  const [volume, setVolume] = useState("");
+  const [note, setNote] = useState("");
+
+  const submit = () => {
+    const v = Number(volume);
+    if (!v || v <= 0) return;
+    onSave({ date, volume: v, note: note.trim() || null });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log a top-up" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <NumberField label="Volume added" value={volume} onChange={setVolume} step="0.1" suffix="L" />
+        <TextField label="Note (optional)" value={note} onChange={setNote} placeholder="Where it came from, anything worth remembering" />
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save top-up
+        </button>
+      </div>
+    </Modal>
+  );
+}
 
 function TastingLogModal({ onClose, onSave }) {
   const [date, setDate] = useState(today());
@@ -10002,7 +10083,7 @@ function TrendChart({ points, valueKey, color, formatValue }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -11103,6 +11184,27 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         )}
       </div>
 
+      {["Primary", "Cooling", "Brite Tank", "Aging"].includes(batch.stage) && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>Yeast</div>
+          {batch.pitchedYeastHarvestId &&
+            (() => {
+              const pitched = (yeastHarvests || []).find((h) => h.id === batch.pitchedYeastHarvestId);
+              return pitched ? (
+                <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 10 }}>
+                  Pitched with a harvested strain — <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>Generation {pitched.generation}</span>
+                </div>
+              ) : null;
+            })()}
+          <button
+            onClick={onOpenHarvestYeast}
+            style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 14px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Harvest yeast from this batch
+          </button>
+        </div>
+      )}
+
       {chartData.length > 1 && (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
@@ -11315,6 +11417,40 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                     </div>
                   )}
                   {t.notes && <div style={{ color: "#2A3324", fontSize: 13, lineHeight: 1.4 }}>{t.notes}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {currentTank?.type === "Barrel" && (batch.stage === "Aging" || (batch.volumeTopups || []).length > 0) && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Volume top-ups</div>
+            {batch.stage === "Aging" && (
+              <button
+                onClick={onOpenTopUp}
+                style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+              >
+                + Log a top-up
+              </button>
+            )}
+          </div>
+          {(batch.volumeTopups || []).length === 0 ? (
+            <div style={{ color: "#9BA88A", fontSize: 13 }}>
+              Nothing logged yet — barrels lose a little to evaporation over time (the "angel's share"), worth checking in on periodically.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {[...batch.volumeTopups].reverse().map((t) => (
+                <div
+                  key={t.id}
+                  style={{ display: "flex", gap: 14, alignItems: "baseline", padding: "9px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13 }}
+                >
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 62, flexShrink: 0 }}>{formatHistoryStamp(t.date)}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", flexShrink: 0 }}>+{t.volume}L</span>
+                  {t.note && <span style={{ flex: 1, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note}</span>}
                 </div>
               ))}
             </div>
@@ -15784,7 +15920,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-150";
+const APP_VERSION = "2026-08-03-152";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16414,6 +16550,7 @@ function TankLogApp() {
   const [activityLog, setActivityLog] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [customerPrices, setCustomerPrices] = useState([]);
+  const [yeastHarvests, setYeastHarvests] = useState([]);
   const [activeReminderDay, setActiveReminderDay] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -16566,6 +16703,8 @@ function TankLogApp() {
   const [activeChecklistTemplate, setActiveChecklistTemplate] = useState(null);
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
+  const [showTopUp, setShowTopUp] = useState(false);
+  const [showHarvestYeast, setShowHarvestYeast] = useState(false);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [showIllnessModal, setShowIllnessModal] = useState(false);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
@@ -16667,7 +16806,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -16689,6 +16828,7 @@ function TankLogApp() {
         supabase.from("sales_orders").select("*").order("created_at", { ascending: false }),
         supabase.from("reminders").select("*").order("due_date", { ascending: true }),
         supabase.from("customer_prices").select("*"),
+        supabase.from("yeast_harvests").select("*").order("harvest_date", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -16742,6 +16882,8 @@ function TankLogApp() {
       else setReminders(remindersRes.data.map(rowToReminder));
       if (customerPricesRes.error) console.error(customerPricesRes.error);
       else setCustomerPrices(customerPricesRes.data.map(rowToCustomerPrice));
+      if (yeastHarvestsRes.error) console.error(yeastHarvestsRes.error);
+      else setYeastHarvests(yeastHarvestsRes.data.map(rowToYeastHarvest));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -18594,6 +18736,58 @@ function TankLogApp() {
     showToast("success", "Tasting note saved.");
   };
 
+  const addVolumeTopup = async (id, entry) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const newEntry = { id: uid(), ...entry };
+    const volumeTopups = [...(batch.volumeTopups || []), newEntry];
+    const { error } = await supabase.from("batches").update({ volume_topups: volumeTopups }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, volumeTopups } : b)));
+    showToast("success", "Top-up logged.");
+  };
+
+  // Generation ticks up automatically: if this batch was itself pitched
+  // from a harvest, whatever comes out of it is one generation later than
+  // that. Fresh yeast (no prior harvest behind it) always starts at 1.
+  const harvestYeast = async (sourceBatch, entry) => {
+    const parentHarvest = sourceBatch.pitchedYeastHarvestId
+      ? yeastHarvests.find((h) => h.id === sourceBatch.pitchedYeastHarvestId)
+      : null;
+    const generation = parentHarvest ? (parentHarvest.generation || 1) + 1 : 1;
+    const record = {
+      id: uid(),
+      strainName: entry.strainName,
+      generation,
+      amount: entry.amount,
+      unit: entry.unit,
+      sourceBatchId: sourceBatch.id,
+      sourceBatchName: sourceBatch.name,
+      harvestDate: today(),
+      notes: entry.notes || null,
+      used: false,
+    };
+    const { data, error } = await supabase
+      .from("yeast_harvests")
+      .insert(yeastHarvestToRow(record, user.id, user.name, profile.companyId))
+      .select()
+      .single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setYeastHarvests((prev) => [rowToYeastHarvest(data), ...prev]);
+    showToast("success", `Harvested — Generation ${generation}.`);
+  };
+
+  // Pitching a harvested yeast into a fresh batch: mark it used (it's a
+  // one-shot — once pitched, it's not still sitting on the shelf to pick
+  // again) and link the new batch back to it, which is what lets the next
+  // harvest off THIS batch know its own generation.
+  const markYeastHarvestUsed = async (harvestId, newBatchId) => {
+    const usedDate = today();
+    const { error } = await supabase.from("yeast_harvests").update({ used: true, used_in_batch_id: newBatchId, used_date: usedDate }).eq("id", harvestId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setYeastHarvests((prev) => prev.map((h) => (h.id === harvestId ? { ...h, used: true, usedInBatchId: newBatchId, usedDate } : h)));
+  };
+
   const setStillFermenting = async (id, value) => {
     const { error } = await supabase.from("batches").update({ still_fermenting: value }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -20419,12 +20613,32 @@ function TankLogApp() {
             onUpdateTankSettings={updateTankSettings}
             onLogDump={logDump}
             onUndoDump={undoDump}
+            onOpenTopUp={() => setShowTopUp(true)}
+            yeastHarvests={yeastHarvests}
+            onOpenHarvestYeast={() => setShowHarvestYeast(true)}
           />
         )}
         {showTastingLog && selected && (
           <TastingLogModal
             onClose={() => setShowTastingLog(false)}
             onSave={(entry) => addTastingNote(selected.id, entry)}
+          />
+        )}
+        {showTopUp && selected && (
+          <TopUpModal
+            onClose={() => setShowTopUp(false)}
+            onSave={(entry) => addVolumeTopup(selected.id, entry)}
+          />
+        )}
+        {showHarvestYeast && selected && (
+          <HarvestYeastModal
+            defaultStrainName={
+              selected.ingredients && selected.ingredients.find((i) => i.category === "Yeast")
+                ? selected.ingredients.find((i) => i.category === "Yeast").name
+                : ""
+            }
+            onClose={() => setShowHarvestYeast(false)}
+            onSave={(entry) => harvestYeast(selected, entry)}
           />
         )}
 
