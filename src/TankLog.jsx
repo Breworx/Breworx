@@ -2160,6 +2160,47 @@ function attenuation(og, fg, current) {
 // Case-insensitive, de-duplicated — a recipe calling for "Cascade" twice
 // only needs to be offered once, and matching ignores capitalization so
 // "citra" doesn't get treated as different from "Citra" already on hand.
+// Standard edit-distance — counts the fewest single-character changes
+// (insert/delete/swap) to turn one string into the other. Used to catch
+// close spelling variants ("Pilsner" vs "Pilsener") that word-overlap
+// matching alone would miss.
+function levenshteinDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const row = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, row[j], row[j - 1]);
+      prev = temp;
+    }
+  }
+  return row[n];
+}
+
+// A generic term that appears in dozens of unrelated ingredient names
+// isn't useful for spotting a near-duplicate — "Malt" alone shouldn't
+// flag every grain in the shelf as "similar" to "Pilsner Malt".
+const INGREDIENT_STOPWORDS = new Set(["malt", "malted", "hops", "hop", "yeast", "extract", "grain", "the", "and", "of"]);
+
+function areNamesSimilar(a, b) {
+  const nameA = a.trim().toLowerCase();
+  const nameB = b.trim().toLowerCase();
+  if (!nameA || !nameB || nameA === nameB) return false;
+
+  // Close overall spelling, e.g. "Pilsner Malt" vs "Pilsener Malt"
+  const maxLen = Math.max(nameA.length, nameB.length);
+  if (levenshteinDistance(nameA, nameB) <= Math.max(2, Math.round(maxLen * 0.2))) return true;
+
+  // Shared meaningful word, e.g. "Pilsner" in "German Pilsner Malt"
+  const wordsA = nameA.split(/\s+/).filter((w) => w.length > 2 && !INGREDIENT_STOPWORDS.has(w));
+  const wordsB = nameB.split(/\s+/).filter((w) => w.length > 2 && !INGREDIENT_STOPWORDS.has(w));
+  return wordsA.some((wa) => wordsB.some((wb) => wa === wb || (Math.min(wa.length, wb.length) >= 4 && levenshteinDistance(wa, wb) <= 1)));
+}
+
 function findMissingIngredients(ingredientLines, inventory) {
   const seen = new Set();
   const missing = [];
@@ -6649,6 +6690,16 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       ? inventory
       : inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
 
+  // Catches the near-misses the exact/substring match above doesn't —
+  // different spelling, extra words, that sort of thing. Shown separately
+  // so it reads as "maybe you meant one of these" rather than a real match.
+  const similarMatches = (query) => {
+    const q = query.trim();
+    if (q.length < 3) return [];
+    const exact = new Set(ingredientMatches(q).map((it) => it.id));
+    return inventory.filter((it) => !exact.has(it.id) && areNamesSimilar(q, it.name)).slice(0, 5);
+  };
+
   const libraryMatches = (query) => {
     const q = query.trim().toLowerCase();
     if (q.length === 0) return [];
@@ -7072,6 +7123,41 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                       </span>
                     </button>
                   ))}
+                  {similarMatches(line.name).length > 0 && (
+                    <>
+                      <div style={{ padding: "6px 10px", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", background: "#F5F1E4" }}>
+                        Similar — double check before adding new
+                      </div>
+                      {similarMatches(line.name).map((it) => (
+                        <button
+                          key={`similar-${it.id}`}
+                          onMouseDown={() => {
+                            updateLine(line.id, { name: it.name, category: it.category, unit: it.unit });
+                            setFocusedIngredientId(null);
+                          }}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            width: "100%",
+                            textAlign: "left",
+                            background: "none",
+                            border: "none",
+                            borderBottom: "1px solid #EBE8D6",
+                            padding: "9px 10px",
+                            color: "#2A3324",
+                            fontSize: 13,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span>{it.name}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A", marginLeft: 8, flexShrink: 0 }}>
+                            {it.qty} {it.unit}
+                          </span>
+                        </button>
+                      ))}
+                    </>
+                  )}
                   {line.name.trim().length > 0 &&
                     !inventory.some((it) => it.name.toLowerCase() === line.name.trim().toLowerCase()) && (
                       <button
@@ -15679,7 +15765,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-148";
+const APP_VERSION = "2026-08-03-149";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
