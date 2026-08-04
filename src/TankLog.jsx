@@ -12715,9 +12715,10 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
     recall: "Mock recall",
     incident: "Incident",
     illness: "Staff sickness",
+    "Pest control": "Pest control",
   };
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
-  const openCorrectiveActions = records.filter((r) => r.category === "checklist" && r.correctiveAction && !r.correctiveActionResolved);
+  const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
   const periodLabel = monthFilter ? monthLabelFromKey(monthFilter) : "All records";
   const counts = {};
   records.forEach((r) => {
@@ -12828,6 +12829,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     recall: "Mock recall",
     incident: "Incident",
     illness: "Staff sickness",
+    "Pest control": "Pest control",
   };
   const categoryColor = {
     checklist: "#D9A441",
@@ -12878,7 +12880,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     })
     .filter((c) => c.overdue);
 
-  const openCorrectiveActions = records.filter((r) => r.category === "checklist" && r.correctiveAction && !r.correctiveActionResolved);
+  const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
 
   const latestCalibrationByEquipment = {};
   records
@@ -16714,7 +16716,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-163";
+const APP_VERSION = "2026-08-03-164";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
