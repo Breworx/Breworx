@@ -37,6 +37,10 @@ import {
   customerPriceToRow,
   rowToYeastHarvest,
   yeastHarvestToRow,
+  rowToMixedPackType,
+  mixedPackTypeToRow,
+  rowToMixedPackAssembly,
+  mixedPackAssemblyToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -150,12 +154,27 @@ function soldTotalsByContainer(batchId, salesOrders) {
 // Every batch+container combination that's ever had stock packaged into it,
 // with how much is actually still available to sell right now. This is
 // what a sales order line picker is built from.
-function availableStockList(batches, salesOrders) {
+// How much of a specific batch+container has already gone into an
+// assembled mixed pack — same idea as soldTotalsByContainer, just a
+// different way stock leaves the "available to sell on its own" pool.
+function mixedPackConsumptionByContainer(batchId, mixedPackAssemblies) {
+  const totals = {};
+  (mixedPackAssemblies || []).forEach((a) => {
+    (a.composition || []).forEach((line) => {
+      if (line.batchId !== batchId) return;
+      totals[line.containerKey] = (totals[line.containerKey] || 0) + line.qtyPerPack * a.quantity;
+    });
+  });
+  return totals;
+}
+
+function availableStockList(batches, salesOrders, mixedPackAssemblies) {
   const list = [];
   batches.forEach((b) => {
     if (!b.packaging) return;
     const packaged = packagedTotalsByContainer(b);
     const sold = soldTotalsByContainer(b.id, salesOrders);
+    const consumedByMixedPacks = mixedPackConsumptionByContainer(b.id, mixedPackAssemblies);
     CONTAINERS.forEach((c) => {
       if ((packaged[c.key] || 0) > 0) {
         list.push({
@@ -165,12 +184,27 @@ function availableStockList(batches, salesOrders) {
           containerKey: c.key,
           containerLabel: c.label,
           packaged: packaged[c.key],
-          available: (packaged[c.key] || 0) - (sold[c.key] || 0),
+          available: (packaged[c.key] || 0) - (sold[c.key] || 0) - (consumedByMixedPacks[c.key] || 0),
         });
       }
     });
   });
   return list;
+}
+
+// A mixed pack's own available-to-sell count — how many have been put
+// together minus how many have already sold. Kept separate from the
+// per-beer list above since it's a different kind of "product" entirely.
+function mixedPackStockList(mixedPackTypes, mixedPackAssemblies, salesOrders) {
+  return (mixedPackTypes || []).map((t) => {
+    const assembled = (mixedPackAssemblies || [])
+      .filter((a) => a.mixedPackTypeId === t.id)
+      .reduce((sum, a) => sum + a.quantity, 0);
+    const sold = (salesOrders || [])
+      .filter((o) => o.status !== "Cancelled")
+      .reduce((sum, o) => sum + (o.lines || []).filter((l) => l.mixedPackTypeId === t.id).reduce((s, l) => s + (l.qty || 0), 0), 0);
+    return { ...t, assembled, available: assembled - sold };
+  });
 }
 
 // Deterministic per-user color for the reminders calendar — same person
@@ -3395,7 +3429,274 @@ function CustomerCard({ customer, onOpen }) {
 // the order picker already uses, just surfaced as its own page. Stays in
 // sync automatically: packaging a batch adds to it, confirming/fulfilling
 // an order subtracts, cancelling an order gives it straight back.
-function FinishedGoodsStockView({ availableStock, onStartStockTake, onOpenHistory, stockTakeCount }) {
+function MixedPackTypeModal({ products, editingType, onClose, onSave }) {
+  const [name, setName] = useState(editingType?.name || "");
+  const [totalUnits, setTotalUnits] = useState(editingType ? String(editingType.totalUnits) : "6");
+  const [mode, setMode] = useState(editingType?.mode || "flexible");
+  const [price, setPrice] = useState(editingType?.price != null ? String(editingType.price) : "");
+  const [lines, setLines] = useState(
+    editingType?.fixedComposition?.length
+      ? editingType.fixedComposition.map((l) => ({ id: uid(), ...l }))
+      : []
+  );
+
+  const lineTotal = lines.reduce((sum, l) => sum + (Number(l.qty) || 0), 0);
+
+  const addLine = () => setLines((prev) => [...prev, { id: uid(), productKey: "", qty: 1 }]);
+  const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const removeLine = (id) => setLines((prev) => prev.filter((l) => l.id !== id));
+
+  const submit = () => {
+    if (!name.trim() || !totalUnits || Number(totalUnits) <= 0) return;
+    if (mode === "fixed" && lines.length === 0) return;
+    const fixedComposition =
+      mode === "fixed"
+        ? lines
+            .filter((l) => l.productKey)
+            .map((l) => {
+              const p = products.find((pr) => pr.key === l.productKey);
+              return { batchName: p?.batchName, containerKey: p?.containerKey, containerLabel: p?.containerLabel, qty: Number(l.qty) || 0 };
+            })
+        : [];
+    onSave({
+      id: editingType?.id || uid(),
+      name: name.trim(),
+      totalUnits: Number(totalUnits),
+      mode,
+      fixedComposition,
+      price: price === "" ? null : Number(price),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title={editingType ? "Edit mixed pack" : "New mixed pack type"} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Name" value={name} onChange={setName} placeholder="e.g. Variety 6-pack" />
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <NumberField label="Total units" value={totalUnits} onChange={setTotalUnits} step="1" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <NumberField label="Price (optional)" value={price} onChange={setPrice} step="0.01" />
+          </div>
+        </div>
+
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Composition</div>
+          <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
+            {[
+              ["fixed", "Fixed — always the same"],
+              ["flexible", "Flexible — pick each time"],
+            ].map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                style={{
+                  flex: 1,
+                  background: mode === m ? "#5C9A3C" : "#F5F1E4",
+                  border: "none",
+                  padding: "9px",
+                  color: mode === m ? "#16191A" : "#5C6B54",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mode === "fixed" && (
+          <div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {lines.map((l) => (
+                <div key={l.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select
+                    value={l.productKey}
+                    onChange={(e) => updateLine(l.id, { productKey: e.target.value })}
+                    style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                  >
+                    <option value="">Pick a beer…</option>
+                    {products.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={l.qty}
+                    onChange={(e) => updateLine(l.id, { qty: e.target.value })}
+                    style={{ width: 60, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "center" }}
+                  />
+                  <button onClick={() => removeLine(l.id)} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={addLine}
+              style={{ marginTop: 8, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", width: "100%", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+            >
+              + Add beer
+            </button>
+            <div style={{ color: lineTotal === Number(totalUnits) ? "#5C9A3C" : "#B5502F", fontSize: 12, marginTop: 8 }}>
+              {lineTotal} of {totalUnits || 0} units set
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function AssembleMixedPackModal({ mixedPackType, availableStock, onClose, onSave }) {
+  const [quantity, setQuantity] = useState("1");
+  const [flexLines, setFlexLines] = useState([{ id: uid(), productKey: "", qtyPerPack: 1 }]);
+
+  const products = availableStock
+    .filter((s) => s.available > 0)
+    .map((s) => ({ key: `${s.batchId}::${s.containerKey}`, label: `${s.batchName} — ${s.containerLabel}`, available: s.available, ...s }));
+
+  const isFixed = mixedPackType.mode === "fixed";
+
+  // Fixed mode: automatically find a real, currently-in-stock batch that
+  // matches each line in the recipe — the recipe says "an IPA can", not
+  // "batch #47's IPA can", since which specific batch is available
+  // changes over time.
+  const resolvedFixed = isFixed
+    ? mixedPackType.fixedComposition.map((line) => {
+        const match = availableStock.find((s) => s.batchName === line.batchName && s.containerKey === line.containerKey && s.available > 0);
+        return match ? { ...line, batchId: match.batchId, available: match.available } : { ...line, batchId: null, available: 0 };
+      })
+    : [];
+  const fixedShortfall = resolvedFixed.filter((l) => !l.batchId || l.available < l.qty * Number(quantity || 1));
+
+  const flexTotal = flexLines.reduce((sum, l) => sum + (Number(l.qtyPerPack) || 0), 0);
+  const addFlexLine = () => setFlexLines((prev) => [...prev, { id: uid(), productKey: "", qtyPerPack: 1 }]);
+  const updateFlexLine = (id, patch) => setFlexLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const removeFlexLine = (id) => setFlexLines((prev) => prev.filter((l) => l.id !== id));
+
+  const canSubmit = isFixed
+    ? fixedShortfall.length === 0 && Number(quantity) > 0
+    : flexTotal === mixedPackType.totalUnits && flexLines.every((l) => l.productKey) && Number(quantity) > 0;
+
+  const submit = () => {
+    if (!canSubmit) return;
+    const composition = isFixed
+      ? resolvedFixed.map((l) => ({ batchId: l.batchId, batchName: l.batchName, containerKey: l.containerKey, containerLabel: l.containerLabel, qtyPerPack: l.qty }))
+      : flexLines.map((l) => {
+          const p = products.find((pr) => pr.key === l.productKey);
+          return { batchId: p.batchId, batchName: p.batchName, containerKey: p.containerKey, containerLabel: p.containerLabel, qtyPerPack: Number(l.qtyPerPack) };
+        });
+    onSave({ quantity: Number(quantity), composition });
+    onClose();
+  };
+
+  return (
+    <Modal title={`Assemble ${mixedPackType.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <NumberField label="How many packs to assemble" value={quantity} onChange={setQuantity} step="1" />
+
+        {isFixed ? (
+          <div>
+            <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>This pack's recipe</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {resolvedFixed.map((l, i) => {
+                const short = !l.batchId || l.available < l.qty * Number(quantity || 1);
+                return (
+                  <div
+                    key={i}
+                    style={{ display: "flex", justifyContent: "space-between", padding: "8px 10px", background: short ? "#FBE5D2" : "#F8F5EA", border: `1px solid ${short ? "#E3B37A" : "#EBE8D6"}`, borderRadius: 5, fontSize: 13 }}
+                  >
+                    <span style={{ color: "#2A3324" }}>
+                      {l.qty} × {l.batchName || "—"} ({l.containerLabel})
+                    </span>
+                    <span style={{ color: short ? "#B5502F" : "#9BA88A", fontSize: 11.5 }}>
+                      {l.batchId ? `${l.available} available` : "not currently in stock"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>
+              Build this pack — {flexTotal} of {mixedPackType.totalUnits} units picked
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {flexLines.map((l) => (
+                <div key={l.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select
+                    value={l.productKey}
+                    onChange={(e) => updateFlexLine(l.id, { productKey: e.target.value })}
+                    style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                  >
+                    <option value="">Pick a beer…</option>
+                    {products.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.label} ({p.available} available)
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={l.qtyPerPack}
+                    onChange={(e) => updateFlexLine(l.id, { qtyPerPack: e.target.value })}
+                    style={{ width: 60, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "center" }}
+                  />
+                  <button onClick={() => removeFlexLine(l.id)} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={addFlexLine}
+              style={{ marginTop: 8, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", width: "100%", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+            >
+              + Add beer
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          style={{ background: canSubmit ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "12px", color: canSubmit ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: canSubmit ? "pointer" : "default" }}
+        >
+          Assemble {quantity || 0} pack{Number(quantity) !== 1 ? "s" : ""}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function FinishedGoodsStockView({
+  availableStock,
+  onStartStockTake,
+  onOpenHistory,
+  stockTakeCount,
+  mixedPackTypes,
+  mixedPackStock,
+  onNewMixedPackType,
+  onEditMixedPackType,
+  onAssembleMixedPack,
+}) {
   const relevant = availableStock.filter((s) => s.packaged > 0);
   const grouped = {};
   relevant.forEach((s) => {
@@ -3420,6 +3721,50 @@ function FinishedGoodsStockView({ availableStock, onStartStockTake, onOpenHistor
         >
           Past reports ({stockTakeCount})
         </button>
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>Mixed packs</div>
+          <button
+            onClick={onNewMixedPackType}
+            style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+          >
+            + New mixed pack
+          </button>
+        </div>
+        {mixedPackTypes.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>
+            Combine beers already in stock into a variety pack — fixed recipe or built fresh each time.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {mixedPackStock.map((t) => (
+              <div key={t.id} style={{ padding: "10px 14px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <button onClick={() => onEditMixedPackType(t)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}>
+                    <div style={{ color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif" }}>{t.name}</div>
+                    <div style={{ color: "#9BA88A", fontSize: 11 }}>
+                      {t.mode === "fixed" ? "Fixed recipe" : "Built fresh each time"} · {t.totalUnits} units
+                      {t.price != null ? ` · $${t.price.toFixed(2)}` : ""}
+                    </div>
+                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: t.available <= 0 ? "#B5502F" : "#5C9A3C" }}>
+                      {t.available} available
+                    </span>
+                    <button
+                      onClick={() => onAssembleMixedPack(t)}
+                      style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "7px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+                    >
+                      Assemble
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {beerNames.length === 0 ? (
@@ -16060,7 +16405,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-154";
+const APP_VERSION = "2026-08-03-155";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -16691,6 +17036,11 @@ function TankLogApp() {
   const [reminders, setReminders] = useState([]);
   const [customerPrices, setCustomerPrices] = useState([]);
   const [yeastHarvests, setYeastHarvests] = useState([]);
+  const [mixedPackTypes, setMixedPackTypes] = useState([]);
+  const [mixedPackAssemblies, setMixedPackAssemblies] = useState([]);
+  const [editingMixedPackType, setEditingMixedPackType] = useState(null);
+  const [showNewMixedPackType, setShowNewMixedPackType] = useState(false);
+  const [assemblingMixedPackType, setAssemblingMixedPackType] = useState(null);
   const [activeReminderDay, setActiveReminderDay] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -16946,7 +17296,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -16969,6 +17319,8 @@ function TankLogApp() {
         supabase.from("reminders").select("*").order("due_date", { ascending: true }),
         supabase.from("customer_prices").select("*"),
         supabase.from("yeast_harvests").select("*").order("harvest_date", { ascending: false }),
+        supabase.from("mixed_pack_types").select("*"),
+        supabase.from("mixed_pack_assemblies").select("*").order("assembled_date", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -17024,6 +17376,10 @@ function TankLogApp() {
       else setCustomerPrices(customerPricesRes.data.map(rowToCustomerPrice));
       if (yeastHarvestsRes.error) console.error(yeastHarvestsRes.error);
       else setYeastHarvests(yeastHarvestsRes.data.map(rowToYeastHarvest));
+      if (mixedPackTypesRes.error) console.error(mixedPackTypesRes.error);
+      else setMixedPackTypes(mixedPackTypesRes.data.map(rowToMixedPackType));
+      if (mixedPackAssembliesRes.error) console.error(mixedPackAssembliesRes.error);
+      else setMixedPackAssemblies(mixedPackAssembliesRes.data.map(rowToMixedPackAssembly));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -17088,7 +17444,11 @@ function TankLogApp() {
   }, [salesOrders]);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState(null);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
-  const availableStock = useMemo(() => availableStockList(batches, salesOrders), [batches, salesOrders]);
+  const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
+  const mixedPackStock = useMemo(
+    () => mixedPackStockList(mixedPackTypes, mixedPackAssemblies, salesOrders),
+    [mixedPackTypes, mixedPackAssemblies, salesOrders]
+  );
   const selectedRecipe = useMemo(() => recipes.find((r) => r.id === selectedRecipeId) || null, [recipes, selectedRecipeId]);
   const selectedInventoryItem = useMemo(
     () => inventory.find((it) => it.id === selectedInventoryId) || null,
@@ -18943,6 +19303,44 @@ function TankLogApp() {
     setYeastHarvests((prev) => prev.map((h) => (h.id === harvestId ? { ...h, used: true, usedInBatchId: newBatchId, usedDate } : h)));
   };
 
+  const saveMixedPackType = async (t) => {
+    const existing = mixedPackTypes.find((x) => x.id === t.id);
+    const row = mixedPackTypeToRow(t, profile.companyId);
+    if (existing) {
+      const { error } = await supabase.from("mixed_pack_types").update(row).eq("id", t.id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setMixedPackTypes((prev) => prev.map((x) => (x.id === t.id ? t : x)));
+    } else {
+      const { data, error } = await supabase.from("mixed_pack_types").insert(row).select().single();
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setMixedPackTypes((prev) => [...prev, rowToMixedPackType(data)]);
+    }
+    showToast("success", `${t.name} saved.`);
+  };
+
+  // The core of the whole feature: consuming real stock from each
+  // component beer and recording exactly what went into this batch of
+  // packs, so both sides of the ledger — what's now unavailable on its
+  // own, and what's now available as a pack — stay honest.
+  const assembleMixedPack = async (mixedPackType, { quantity, composition }) => {
+    const record = {
+      id: uid(),
+      mixedPackTypeId: mixedPackType.id,
+      mixedPackTypeName: mixedPackType.name,
+      quantity,
+      composition,
+      assembledDate: today(),
+    };
+    const { data, error } = await supabase
+      .from("mixed_pack_assemblies")
+      .insert(mixedPackAssemblyToRow(record, user.id, user.name, profile.companyId))
+      .select()
+      .single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setMixedPackAssemblies((prev) => [rowToMixedPackAssembly(data), ...prev]);
+    showToast("success", `${quantity} × ${mixedPackType.name} assembled.`);
+  };
+
   const setStillFermenting = async (id, value) => {
     const { error } = await supabase.from("batches").update({ still_fermenting: value }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -19960,6 +20358,30 @@ function TankLogApp() {
                 onStartStockTake={() => setShowFinishedStockTake(true)}
                 onOpenHistory={() => setShowFinishedStockTakeHistory(true)}
                 stockTakeCount={stockTakes.filter((st) => st.type === "finished_stock").length}
+                mixedPackTypes={mixedPackTypes}
+                mixedPackStock={mixedPackStock}
+                onNewMixedPackType={() => setShowNewMixedPackType(true)}
+                onEditMixedPackType={setEditingMixedPackType}
+                onAssembleMixedPack={setAssemblingMixedPackType}
+              />
+            )}
+            {(showNewMixedPackType || editingMixedPackType) && (
+              <MixedPackTypeModal
+                products={[...new Map(availableStock.filter((s) => s.packaged > 0).map((s) => [`${s.batchName}::${s.containerKey}`, { key: `${s.batchName}::${s.containerKey}`, label: `${s.batchName} — ${s.containerLabel}`, batchName: s.batchName, containerKey: s.containerKey, containerLabel: s.containerLabel }])).values()]}
+                editingType={editingMixedPackType}
+                onClose={() => {
+                  setShowNewMixedPackType(false);
+                  setEditingMixedPackType(null);
+                }}
+                onSave={saveMixedPackType}
+              />
+            )}
+            {assemblingMixedPackType && (
+              <AssembleMixedPackModal
+                mixedPackType={assemblingMixedPackType}
+                availableStock={availableStock}
+                onClose={() => setAssemblingMixedPackType(null)}
+                onSave={(entry) => assembleMixedPack(assemblingMixedPackType, entry)}
               />
             )}
 
