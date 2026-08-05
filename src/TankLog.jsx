@@ -9995,6 +9995,25 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                       <AlertTriangle size={11} /> Only {stock} {ing.unit} in stock — adjust the amount or top up inventory first.
                     </div>
                   )}
+                  {(() => {
+                    const matchedItem = inventory.find((it) => it.name.toLowerCase() === ing.name.trim().toLowerCase());
+                    const availableLots = matchedItem ? (matchedItem.lots || []).filter((l) => (l.remainingQty ?? l.qty) > 0) : [];
+                    if (availableLots.length <= 1) return null;
+                    return (
+                      <select
+                        value={ing.preferredLotId || ""}
+                        onChange={(e) => updateBatchIngredient(ing.id, { preferredLotId: e.target.value || null })}
+                        style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "6px 8px", marginTop: 6, color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 11.5 }}
+                      >
+                        <option value="">Use oldest lot first (default)</option>
+                        {availableLots.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.lotNumber} — {l.remainingQty ?? l.qty} {ing.unit} left
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -13522,6 +13541,36 @@ const secondaryBtnStyle = {
 // direct sales, or folded into a mixed pack that was sold on. This is
 // what an MPI or council audit actually tests, not just "we have a
 // checklist for it."
+// FIFO deduction shared by batch creation and manual adjustments — oldest
+// lot first by default, or a chosen lot first if preferredLotId is given
+// (falling through to the rest in order if that lot doesn't cover it all).
+// Returns lots in their original array order so display order never shuffles.
+function deductFromLotsFIFO(lots, amount, preferredLotId) {
+  let remainingToDeduct = amount;
+  const lotsUsed = [];
+  let costAccum = 0;
+  const ordered = preferredLotId
+    ? [...(lots || [])].sort((a, b) => (a.id === preferredLotId ? -1 : b.id === preferredLotId ? 1 : 0))
+    : lots || [];
+  const remainingById = {};
+  ordered.forEach((lot) => {
+    const currentRemaining = lot.remainingQty ?? lot.qty;
+    if (remainingToDeduct <= 0 || currentRemaining <= 0) {
+      remainingById[lot.id] = currentRemaining;
+      return;
+    }
+    const take = Math.round(Math.min(currentRemaining, remainingToDeduct) * 100) / 100;
+    remainingToDeduct = Math.round((remainingToDeduct - take) * 100) / 100;
+    if (take > 0) {
+      lotsUsed.push({ lotNumber: lot.lotNumber, qty: take });
+      if (lot.unitCost != null) costAccum += take * lot.unitCost;
+    }
+    remainingById[lot.id] = Math.round((currentRemaining - take) * 100) / 100;
+  });
+  const updatedLots = (lots || []).map((lot) => ({ ...lot, remainingQty: remainingById[lot.id] }));
+  return { updatedLots, lotsUsed, cost: Math.round(costAccum * 100) / 100 };
+}
+
 function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, customers) {
   const usageEntries = (item.history || []).filter((h) => h.type === "batch" && (h.lots || []).some((l) => l.lotNumber === lotNumber));
   return usageEntries
@@ -17389,7 +17438,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-171";
+const APP_VERSION = "2026-08-03-172";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18601,22 +18650,8 @@ function TankLogApp() {
         const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
         if (!item) continue;
 
-        let remainingToDeduct = ing.qty;
-        const lotsUsed = [];
-        const updatedLots = (item.lots || []).map((lot) => {
-          const currentRemaining = lot.remainingQty ?? lot.qty;
-          if (remainingToDeduct <= 0 || currentRemaining <= 0) {
-            return { ...lot, remainingQty: currentRemaining };
-          }
-          const take = Math.round(Math.min(currentRemaining, remainingToDeduct) * 100) / 100;
-          remainingToDeduct = Math.round((remainingToDeduct - take) * 100) / 100;
-          if (take > 0) {
-            lotsUsed.push({ lotNumber: lot.lotNumber, qty: take });
-            if (lot.unitCost != null) totalIngredientCost += take * lot.unitCost;
-          }
-          return { ...lot, remainingQty: Math.round((currentRemaining - take) * 100) / 100 };
-        });
-
+        const { updatedLots, lotsUsed, cost } = deductFromLotsFIFO(item.lots, ing.qty, ing.preferredLotId);
+        totalIngredientCost += cost;
         plannedUpdates.push({ item, updatedLots, lotsUsed });
       }
     }
@@ -19675,11 +19710,17 @@ function TankLogApp() {
     if (!item) return;
     const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
     const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+    // A reduction should come off actual lots too, or their remaining
+    // amounts quietly drift out of sync with the real total — and
+    // traceability's numbers stop being trustworthy.
+    const lotsChanged = actualDelta < 0;
+    const updatedLots = lotsChanged ? deductFromLotsFIFO(item.lots, -actualDelta).updatedLots : item.lots;
     const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "manual", delta: actualDelta, note: "Manual adjustment" };
     const newHistory = [...(item.history || []), historyEntry];
-    const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
+    const payload = lotsChanged ? { qty: newQty, lots: updatedLots, history: newHistory } : { qty: newQty, history: newHistory };
+    const { error } = await supabase.from("inventory_items").update(payload).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
   };
 
   const adjustInventoryWithNote = async (id, delta, batchRef) => {
@@ -19687,6 +19728,8 @@ function TankLogApp() {
     if (!item) return;
     const newQty = Math.max(0, Math.round((item.qty + delta) * 100) / 100);
     const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
+    const lotsChanged = actualDelta < 0;
+    const updatedLots = lotsChanged ? deductFromLotsFIFO(item.lots, -actualDelta).updatedLots : item.lots;
     const historyEntry = {
       id: uid(),
       date: new Date().toISOString(),
@@ -19696,9 +19739,10 @@ function TankLogApp() {
       note: batchRef ? `Manual adjustment — Batch ${batchRef}` : "Manual adjustment",
     };
     const newHistory = [...(item.history || []), historyEntry];
-    const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", id);
+    const payload = lotsChanged ? { qty: newQty, lots: updatedLots, history: newHistory } : { qty: newQty, history: newHistory };
+    const { error } = await supabase.from("inventory_items").update(payload).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
   };
 
   const addConsumable = async (item) => {
