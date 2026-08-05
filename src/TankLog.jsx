@@ -13003,7 +13003,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount, onLogContractorVisit }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount, onLogContractorVisit, onStartMockRecall }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -13084,7 +13084,13 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     .sort((a, b) => b.date.localeCompare(a.date))[0];
   const contractorVisitOverdue = latestContractorVisit && latestContractorVisit.dueDate && latestContractorVisit.dueDate < today();
 
-  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0);
+  // Legally required at least every 12 months since 1 July 2023 (Food
+  // Regulations 2015, under a National Programme) — never done at all
+  // counts as overdue too, not just "over a year since the last one".
+  const latestMockRecall = records.filter((r) => r.category === "recall").sort((a, b) => b.date.localeCompare(a.date))[0];
+  const mockRecallOverdue = !latestMockRecall || daysBetween(latestMockRecall.date, today()) > 365;
+
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0);
 
   return (
     <>
@@ -13129,6 +13135,17 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
               >
                 <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Pest contractor visit overdue</span>
                 <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {latestContractorVisit.dueDate}</span>
+              </button>
+            )}
+            {mockRecallOverdue && (
+              <button
+                onClick={onStartMockRecall}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Simulated recall overdue — legally required every 12 months</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {latestMockRecall ? `last done ${latestMockRecall.date}` : "never done"}
+                </span>
               </button>
             )}
             {openCorrectiveActions.map((r) => {
@@ -13231,7 +13248,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         <button onClick={onStartCalibration} style={secondaryBtnStyle}>Log calibration</button>
         <button onClick={onStartTraining} style={secondaryBtnStyle}>Staff training</button>
         <button onClick={() => onStartNote("water", "Log water test")} style={secondaryBtnStyle}>Water test</button>
-        <button onClick={() => onStartNote("recall", "Log mock recall")} style={secondaryBtnStyle}>Mock recall</button>
+        <button onClick={onStartMockRecall} style={secondaryBtnStyle}>Mock recall</button>
         <button onClick={onStartIllness} style={{ ...secondaryBtnStyle, background: "#FBE5DC", borderColor: "#E3B3A0", color: "#B5502F" }}>Staff sickness</button>
         <button onClick={onLogPestCheck} style={secondaryBtnStyle}>Log pest check</button>
         <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStationCount})</button>
@@ -13557,6 +13574,185 @@ function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies
         )
       )}
     </div>
+  );
+}
+
+const RECALL_MANUAL_STEPS = [
+  "Notify staff involved in production, sales, and distribution — invite them to take part in the exercise",
+  "Carry out a risk assessment for the scenario (MPI's Risk Assessment form, labelled SIMULATED RECALL)",
+  "Identify where affected stock would be held securely in a real recall (locked or taped-off area)",
+  "Hold a review — what went well, what didn't, any gaps or staff training needs",
+];
+
+// Walks through MPI's actual simulated-recall process: pick a scenario,
+// auto-trace who's affected (reusing the same logic as the Traceability
+// report), draft — never send — notifications, then the handful of
+// steps that genuinely need a human. Saved as a real Food Safety record
+// so it's on hand for the next verifier visit.
+function MockRecallModal({ inventory, batches, salesOrders, mixedPackAssemblies, customers, onClose, onSave }) {
+  const [step, setStep] = useState(1);
+  const [scenario, setScenario] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [lotNumber, setLotNumber] = useState("");
+  const [manualChecked, setManualChecked] = useState(() => new Set());
+  const [reviewNotes, setReviewNotes] = useState("");
+  const [completedBy, setCompletedBy] = useState("");
+
+  const item = inventory.find((it) => it.id === itemId);
+  const lots = item ? [...new Map((item.lots || []).map((l) => [l.lotNumber, l])).values()] : [];
+  const trace = item && lotNumber ? traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, customers) : [];
+  const affectedBatches = trace.map((t) => t.batch.name);
+  const affectedCustomers = [
+    ...new Set([
+      ...trace.flatMap((t) => t.directOrders.map((d) => d.customer?.name).filter(Boolean)),
+      ...trace.flatMap((t) => t.packOrders.map((d) => d.customer?.name).filter(Boolean)),
+    ]),
+  ];
+
+  const toggleManual = (i) =>
+    setManualChecked((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+
+  const customerDraft = `SIMULATED RECALL — DO NOT SEND
+
+Subject: Important product notice — ${item?.name || "[ingredient]"} — ${scenario || "[scenario]"}
+
+We are writing to inform you, as part of a routine simulated recall exercise, that the following product(s) would be affected under this scenario: ${affectedBatches.join(", ") || "[none traced]"}.
+
+In a real recall, this notice would detail the issue, the action we're taking, and what you should do with any affected stock. No action is required — this is a practice exercise only.`;
+
+  const verifierDraft = `SIMULATED RECALL — DO NOT SEND
+
+To: [Verifier / New Zealand Food Safety]
+Re: Simulated recall exercise — ${today()}
+
+Scenario: ${scenario || "[scenario]"}
+Affected lot: ${lotNumber || "[lot]"} (${item?.name || "[ingredient]"})
+Batches traced: ${affectedBatches.join(", ") || "[none]"}
+Customers who received affected product: ${affectedCustomers.join(", ") || "[none]"}
+
+This exercise tested our ability to trace and identify affected product using our records. Findings and any improvements identified are recorded separately.`;
+
+  const submit = () => {
+    if (!completedBy.trim()) return;
+    const notes = [
+      `Scenario: ${scenario.trim() || "not specified"}`,
+      `Traced: ${item?.name || "—"}, lot ${lotNumber || "—"}`,
+      `Batches affected: ${affectedBatches.join(", ") || "none"}`,
+      `Customers affected: ${affectedCustomers.join(", ") || "none"}`,
+      `Manual steps completed: ${manualChecked.size}/${RECALL_MANUAL_STEPS.length}`,
+      reviewNotes.trim() ? `Review notes: ${reviewNotes.trim()}` : "",
+    ].filter(Boolean).join("\n");
+    onSave({ category: "recall", date: today(), notes, completedBy: completedBy.trim(), correctiveActionResolved: true });
+    onClose();
+  };
+
+  return (
+    <Modal title={`Simulated recall — step ${step} of 4`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {step === 1 && (
+          <>
+            <div style={{ color: "#5C6B54", fontSize: 13 }}>
+              Pick a scenario that could actually happen — MPI suggests things like a contaminated ingredient lot, an undeclared allergen, or a customer complaint about a foreign object.
+            </div>
+            <TextField label="Scenario" value={scenario} onChange={setScenario} placeholder="e.g. Contaminated hop lot — suspected mould" />
+            <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 4 }}>Which ingredient lot are we simulating as affected?</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <select value={itemId} onChange={(e) => { setItemId(e.target.value); setLotNumber(""); }} style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}>
+                <option value="">Choose an ingredient…</option>
+                {inventory.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+              </select>
+              <select value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} disabled={!item} style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}>
+                <option value="">Choose a lot…</option>
+                {lots.map((l) => <option key={l.lotNumber} value={l.lotNumber}>{l.lotNumber}</option>)}
+              </select>
+            </div>
+            <button
+              onClick={() => setStep(2)}
+              disabled={!scenario.trim() || !lotNumber}
+              style={{ background: scenario.trim() && lotNumber ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "12px", color: scenario.trim() && lotNumber ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: scenario.trim() && lotNumber ? "pointer" : "default" }}
+            >
+              Trace affected product →
+            </button>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <div style={{ color: "#5C6B54", fontSize: 13 }}>
+              Traced automatically from your records — this is the step that takes the longest in a real recall.
+            </div>
+            {trace.length === 0 ? (
+              <div style={{ color: "#9BA88A", fontSize: 13 }}>This lot hasn't been used in any batch — nothing to trace for this scenario.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {trace.map(({ batch, directOrders, packOrders }) => (
+                  <div key={batch.id} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13 }}>
+                    <div style={{ color: "#2A3324", fontWeight: 500 }}>{batch.name} (#{batch.number})</div>
+                    <div style={{ color: "#9BA88A", fontSize: 11.5 }}>
+                      {directOrders.length + packOrders.length === 0 ? "Not yet sold" : `${directOrders.length + packOrders.length} order(s) affected`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setStep(1)} style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "12px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 14, cursor: "pointer" }}>← Back</button>
+              <button onClick={() => setStep(3)} style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: "pointer" }}>Draft notifications →</button>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <div style={{ color: "#B5502F", fontSize: 12.5, fontWeight: 500 }}>
+              Drafts only — nothing here is ever sent automatically. Copy these to show your verifier, don't email them out.
+            </div>
+            <div>
+              <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Draft customer notification</div>
+              <textarea readOnly value={customerDraft} style={{ width: "100%", boxSizing: "border-box", minHeight: 130, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: 10, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }} />
+            </div>
+            <div>
+              <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Draft verifier / NZ Food Safety notification</div>
+              <textarea readOnly value={verifierDraft} style={{ width: "100%", boxSizing: "border-box", minHeight: 130, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: 10, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setStep(2)} style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "12px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 14, cursor: "pointer" }}>← Back</button>
+              <button onClick={() => setStep(4)} style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: "pointer" }}>Remaining steps →</button>
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <div style={{ color: "#5C6B54", fontSize: 13 }}>These need a real person — tick them off as your team works through them.</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {RECALL_MANUAL_STEPS.map((s, i) => (
+                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, cursor: "pointer" }}>
+                  <input type="checkbox" checked={manualChecked.has(i)} onChange={() => toggleManual(i)} style={{ width: 16, height: 16, marginTop: 1, accentColor: "#5C9A3C", cursor: "pointer" }} />
+                  <span style={{ color: "#2A3324", fontSize: 13 }}>{s}</span>
+                </label>
+              ))}
+            </div>
+            <TextField label="Review notes (optional)" value={reviewNotes} onChange={setReviewNotes} placeholder="What went well, what to improve next time" />
+            <TextField label="Completed by" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setStep(3)} style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "12px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 14, cursor: "pointer" }}>← Back</button>
+              <button
+                onClick={submit}
+                disabled={!completedBy.trim()}
+                style={{ flex: 1, background: completedBy.trim() ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "12px", color: completedBy.trim() ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: completedBy.trim() ? "pointer" : "default" }}
+              >
+                Save mock recall record
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -17078,7 +17274,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-168";
+const APP_VERSION = "2026-08-03-169";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17869,6 +18065,7 @@ function TankLogApp() {
   const [showPestStationsModal, setShowPestStationsModal] = useState(false);
   const [showLogPestCheckModal, setShowLogPestCheckModal] = useState(false);
   const [showContractorVisitModal, setShowContractorVisitModal] = useState(false);
+  const [showMockRecallModal, setShowMockRecallModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
@@ -20618,6 +20815,7 @@ function TankLogApp() {
                   onManagePestStations={() => setShowPestStationsModal(true)}
                   pestStationCount={pestStations.filter((s) => s.active).length}
                   onLogContractorVisit={() => setShowContractorVisitModal(true)}
+                  onStartMockRecall={() => setShowMockRecallModal(true)}
                 />
               </>
             )}
@@ -20644,6 +20842,17 @@ function TankLogApp() {
                 onClose={() => setShowContractorVisitModal(false)}
                 onSave={addFoodSafetyRecord}
                 onUploadPhoto={uploadFoodSafetyPhoto}
+              />
+            )}
+            {showMockRecallModal && (
+              <MockRecallModal
+                inventory={inventory}
+                batches={batches}
+                salesOrders={salesOrders}
+                mixedPackAssemblies={mixedPackAssemblies}
+                customers={customers}
+                onClose={() => setShowMockRecallModal(false)}
+                onSave={addFoodSafetyRecord}
               />
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
