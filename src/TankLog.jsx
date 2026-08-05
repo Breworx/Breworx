@@ -5067,6 +5067,39 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
 
 // A single-field rename, reusable anywhere an item's name was locked in
 // at creation and never editable again — a typo shouldn't be permanent.
+// For stock that came in outside the normal PO flow — a lot number
+// entered directly against the item, so it still shows up in
+// traceability without needing a paper trail through Purchase Orders.
+function AddLotModal({ itemName, onClose, onSave }) {
+  const [lotNumber, setLotNumber] = useState("");
+  const [qty, setQty] = useState("");
+  const [date, setDate] = useState(today());
+  const [unitCost, setUnitCost] = useState("");
+
+  const submit = () => {
+    if (!lotNumber.trim() || !qty || Number(qty) <= 0) return;
+    onSave({ lotNumber: lotNumber.trim(), qty: Number(qty), date, unitCost: unitCost === "" ? null : Number(unitCost) });
+    onClose();
+  };
+
+  return (
+    <Modal title={`Add a lot — ${itemName}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Lot number" value={lotNumber} onChange={setLotNumber} placeholder="e.g. MO-2291" />
+        <NumberField label="Quantity received" value={qty} onChange={setQty} step="0.1" />
+        <TextField label="Date received" type="date" value={date} onChange={setDate} />
+        <NumberField label="Unit cost (optional)" value={unitCost} onChange={setUnitCost} step="0.01" />
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Add lot
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function RenameModal({ title, currentName, onClose, onSave }) {
   const [name, setName] = useState(currentName);
 
@@ -5094,12 +5127,13 @@ function RenameModal({ title, currentName, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
   const [costDraft, setCostDraft] = useState(item.costPerUnit ?? "");
   const [showRename, setShowRename] = useState(false);
+  const [showAddLot, setShowAddLot] = useState(false);
 
   const typeLabel = { batch: "Used in batch", manual: "Manual adjustment", received: "Stock received", restored: "Restored (batch deleted)", stocktake: "Stock take correction" };
   const typeColor = { batch: "#5C9A3C", manual: "#5C6B54", received: "#D9A441", restored: "#D9A441", stocktake: "#D4A24C" };
@@ -5272,6 +5306,35 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           ))}
         </select>
       </label>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Lots</div>
+        {onAddLot && (
+          <button
+            onClick={() => setShowAddLot(true)}
+            style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+          >
+            + Add a lot
+          </button>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+        {(item.lots || []).length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No lots on record — add one, or receive a Purchase Order with a lot number.</div>
+        ) : (
+          [...(item.lots || [])].reverse().map((l) => (
+            <div key={l.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 12.5 }}>
+              <span style={{ color: "#2A3324" }}>{l.lotNumber}{l.poNumber ? ` — ${l.poNumber}` : " — manual entry"}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A" }}>
+                {l.remainingQty ?? l.qty}/{l.qty} {item.unit} left · {formatHistoryStamp(l.date)}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+      {showAddLot && (
+        <AddLotModal itemName={item.name} onClose={() => setShowAddLot(false)} onSave={(entry) => onAddLot(item.id, entry)} />
+      )}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
         History
@@ -17326,7 +17389,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-170";
+const APP_VERSION = "2026-08-03-171";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19558,6 +19621,22 @@ function TankLogApp() {
     const { error } = await supabase.from("inventory_items").update({ name }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, name } : it)));
+  };
+
+  // Same lot shape a PO receipt creates, just entered directly — for
+  // stock that came in without a formal PO, so it's still traceable.
+  const addManualLot = async (itemId, entry) => {
+    const item = inventory.find((it) => it.id === itemId);
+    if (!item) return;
+    const lotEntry = { id: uid(), lotNumber: entry.lotNumber, qty: entry.qty, remainingQty: entry.qty, date: entry.date, poNumber: null, unitCost: entry.unitCost };
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: entry.qty, note: `Manual lot entry — ${entry.lotNumber}` };
+    const newQty = Math.round((item.qty + entry.qty) * 100) / 100;
+    const newLots = [...(item.lots || []), lotEntry];
+    const newHistory = [...(item.history || []), historyEntry];
+    const { error } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots, history: newHistory }).eq("id", itemId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setInventory((prev) => prev.map((it) => (it.id === itemId ? { ...it, qty: newQty, lots: newLots, history: newHistory } : it)));
+    showToast("success", `Lot ${entry.lotNumber} added.`);
   };
 
   const deleteInventoryItem = (item) => {
@@ -22292,6 +22371,7 @@ function TankLogApp() {
             onChangeSupplier={updateInventorySupplier}
             onDelete={deleteInventoryItem}
             onRename={renameInventoryItem}
+            onAddLot={addManualLot}
           />
         )}
 
