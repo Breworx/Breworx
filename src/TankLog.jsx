@@ -13486,11 +13486,31 @@ function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, cu
 
 function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies, customers }) {
   const [itemId, setItemId] = useState("");
+  const [itemQuery, setItemQuery] = useState("");
+  const [itemFocused, setItemFocused] = useState(false);
   const [lotNumber, setLotNumber] = useState("");
+  const [lotQuery, setLotQuery] = useState("");
+  const [lotFocused, setLotFocused] = useState(false);
 
   const item = inventory.find((it) => it.id === itemId);
   const lots = item ? [...new Map((item.lots || []).map((l) => [l.lotNumber, l])).values()] : [];
   const trace = item && lotNumber ? traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, customers) : [];
+
+  const itemMatches = inventory.filter((it) => it.name.toLowerCase().includes(itemQuery.trim().toLowerCase()));
+  const lotMatches = lots.filter((l) => l.lotNumber.toLowerCase().includes(lotQuery.trim().toLowerCase()));
+
+  const pickItem = (it) => {
+    setItemId(it.id);
+    setItemQuery(it.name);
+    setItemFocused(false);
+    setLotNumber("");
+    setLotQuery("");
+  };
+  const pickLot = (l) => {
+    setLotNumber(l.lotNumber);
+    setLotQuery(l.lotNumber);
+    setLotFocused(false);
+  };
 
   return (
     <div>
@@ -13499,35 +13519,67 @@ function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, position: "relative" }}>
           <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Ingredient</div>
-          <select
-            value={itemId}
+          <input
+            type="text"
+            value={itemQuery}
             onChange={(e) => {
-              setItemId(e.target.value);
-              setLotNumber("");
+              setItemQuery(e.target.value);
+              if (itemId) { setItemId(""); setLotNumber(""); setLotQuery(""); }
             }}
+            onFocus={() => setItemFocused(true)}
+            onBlur={() => setTimeout(() => setItemFocused(false), 150)}
+            placeholder="Search ingredients…"
             style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
-          >
-            <option value="">Choose an ingredient…</option>
-            {inventory.map((it) => (
-              <option key={it.id} value={it.id}>{it.name}</option>
-            ))}
-          </select>
+          />
+          {itemFocused && itemMatches.length > 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 220, overflowY: "auto" }}>
+              {itemMatches.map((it) => (
+                <button
+                  key={it.id}
+                  onMouseDown={() => pickItem(it)}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                >
+                  {it.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, position: "relative" }}>
           <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Lot</div>
-          <select
-            value={lotNumber}
-            onChange={(e) => setLotNumber(e.target.value)}
+          <input
+            type="text"
+            value={lotQuery}
+            onChange={(e) => {
+              setLotQuery(e.target.value);
+              if (lotNumber) setLotNumber("");
+            }}
+            onFocus={() => setLotFocused(true)}
+            onBlur={() => setTimeout(() => setLotFocused(false), 150)}
             disabled={!item}
+            placeholder={item ? "Search lots…" : "Choose an ingredient first"}
             style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
-          >
-            <option value="">Choose a lot…</option>
-            {lots.map((l) => (
-              <option key={l.lotNumber} value={l.lotNumber}>{l.lotNumber}{l.receivedDate ? ` — received ${l.receivedDate}` : ""}</option>
-            ))}
-          </select>
+          />
+          {lotFocused && lotMatches.length > 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 220, overflowY: "auto" }}>
+              {lotMatches.map((l) => (
+                <button
+                  key={l.lotNumber}
+                  onMouseDown={() => pickLot(l)}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                >
+                  {l.lotNumber}{l.date ? ` — received ${formatHistoryStamp(l.date)}` : ""}
+                </button>
+              ))}
+            </div>
+          )}
+          {item && lotFocused && lots.length === 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, padding: "9px 10px", color: "#9BA88A", fontSize: 12.5 }}>
+              No lots received for this ingredient yet — lots are created when a Purchase Order is received with a lot number.
+            </div>
+          )}
         </div>
       </div>
 
@@ -17274,7 +17326,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-169";
+const APP_VERSION = "2026-08-03-170";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
