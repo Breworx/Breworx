@@ -2984,6 +2984,76 @@ function PestStationsModal({ stations, records, onClose, onAdd, onUpdate }) {
   );
 }
 
+function LogContractorVisitModal({ onClose, onSave, onUploadPhoto }) {
+  const [contractorName, setContractorName] = useState("");
+  const [date, setDate] = useState(today());
+  const [findings, setFindings] = useState("");
+  const [nextVisitDue, setNextVisitDue] = useState("");
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoSelect = async (file) => {
+    if (!file) return;
+    setUploadingPhoto(true);
+    const url = await onUploadPhoto(file);
+    setUploadingPhoto(false);
+    if (url) setPhotoUrl(url);
+  };
+
+  const submit = () => {
+    if (!contractorName.trim()) return;
+    onSave({
+      category: "Pest control — contractor visit",
+      date,
+      completedBy: contractorName.trim(),
+      notes: findings.trim(),
+      dueDate: nextVisitDue || null,
+      photoUrl,
+      correctiveActionResolved: true,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log a contractor visit" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Contractor / company" value={contractorName} onChange={setContractorName} placeholder="e.g. Rentokil" />
+        <TextField label="Visit date" type="date" value={date} onChange={setDate} />
+        <TextField label="Findings / recommendations" value={findings} onChange={setFindings} placeholder="What they found, anything actioned or recommended" />
+        <TextField label="Next visit due (optional)" type="date" value={nextVisitDue} onChange={setNextVisitDue} />
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Visit report (optional)</div>
+          {photoUrl ? (
+            <div style={{ position: "relative", width: 90 }}>
+              <img src={photoUrl} alt="" style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 6, border: "1px solid #DDE0C8" }} />
+              <button
+                onClick={() => setPhotoUrl(null)}
+                aria-label="Remove"
+                style={{ position: "absolute", top: -6, right: -6, background: "#B5502F", border: "none", borderRadius: "50%", width: 20, height: 20, color: "#FFFFFF", cursor: "pointer", fontSize: 12, lineHeight: "20px", padding: 0 }}
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <label
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#F5F1E4", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "9px 14px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: uploadingPhoto ? "default" : "pointer" }}
+            >
+              {uploadingPhoto ? "Uploading…" : "+ Add a photo or scan"}
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => handlePhotoSelect(e.target.files?.[0])} disabled={uploadingPhoto} style={{ display: "none" }} />
+            </label>
+          )}
+        </div>
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function LogPestCheckModal({ stations, onClose, onSave, onUploadPhoto, onCreateReminder }) {
   const [stationId, setStationId] = useState("");
   const [date, setDate] = useState(today());
@@ -12831,6 +12901,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
     incident: "Incident",
     illness: "Staff sickness",
     "Pest control": "Pest control",
+    "Pest control — contractor visit": "Pest control (contractor)",
   };
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
   const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
@@ -12931,7 +13002,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount, onLogContractorVisit }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -12945,6 +13016,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     incident: "Incident",
     illness: "Staff sickness",
     "Pest control": "Pest control",
+    "Pest control — contractor visit": "Pest control (contractor)",
   };
   const categoryColor = {
     checklist: "#D9A441",
@@ -13006,7 +13078,12 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     });
   const overdueCalibrations = Object.values(latestCalibrationByEquipment).filter((r) => r.dueDate && r.dueDate < today());
 
-  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length;
+  const latestContractorVisit = records
+    .filter((r) => r.category === "Pest control — contractor visit")
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  const contractorVisitOverdue = latestContractorVisit && latestContractorVisit.dueDate && latestContractorVisit.dueDate < today();
+
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0);
 
   return (
     <>
@@ -13044,6 +13121,15 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {r.dueDate}</span>
               </button>
             ))}
+            {contractorVisitOverdue && (
+              <button
+                onClick={onLogContractorVisit}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Pest contractor visit overdue</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {latestContractorVisit.dueDate}</span>
+              </button>
+            )}
             {openCorrectiveActions.map((r) => (
               <div
                 key={r.id}
@@ -13139,6 +13225,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         <button onClick={onStartIllness} style={{ ...secondaryBtnStyle, background: "#FBE5DC", borderColor: "#E3B3A0", color: "#B5502F" }}>Staff sickness</button>
         <button onClick={onLogPestCheck} style={secondaryBtnStyle}>Log pest check</button>
         <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStationCount})</button>
+        <button onClick={onLogContractorVisit} style={secondaryBtnStyle}>Log contractor visit</button>
         <button onClick={() => onStartNote("incident", "Something went wrong")} style={secondaryBtnStyle}>
           Something went wrong
         </button>
@@ -13286,6 +13373,13 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                       </>
                     );
                   })()}
+                {r.category === "Pest control — contractor visit" && (
+                  <>
+                    {r.completedBy} — {r.notes || "no findings noted"}
+                    {r.dueDate && <div style={{ color: "#9BA88A", marginTop: 3 }}>Next visit due {r.dueDate}</div>}
+                    {r.photoUrl && <img src={r.photoUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, marginTop: 5 }} />}
+                  </>
+                )}
                 {r.category === "illness" && (() => {
                   const symptoms = (r.items || []).filter((i) => i.checked).map((i) => i.label);
                   return (
@@ -13333,6 +13427,129 @@ const secondaryBtnStyle = {
 // since that's the natural reporting cycle, broken down by the duty band
 // each batch actually falls into. Built from packaging events + each
 // batch's measured ABV (OG and its latest logged gravity reading).
+// Real one-step-forward traceability: pick a received lot, and trace it
+// through every batch that used it, then everywhere those batches went —
+// direct sales, or folded into a mixed pack that was sold on. This is
+// what an MPI or council audit actually tests, not just "we have a
+// checklist for it."
+function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, customers) {
+  const usageEntries = (item.history || []).filter((h) => h.type === "batch" && (h.lots || []).some((l) => l.lotNumber === lotNumber));
+  return usageEntries
+    .map((h) => {
+      const qtyUsed = (h.lots || []).find((l) => l.lotNumber === lotNumber)?.qty || 0;
+      const batch = batches.find((b) => h.note === `${b.name} (#${b.number})`);
+      if (!batch) return null;
+      const directOrders = salesOrders.flatMap((o) =>
+        (o.lines || [])
+          .filter((l) => l.batchId === batch.id)
+          .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId) }))
+      );
+      const packAssemblies = mixedPackAssemblies.filter((a) => (a.composition || []).some((c) => c.batchId === batch.id));
+      const packOrders = packAssemblies.flatMap((a) =>
+        salesOrders.flatMap((o) =>
+          (o.lines || [])
+            .filter((l) => l.mixedPackTypeId === a.mixedPackTypeId && o.orderDate >= a.assembledDate)
+            .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId), viaPack: a.mixedPackTypeName }))
+        )
+      );
+      return { batch, qtyUsed, date: h.date, directOrders, packAssemblies, packOrders };
+    })
+    .filter(Boolean);
+}
+
+function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies, customers }) {
+  const [itemId, setItemId] = useState("");
+  const [lotNumber, setLotNumber] = useState("");
+
+  const item = inventory.find((it) => it.id === itemId);
+  const lots = item ? [...new Map((item.lots || []).map((l) => [l.lotNumber, l])).values()] : [];
+  const trace = item && lotNumber ? traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, customers) : [];
+
+  return (
+    <div>
+      <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 18 }}>
+        Pick a received lot and see exactly which batches used it, and everywhere those batches went — direct sales, or folded into a mixed pack that was sold on. This is one-step-forward traceability: proof you could isolate and account for a specific lot if you ever needed to.
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Ingredient</div>
+          <select
+            value={itemId}
+            onChange={(e) => {
+              setItemId(e.target.value);
+              setLotNumber("");
+            }}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            <option value="">Choose an ingredient…</option>
+            {inventory.map((it) => (
+              <option key={it.id} value={it.id}>{it.name}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Lot</div>
+          <select
+            value={lotNumber}
+            onChange={(e) => setLotNumber(e.target.value)}
+            disabled={!item}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            <option value="">Choose a lot…</option>
+            {lots.map((l) => (
+              <option key={l.lotNumber} value={l.lotNumber}>{l.lotNumber}{l.receivedDate ? ` — received ${l.receivedDate}` : ""}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {item && lotNumber && (
+        trace.length === 0 ? (
+          <EmptyState icon={Search} title="This lot hasn't been used in a batch yet" subtitle="Nothing to trace — it's still sitting in inventory, or was never drawn on." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {trace.map(({ batch, qtyUsed, date, directOrders, packAssemblies, packOrders }) => (
+              <div key={batch.id} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, color: "#2A3324" }}>
+                  {batch.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>#{batch.number}</span>
+                </div>
+                <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 10 }}>
+                  Used {qtyUsed} {item.unit} on {formatHistoryStamp(date)} — currently {batch.stage}
+                </div>
+
+                {directOrders.length === 0 && packOrders.length === 0 ? (
+                  <div style={{ color: "#9BA88A", fontSize: 12.5 }}>Not yet on any sales order — still in production or in stock.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {directOrders.map((d, i) => (
+                      <div key={`d-${i}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                        <span style={{ color: "#2A3324" }}>{d.customer ? d.customer.name : "Unknown customer"} — {d.line.qty} × {d.line.containerLabel}</span>
+                        <span style={{ color: "#9BA88A" }}>Order #{d.order.orderNumber} · {d.order.orderDate}</span>
+                      </div>
+                    ))}
+                    {packOrders.map((d, i) => (
+                      <div key={`p-${i}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 10px", background: "#F5F0FA", border: "1px solid #DCC9EC", borderRadius: 4 }}>
+                        <span style={{ color: "#2A3324" }}>{d.customer ? d.customer.name : "Unknown customer"} — via {d.viaPack} ({d.line.qty} pack{d.line.qty !== 1 ? "s" : ""})</span>
+                        <span style={{ color: "#9BA88A" }}>Order #{d.order.orderNumber} · {d.order.orderDate}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {packOrders.length > 0 && (
+                  <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 8, fontStyle: "italic" }}>
+                    Pack-level trace — this batch went into that pack type, but individual packs aren't serial-tracked, so this shows every order of that pack type placed after assembly.
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 function ExciseReportView({ batches }) {
   const [monthFilter, setMonthFilter] = useState("");
   const allRows = useMemo(() => exciseRowsForBatches(batches), [batches]);
@@ -16851,7 +17068,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-166";
+const APP_VERSION = "2026-08-03-167";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -17641,6 +17858,7 @@ function TankLogApp() {
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
   const [showPestStationsModal, setShowPestStationsModal] = useState(false);
   const [showLogPestCheckModal, setShowLogPestCheckModal] = useState(false);
+  const [showContractorVisitModal, setShowContractorVisitModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
@@ -20171,6 +20389,7 @@ function TankLogApp() {
                 label: "Compliance",
                 items: [
                   ["foodsafety", "Food Safety", CheckCircle2],
+                  ["traceability", "Traceability", Search],
                   // Excise hidden from nav for now — the view and its code
                   // are untouched, just re-add this line to bring it back:
                   // ["excise", "Excise", FileText],
@@ -20286,7 +20505,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -20388,6 +20607,7 @@ function TankLogApp() {
                   onLogPestCheck={() => setShowLogPestCheckModal(true)}
                   onManagePestStations={() => setShowPestStationsModal(true)}
                   pestStationCount={pestStations.filter((s) => s.active).length}
+                  onLogContractorVisit={() => setShowContractorVisitModal(true)}
                 />
               </>
             )}
@@ -20407,6 +20627,13 @@ function TankLogApp() {
                 onClose={() => setShowPestStationsModal(false)}
                 onAdd={addPestStation}
                 onUpdate={updatePestStation}
+              />
+            )}
+            {showContractorVisitModal && (
+              <LogContractorVisitModal
+                onClose={() => setShowContractorVisitModal(false)}
+                onSave={addFoodSafetyRecord}
+                onUploadPhoto={uploadFoodSafetyPhoto}
               />
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
@@ -21185,6 +21412,16 @@ function TankLogApp() {
                   setSelectedId(batchId);
                   setView("batches");
                 }}
+              />
+            )}
+
+            {!loadingData && view === "traceability" && (
+              <TraceabilityView
+                inventory={inventory}
+                batches={batches}
+                salesOrders={salesOrders}
+                mixedPackAssemblies={mixedPackAssemblies}
+                customers={customers}
               />
             )}
 
