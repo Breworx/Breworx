@@ -12979,6 +12979,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
             {openCorrectiveActions.map((r) => (
               <div key={r.id} style={{ fontSize: 13, padding: "6px 0", borderBottom: "1px solid #F0EDE0" }}>
                 <strong>{r.date}</strong> — {r.correctiveAction}
+                <span style={{ color: "#B5502F" }}> (open {daysBetween(r.date, today())} days)</span>
               </div>
             ))}
           </div>
@@ -13130,20 +13131,29 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {latestContractorVisit.dueDate}</span>
               </button>
             )}
-            {openCorrectiveActions.map((r) => (
-              <div
-                key={r.id}
-                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6 }}
-              >
-                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{r.correctiveAction}</span>
-                <button
-                  onClick={() => onResolveCorrectiveAction(r.id)}
-                  style={{ flexShrink: 0, background: "#FFFFFF", border: "1px solid #E3B37A", borderRadius: 5, padding: "6px 10px", color: "#7A3E1D", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+            {openCorrectiveActions.map((r) => {
+              const daysOpen = daysBetween(r.date, today());
+              const urgentColor = daysOpen >= 30 ? "#B5502F" : daysOpen >= 7 ? "#7A3E1D" : "#9B7A3E";
+              return (
+                <div
+                  key={r.id}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6 }}
                 >
-                  Mark resolved
-                </button>
-              </div>
-            ))}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: "#7A3E1D", fontSize: 13.5 }}>{r.correctiveAction}</div>
+                    <div style={{ color: urgentColor, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: daysOpen >= 30 ? 700 : 400 }}>
+                      Open {daysOpen} day{daysOpen !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onResolveCorrectiveAction(r.id)}
+                    style={{ flexShrink: 0, background: "#FFFFFF", border: "1px solid #E3B37A", borderRadius: 5, padding: "6px 10px", color: "#7A3E1D", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
+                  >
+                    Mark resolved
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -17068,7 +17078,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-167";
+const APP_VERSION = "2026-08-03-168";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
