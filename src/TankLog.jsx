@@ -5070,6 +5070,100 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
 // For stock that came in outside the normal PO flow — a lot number
 // entered directly against the item, so it still shows up in
 // traceability without needing a paper trail through Purchase Orders.
+// For breweries that fill one big tank across multiple brew days and
+// blend as they go — stays one batch, one final beer, just built up in
+// more than one pass. Adds to the batch's running volume and ingredient
+// list rather than creating a second batch record.
+function AddBrewDayModal({ onClose, onSave }) {
+  const [date, setDate] = useState(today());
+  const [volume, setVolume] = useState("");
+  const [og, setOg] = useState("");
+  const [lines, setLines] = useState([{ id: uid(), name: "", qty: "", unit: "kg" }]);
+
+  const addLine = () => setLines((prev) => [...prev, { id: uid(), name: "", qty: "", unit: "kg" }]);
+  const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const submit = () => {
+    const cleanLines = lines.filter((l) => l.name.trim() && Number(l.qty) > 0);
+    if (!volume || Number(volume) <= 0) return;
+    onSave({
+      date,
+      volume: Number(volume),
+      og: og === "" ? null : Number(og),
+      ingredients: cleanLines.map((l) => ({ name: l.name.trim(), qty: Number(l.qty), unit: l.unit, category: "Grain" })),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Add another brew day" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          For blending multiple brew days into the same tank — this adds to the batch's total volume and ingredients, it doesn't create a separate batch.
+        </div>
+        <TextField label="Brew day date" type="date" value={date} onChange={setDate} />
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <NumberField label="Volume added" value={volume} onChange={setVolume} step="0.5" suffix="L" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <NumberField label="OG (optional)" value={og} onChange={setOg} step="0.001" />
+          </div>
+        </div>
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Ingredients used this brew day</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {lines.map((l) => (
+              <div key={l.id} style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="text"
+                  value={l.name}
+                  onChange={(e) => updateLine(l.id, { name: e.target.value })}
+                  placeholder="Ingredient"
+                  style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={l.qty}
+                  onChange={(e) => updateLine(l.id, { qty: e.target.value })}
+                  placeholder="Qty"
+                  style={{ width: 70, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "center" }}
+                />
+                <select
+                  value={l.unit}
+                  onChange={(e) => updateLine(l.id, { unit: e.target.value })}
+                  style={{ width: 64, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 4px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12 }}
+                >
+                  {["kg", "g", "L", "mL", "ea"].map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+                <button onClick={() => removeLine(l.id)} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={addLine}
+            style={{ marginTop: 8, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", width: "100%", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            + Add ingredient
+          </button>
+        </div>
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save brew day
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function AddSplitTankIngredientModal({ tankName, inventory, onClose, onSave }) {
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
@@ -11132,7 +11226,7 @@ function TrendChart({ points, valueKey, color, formatValue }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -12232,6 +12326,39 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </details>
         )}
       </div>
+
+      {(batch.stage === "Brewing" || batch.stage === "Primary") && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: (batch.brewDays || []).length > 0 ? 10 : 0 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+              Brew days — for blending multiple brews into this tank
+            </div>
+            <button
+              onClick={onAddBrewDay}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              + Add another brew day
+            </button>
+          </div>
+          {(batch.brewDays || []).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {batch.brewDays.map((bd) => (
+                <div key={bd.id} style={{ padding: "8px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "#2A3324" }}>{formatHistoryStamp(bd.date)}{bd.og ? ` — OG ${bd.og.toFixed(3)}` : ""}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C9A3C" }}>+{bd.volume}L</span>
+                  </div>
+                  {bd.ingredients.length > 0 && (
+                    <div style={{ color: "#9BA88A", marginTop: 3 }}>
+                      {bd.ingredients.map((i) => `${i.qty}${i.unit} ${i.name}`).join(", ")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {batch.splitTanks && batch.splitTanks.length > 0 ? (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
@@ -17572,7 +17699,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-174";
+const APP_VERSION = "2026-08-03-175";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18369,6 +18496,7 @@ function TankLogApp() {
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
   const [addingIngredientToTank, setAddingIngredientToTank] = useState(null);
   const [showAddBatchIngredient, setShowAddBatchIngredient] = useState(false);
+  const [showAddBrewDay, setShowAddBrewDay] = useState(false);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [showIllnessModal, setShowIllnessModal] = useState(false);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
@@ -19830,6 +19958,48 @@ function TankLogApp() {
       if (!invError) setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
     }
     showToast("success", `${entry.name} added.`);
+  };
+
+  // A second (or third...) brew day filling the same tank — deducts real
+  // stock for each ingredient the same way the original brew day did,
+  // adds to the batch's running volume and ingredient list, and keeps a
+  // dated log of each pass so the blending history stays visible.
+  const addBrewDay = async (batchId, entry) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+
+    let addedCost = 0;
+    const inventoryUpdates = [];
+    for (const ing of entry.ingredients) {
+      const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+      if (!item) continue;
+      const { updatedLots, cost } = deductFromLotsFIFO(item.lots, ing.qty);
+      addedCost += cost;
+      const newQty = Math.max(0, Math.round((item.qty - ing.qty) * 100) / 100);
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: -ing.qty, note: `${batch.name} (#${batch.number}) — brew day` };
+      inventoryUpdates.push({ item, newQty, updatedLots, newHistory: [...(item.history || []), historyEntry] });
+    }
+
+    const brewDayEntry = { id: uid(), date: entry.date, volume: entry.volume, og: entry.og, ingredients: entry.ingredients };
+    const newBrewDays = [...(batch.brewDays || []), brewDayEntry];
+    const newVolume = Math.round((batch.volume + entry.volume) * 100) / 100;
+    const newIngredients = [...batch.ingredients, ...entry.ingredients.map((i) => ({ ...i, id: uid() }))];
+    const newIngredientCost = Math.round(((batch.ingredientCost || 0) + addedCost) * 100) / 100;
+
+    const { error } = await supabase
+      .from("batches")
+      .update({ brew_days: newBrewDays, volume: newVolume, ingredients: newIngredients, ingredient_cost: newIngredientCost })
+      .eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) =>
+      prev.map((b) => (b.id === batchId ? { ...b, brewDays: newBrewDays, volume: newVolume, ingredients: newIngredients, ingredientCost: newIngredientCost } : b))
+    );
+
+    for (const u of inventoryUpdates) {
+      const { error: invError } = await supabase.from("inventory_items").update({ qty: u.newQty, lots: u.updatedLots, history: u.newHistory }).eq("id", u.item.id);
+      if (!invError) setInventory((prev) => prev.map((it) => (it.id === u.item.id ? { ...it, qty: u.newQty, lots: u.updatedLots, history: u.newHistory } : it)));
+    }
+    showToast("success", `Brew day added — ${entry.volume}L.`);
   };
 
   const addInventoryItem = async (item) => {
@@ -22531,6 +22701,7 @@ function TankLogApp() {
             onOpenHarvestYeast={() => setShowHarvestYeast(true)}
             onAddSplitTankIngredient={setAddingIngredientToTank}
             onAddBatchIngredient={() => setShowAddBatchIngredient(true)}
+            onAddBrewDay={() => setShowAddBrewDay(true)}
           />
         )}
         {showTastingLog && selected && (
@@ -22543,6 +22714,12 @@ function TankLogApp() {
           <TopUpModal
             onClose={() => setShowTopUp(false)}
             onSave={(entry) => addVolumeTopup(selected.id, entry)}
+          />
+        )}
+        {showAddBrewDay && selected && (
+          <AddBrewDayModal
+            onClose={() => setShowAddBrewDay(false)}
+            onSave={(entry) => addBrewDay(selected.id, entry)}
           />
         )}
         {showHarvestYeast && selected && (
