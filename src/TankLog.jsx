@@ -11132,7 +11132,7 @@ function TrendChart({ points, valueKey, color, formatValue }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -12233,7 +12233,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         )}
       </div>
 
-      {batch.splitTanks && batch.splitTanks.length > 0 && (
+      {batch.splitTanks && batch.splitTanks.length > 0 ? (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Split tank additions — hops, fruit, or anything else added to one side differently
@@ -12265,6 +12265,32 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               </div>
             ))}
           </div>
+        </div>
+      ) : (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: (batch.batchAdditions || []).length > 0 ? 10 : 0 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
+              Additions — hops, fruit, or anything else added mid-fermentation
+            </div>
+            <button
+              onClick={onAddBatchIngredient}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              + Add ingredient
+            </button>
+          </div>
+          {(batch.batchAdditions || []).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {batch.batchAdditions.map((a) => (
+                <div key={a.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 8px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                  <span style={{ color: "#2A3324" }}>{a.name}{a.note ? ` — ${a.note}` : ""}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A" }}>
+                    {a.qty} {a.unit} · {formatHistoryStamp(a.date)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -17546,7 +17572,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-173";
+const APP_VERSION = "2026-08-03-174";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18342,6 +18368,7 @@ function TankLogApp() {
   const [showTopUp, setShowTopUp] = useState(false);
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
   const [addingIngredientToTank, setAddingIngredientToTank] = useState(null);
+  const [showAddBatchIngredient, setShowAddBatchIngredient] = useState(false);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [showIllnessModal, setShowIllnessModal] = useState(false);
   const [activeNoteModal, setActiveNoteModal] = useState(null);
@@ -19773,6 +19800,31 @@ function TankLogApp() {
       const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
       const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
       const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — split addition` };
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, lots: updatedLots, history: newHistory }).eq("id", item.id);
+      if (!invError) setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
+    }
+    showToast("success", `${entry.name} added.`);
+  };
+
+  // Same idea as a split-tank addition, but for the far more common case:
+  // an individual batch (even one that started life as "half" of a brew,
+  // tracked as its own separate record) getting a hop or fruit addition
+  // mid-fermentation.
+  const addBatchIngredient = async (batchId, entry) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    const additionEntry = { id: uid(), name: entry.name, qty: entry.qty, unit: entry.unit, note: entry.note || null, date: today() };
+    const newAdditions = [...(batch.batchAdditions || []), additionEntry];
+    const { error } = await supabase.from("batches").update({ batch_additions: newAdditions }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, batchAdditions: newAdditions } : b)));
+
+    const item = inventory.find((it) => it.name.toLowerCase() === entry.name.toLowerCase());
+    if (item) {
+      const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
+      const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — addition` };
       const newHistory = [...(item.history || []), historyEntry];
       const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, lots: updatedLots, history: newHistory }).eq("id", item.id);
       if (!invError) setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
@@ -22478,6 +22530,7 @@ function TankLogApp() {
             yeastHarvests={yeastHarvests}
             onOpenHarvestYeast={() => setShowHarvestYeast(true)}
             onAddSplitTankIngredient={setAddingIngredientToTank}
+            onAddBatchIngredient={() => setShowAddBatchIngredient(true)}
           />
         )}
         {showTastingLog && selected && (
@@ -22509,6 +22562,14 @@ function TankLogApp() {
             inventory={inventory}
             onClose={() => setAddingIngredientToTank(null)}
             onSave={(entry) => addSplitTankIngredient(selected.id, addingIngredientToTank.tankId, entry)}
+          />
+        )}
+        {showAddBatchIngredient && selected && (
+          <AddSplitTankIngredientModal
+            tankName={selected.name}
+            inventory={inventory}
+            onClose={() => setShowAddBatchIngredient(false)}
+            onSave={(entry) => addBatchIngredient(selected.id, entry)}
           />
         )}
 
