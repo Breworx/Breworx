@@ -45,6 +45,7 @@ export function rowToBatch(row) {
     stillFermenting: !!row.still_fermenting,
     tankSettingsLog: row.tank_settings_log || [],
     pitchedYeastHarvestId: row.pitched_yeast_harvest_id || null,
+    batchAdditions: row.batch_additions || [],
     hopDumpLog: row.hop_dump_log || [],
     yeastDumpLog: row.yeast_dump_log || [],
   };
@@ -95,6 +96,7 @@ export function batchToRow(batch, userId, companyId) {
     still_fermenting: !!batch.stillFermenting,
     tank_settings_log: batch.tankSettingsLog || [],
     pitched_yeast_harvest_id: batch.pitchedYeastHarvestId || null,
+    batch_additions: batch.batchAdditions || [],
     hop_dump_log: batch.hopDumpLog || [],
     yeast_dump_log: batch.yeastDumpLog || [],
   };
