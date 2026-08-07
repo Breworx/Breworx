@@ -13245,6 +13245,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
     illness: "Staff sickness",
     "Pest control": "Pest control",
     "Pest control — contractor visit": "Pest control (contractor)",
+    "Internal audit": "Internal audit",
   };
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
   const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
@@ -13346,7 +13347,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount, onLogContractorVisit, onStartMockRecall }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount, onLogContractorVisit, onStartMockRecall, onStartInternalAudit }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -13361,6 +13362,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     illness: "Staff sickness",
     "Pest control": "Pest control",
     "Pest control — contractor visit": "Pest control (contractor)",
+    "Internal audit": "Internal audit",
   };
   const categoryColor = {
     checklist: "#D9A441",
@@ -13433,7 +13435,12 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
   const latestMockRecall = records.filter((r) => r.category === "recall").sort((a, b) => b.date.localeCompare(a.date))[0];
   const mockRecallOverdue = !latestMockRecall || daysBetween(latestMockRecall.date, today()) > 365;
 
-  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0);
+  // Quarterly is a chosen cadence, not an MPI-mandated one — never done
+  // at all counts as overdue, same logic as the mock recall check above.
+  const latestInternalAudit = records.filter((r) => r.category === "Internal audit").sort((a, b) => b.date.localeCompare(a.date))[0];
+  const internalAuditOverdue = !latestInternalAudit || (latestInternalAudit.dueDate && latestInternalAudit.dueDate < today());
+
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0);
 
   return (
     <>
@@ -13488,6 +13495,17 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Simulated recall overdue — legally required every 12 months</span>
                 <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
                   {latestMockRecall ? `last done ${latestMockRecall.date}` : "never done"}
+                </span>
+              </button>
+            )}
+            {internalAuditOverdue && (
+              <button
+                onClick={onStartInternalAudit}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Internal audit due — quarterly</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {latestInternalAudit ? `last done ${latestInternalAudit.date}` : "never done"}
                 </span>
               </button>
             )}
@@ -13596,6 +13614,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         <button onClick={onLogPestCheck} style={secondaryBtnStyle}>Log pest check</button>
         <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStationCount})</button>
         <button onClick={onLogContractorVisit} style={secondaryBtnStyle}>Log contractor visit</button>
+        <button onClick={onStartInternalAudit} style={secondaryBtnStyle}>Internal audit</button>
         <button onClick={() => onStartNote("incident", "Something went wrong")} style={secondaryBtnStyle}>
           Something went wrong
         </button>
@@ -13748,6 +13767,12 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                     {r.completedBy} — {r.notes || "no findings noted"}
                     {r.dueDate && <div style={{ color: "#9BA88A", marginTop: 3 }}>Next visit due {r.dueDate}</div>}
                     {r.photoUrl && <img src={r.photoUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, marginTop: 5 }} />}
+                  </>
+                )}
+                {r.category === "Internal audit" && (
+                  <>
+                    <div style={{ whiteSpace: "pre-line" }}>{r.notes}</div>
+                    {r.dueDate && <div style={{ color: "#9BA88A", marginTop: 5 }}>Next internal audit due {r.dueDate}</div>}
                   </>
                 )}
                 {r.category === "illness" && (() => {
@@ -13999,6 +14024,117 @@ function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies
         )
       )}
     </div>
+  );
+}
+
+const AUDIT_AREAS = [
+  "Checklists being completed on schedule",
+  "Calibration records up to date",
+  "Staff training current for all active staff",
+  "Water testing up to date",
+  "Pest control — stations checked regularly, contractor visits current",
+  "Simulated recall done within the last 12 months",
+  "Spot-checked traceability — could trace a lot end to end",
+  "All corrective actions closed out or genuinely being actioned",
+  "Records complete, accurate, and easy to find",
+];
+
+// A full review of the whole food safety system, not just one area —
+// quarterly is the common real-world benchmark (not an MPI-mandated
+// number, since NP3 itself just says "regularly"), so that's the
+// default cadence this drives the overdue tracking from.
+function InternalAuditModal({ onClose, onSave }) {
+  const [auditedBy, setAuditedBy] = useState("");
+  const [date, setDate] = useState(today());
+  const [results, setResults] = useState(() => {
+    const initial = {};
+    AUDIT_AREAS.forEach((_, i) => {
+      initial[i] = "pass";
+    });
+    return initial;
+  });
+  const [notesByArea, setNotesByArea] = useState({});
+  const [correctiveAction, setCorrectiveAction] = useState("");
+  const nextAuditDue = addDays(date, 91);
+
+  const setResult = (i, value) => setResults((prev) => ({ ...prev, [i]: value }));
+  const hasIssues = Object.values(results).some((r) => r === "issue");
+
+  const submit = () => {
+    if (!auditedBy.trim()) return;
+    if (hasIssues && !correctiveAction.trim()) return;
+    const notes = AUDIT_AREAS.map(
+      (area, i) => `${results[i] === "issue" ? "⚠ " : "✓ "}${area}${notesByArea[i] ? ` — ${notesByArea[i]}` : ""}`
+    ).join("\n");
+    onSave({
+      category: "Internal audit",
+      date,
+      completedBy: auditedBy.trim(),
+      notes,
+      dueDate: nextAuditDue,
+      correctiveAction: hasIssues ? correctiveAction.trim() : null,
+      correctiveActionResolved: !hasIssues,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Internal audit" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          A full review of your own food safety system — best practice is for this to be done by someone other than whoever's directly responsible for the area being checked.
+        </div>
+        <TextField label="Audited by" value={auditedBy} onChange={setAuditedBy} placeholder="Your name" />
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {AUDIT_AREAS.map((area, i) => (
+            <div key={i} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <span style={{ color: "#2A3324", fontSize: 13, flex: 1 }}>{area}</span>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button
+                    onClick={() => setResult(i, "pass")}
+                    style={{ background: results[i] === "pass" ? "#5C9A3C" : "#FFFFFF", border: `1px solid ${results[i] === "pass" ? "#5C9A3C" : "#DDE0C8"}`, borderRadius: 20, padding: "4px 10px", color: results[i] === "pass" ? "#16191A" : "#5C6B54", fontSize: 11.5, cursor: "pointer" }}
+                  >
+                    Pass
+                  </button>
+                  <button
+                    onClick={() => setResult(i, "issue")}
+                    style={{ background: results[i] === "issue" ? "#B5502F" : "#FFFFFF", border: `1px solid ${results[i] === "issue" ? "#B5502F" : "#DDE0C8"}`, borderRadius: 20, padding: "4px 10px", color: results[i] === "issue" ? "#FFFFFF" : "#5C6B54", fontSize: 11.5, cursor: "pointer" }}
+                  >
+                    Issue
+                  </button>
+                </div>
+              </div>
+              {results[i] === "issue" && (
+                <input
+                  type="text"
+                  value={notesByArea[i] || ""}
+                  onChange={(e) => setNotesByArea((prev) => ({ ...prev, [i]: e.target.value }))}
+                  placeholder="What's wrong"
+                  style={{ width: "100%", boxSizing: "border-box", marginTop: 8, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5 }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        {hasIssues && (
+          <TextField
+            label="Corrective action (required — at least one issue found)"
+            value={correctiveAction}
+            onChange={setCorrectiveAction}
+            placeholder="What will be done about it"
+          />
+        )}
+        <div style={{ color: "#9BA88A", fontSize: 11.5 }}>Next internal audit due: {nextAuditDue} (quarterly)</div>
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save internal audit
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -17699,7 +17835,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-175";
+const APP_VERSION = "2026-08-03-176";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18491,6 +18627,7 @@ function TankLogApp() {
   const [showLogPestCheckModal, setShowLogPestCheckModal] = useState(false);
   const [showContractorVisitModal, setShowContractorVisitModal] = useState(false);
   const [showMockRecallModal, setShowMockRecallModal] = useState(false);
+  const [showInternalAuditModal, setShowInternalAuditModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
@@ -21348,6 +21485,7 @@ function TankLogApp() {
                   pestStationCount={pestStations.filter((s) => s.active).length}
                   onLogContractorVisit={() => setShowContractorVisitModal(true)}
                   onStartMockRecall={() => setShowMockRecallModal(true)}
+                  onStartInternalAudit={() => setShowInternalAuditModal(true)}
                 />
               </>
             )}
@@ -21384,6 +21522,12 @@ function TankLogApp() {
                 mixedPackAssemblies={mixedPackAssemblies}
                 customers={customers}
                 onClose={() => setShowMockRecallModal(false)}
+                onSave={addFoodSafetyRecord}
+              />
+            )}
+            {showInternalAuditModal && (
+              <InternalAuditModal
+                onClose={() => setShowInternalAuditModal(false)}
                 onSave={addFoodSafetyRecord}
               />
             )}
