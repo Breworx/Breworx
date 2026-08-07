@@ -8,6 +8,8 @@ export function rowToBatch(row) {
     number: row.number,
     name: row.name,
     style: row.style,
+    productType: row.product_type || "Beer",
+    labelAbv: row.label_abv,
     volume: row.volume,
     og: row.og,
     fg: row.fg,
@@ -60,6 +62,8 @@ export function batchToRow(batch, userId, companyId) {
     number: batch.number,
     name: batch.name,
     style: batch.style,
+    product_type: batch.productType || "Beer",
+    label_abv: batch.labelAbv ?? null,
     volume: batch.volume,
     og: batch.og,
     fg: batch.fg,
@@ -179,6 +183,7 @@ export function rowToRecipe(row) {
     efficiency: row.efficiency ?? 72,
     boilTime: row.boil_time ?? 60,
     waterChemistry: row.water_chemistry || null,
+    productType: row.product_type || "Beer",
   };
 }
 
@@ -200,6 +205,7 @@ export function recipeToRow(recipe, userId, companyId) {
     efficiency: recipe.efficiency ?? 72,
     boil_time: recipe.boilTime ?? 60,
     water_chemistry: recipe.waterChemistry || null,
+    product_type: recipe.productType || "Beer",
   };
 }
 
@@ -312,6 +318,22 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     station_id: record.stationId || null,
     pest_activity: record.pestActivity || null,
     photo_url: record.photoUrl || null,
+  };
+}
+
+export function rowToExciseItemCode(row) {
+  return {
+    id: row.id,
+    productType: row.product_type,
+    itemNumber: row.item_number || "",
+  };
+}
+export function exciseItemCodeToRow(e, companyId) {
+  return {
+    id: e.id,
+    company_id: companyId,
+    product_type: e.productType,
+    item_number: e.itemNumber || null,
   };
 }
 
