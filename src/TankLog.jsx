@@ -265,15 +265,21 @@ function exciseRowsForBatches(batches, abvMethod) {
     // Label strength is a genuine Customs-recognised method for smaller
     // beer producers (≤2 million L/year, with conditions) — falls back to
     // measured and flags it if no label ABV has been recorded for a batch.
-    const usingLabel = abvMethod === "label" && (b.productType || "Beer") === "Beer";
-    const abv = usingLabel && b.labelAbv ? b.labelAbv : measuredAbv;
-    const usedFallback = usingLabel && !b.labelAbv;
+    // eligibleForLabel tracks whether label mode even applies to this
+    // product (beer only) — separate from usedLabel, which tracks whether
+    // a real label value was actually available and used, so a non-beer
+    // row can never be mistaken for "used label" just because it wasn't
+    // a fallback either.
+    const eligibleForLabel = abvMethod === "label" && (b.productType || "Beer") === "Beer";
+    const usedLabel = eligibleForLabel && !!b.labelAbv;
+    const usedFallback = eligibleForLabel && !b.labelAbv;
+    const abv = usedLabel ? b.labelAbv : measuredAbv;
     const band = exciseBandForAbv(abv);
     packagingEvents(b).forEach((e) => {
       const volumeL = packagedVolume(e);
       if (volumeL <= 0) return;
       const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * band.rate : band.basis === "beverage" ? volumeL * band.rate : 0;
-      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, abv, measuredAbv, labelAbv: b.labelAbv, usedFallback, volumeL, band, duty });
+      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, abv, measuredAbv, labelAbv: b.labelAbv, usedLabel, usedFallback, volumeL, band, duty });
     });
   });
   return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -14513,8 +14519,11 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
       </div>
 
       <div style={{ marginBottom: 22 }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
           Excise item numbers — set once per product type, from your own Working Tariff Document lookup
+        </div>
+        <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8 }}>
+          TSW wants these as 6 digits + a check letter, no dots or spaces — dots typed here are stripped automatically on export either way.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {PRODUCT_TYPES.map((t) => (
@@ -14525,7 +14534,7 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
                 value={codeDrafts[t]}
                 onChange={(e) => setCodeDrafts((prev) => ({ ...prev, [t]: e.target.value }))}
                 onBlur={() => saveCode(t)}
-                placeholder="e.g. 99.10.50G"
+                placeholder="e.g. 991050G"
                 style={{ width: 130, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 9px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5 }}
               />
             </div>
@@ -14564,18 +14573,28 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
           onClick={() =>
             downloadCSV(
               `excise-tsw-export-${monthFilter || "all"}.csv`,
-              ["Excise item number", "Product type", "Batch", "Date", "Quantity of beverage (A) — litres", "% volume of alcohol (B)", "Volume of alcohol (C) — LAL", "Duty basis", "Estimated duty ($)"],
-              rows.map((r) => [
-                (exciseItemCodes.find((e) => e.productType === r.productType)?.itemNumber) || "NOT SET",
-                r.productType,
-                r.batchName,
-                r.date,
-                r.volumeL,
-                r.abv.toFixed(2),
-                Math.round(r.volumeL * (r.abv / 100) * 100) / 100,
-                r.band.basis,
-                r.duty.toFixed(2),
-              ])
+              ["Goods Description", "Excise Item", "Statistical Quantity", "Statistical Unit", "Supplementary Quantity", "Supplementary Unit", "Percentage (%) Volume of Alcohol", "Estimated duty ($) — reference only, TSW calculates the real figure"],
+              rows.map((r) => {
+                // TSW's own help text: "6 digits + CHECK LETTER... Do not
+                // transmit dots or spaces" — strip whatever punctuation
+                // was typed in, regardless of how it was entered.
+                const rawCode = (exciseItemCodes.find((e) => e.productType === r.productType)?.itemNumber) || "";
+                const itemCode = rawCode ? rawCode.replace(/[.\s]/g, "") : "NOT SET";
+                // TSW truncates this figure rather than rounding it —
+                // confirmed against a real entry (273.360L @ 6% shows as
+                // 16.401, not 16.402 which straight rounding would give).
+                const lal = Math.floor(r.volumeL * (r.abv / 100) * 1000) / 1000;
+                return [
+                  `${r.productType} - ${r.batchName} ${r.abv.toFixed(1)}%`,
+                  itemCode,
+                  lal.toFixed(3),
+                  "Litre Pure Alcohol (LAL)",
+                  r.volumeL.toFixed(3),
+                  "Litre (L)",
+                  r.abv.toFixed(2),
+                  r.duty.toFixed(2),
+                ];
+              })
             )
           }
           style={{ width: "100%", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer", marginBottom: 16 }}
@@ -14633,7 +14652,7 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
               <div key={i} style={{ padding: "10px 12px", background: "#FFFFFF", border: `1px solid ${r.usedFallback ? "#E3B37A" : "#DDE0C8"}`, borderRadius: 5, fontSize: 13 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ color: "#2A3324" }}>
-                    {r.batchName} <span style={{ color: "#9BA88A" }}>· {r.productType} · {r.abv.toFixed(1)}% ABV{abvMethod === "label" ? (r.usedFallback ? " (measured, no label set)" : " (label)") : ""} · {r.volumeL}L · {r.date}</span>
+                    {r.batchName} <span style={{ color: "#9BA88A" }}>· {r.productType} · {r.abv.toFixed(1)}% ABV{r.usedLabel ? " (label)" : r.usedFallback ? " (measured, no label set)" : ""} · {r.volumeL}L · {r.date}</span>
                   </span>
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0 }}>${r.duty.toFixed(2)}</span>
                 </div>
@@ -18082,7 +18101,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-182";
+const APP_VERSION = "2026-08-03-184";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
