@@ -43,6 +43,8 @@ import {
   mixedPackAssemblyToRow,
   rowToPestStation,
   pestStationToRow,
+  rowToExciseItemCode,
+  exciseItemCodeToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -232,6 +234,10 @@ const remainingVolume = (batch) => {
 // for alcohol from 1 July 2026". Two different calculation bases apply
 // depending on strength — most craft beer (2.5–6% ABV) is charged per
 // litre of pure alcohol, not per litre of beverage.
+// For excise item classification — different product types get different
+// item numbers on a real Customs declaration, on top of just the ABV band.
+const PRODUCT_TYPES = ["Beer", "Cider/Perry", "Wine", "Spirits", "RTD/Mixed drink", "Other"];
+
 const NZ_EXCISE_BANDS = [
   { min: 0, max: 1.15, rate: 0, basis: "exempt" },
   { min: 1.15, max: 2.5, rate: 0.58492, basis: "beverage" },
@@ -249,19 +255,25 @@ function exciseBandForAbv(abv) {
 // One row per packaging event, since excise is calculated on what actually
 // left the licensed area on a given date — a batch packaged across several
 // sessions can straddle two different reporting periods.
-function exciseRowsForBatches(batches) {
+function exciseRowsForBatches(batches, abvMethod) {
   const rows = [];
   batches.forEach((b) => {
     if (!b.og) return;
     const latest = latestReading(b);
-    const abv = latest ? calcABV(b.og, latest.gravity) : null;
-    if (abv == null || abv <= 0) return;
+    const measuredAbv = latest ? calcABV(b.og, latest.gravity) : null;
+    if (measuredAbv == null || measuredAbv <= 0) return;
+    // Label strength is a genuine Customs-recognised method for smaller
+    // beer producers (≤2 million L/year, with conditions) — falls back to
+    // measured and flags it if no label ABV has been recorded for a batch.
+    const usingLabel = abvMethod === "label" && (b.productType || "Beer") === "Beer";
+    const abv = usingLabel && b.labelAbv ? b.labelAbv : measuredAbv;
+    const usedFallback = usingLabel && !b.labelAbv;
     const band = exciseBandForAbv(abv);
     packagingEvents(b).forEach((e) => {
       const volumeL = packagedVolume(e);
       if (volumeL <= 0) return;
       const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * band.rate : band.basis === "beverage" ? volumeL * band.rate : 0;
-      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, date: e.date, abv, volumeL, band, duty });
+      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, abv, measuredAbv, labelAbv: b.labelAbv, usedFallback, volumeL, band, duty });
     });
   });
   return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -2903,8 +2915,11 @@ function PestStationsModal({ stations, records, onClose, onAdd, onUpdate }) {
           {stations.map((s) => {
             const history = historyFor(s.id);
             const expanded = expandedStationId === s.id;
+            // Monthly cadence — direct advice from a food safety inspector,
+            // not a fixed MPI number, so treat 30 days as the threshold.
+            const overdue = s.active && (history.length === 0 || daysBetween(history[0].date, today()) > 30);
             return (
-              <div key={s.id} style={{ background: s.active ? "#F8F5EA" : "#F5F1E4", border: "1px solid #EBE8D6", borderRadius: 5, opacity: s.active ? 1 : 0.55 }}>
+              <div key={s.id} style={{ background: s.active ? "#F8F5EA" : "#F5F1E4", border: `1px solid ${overdue ? "#E3B37A" : "#EBE8D6"}`, borderRadius: 5, opacity: s.active ? 1 : 0.55 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px" }}>
                   <button
                     onClick={() => setExpandedStationId(expanded ? null : s.id)}
@@ -2912,6 +2927,11 @@ function PestStationsModal({ stations, records, onClose, onAdd, onUpdate }) {
                   >
                     <div style={{ color: "#2A3324", fontSize: 13.5 }}>{s.label}</div>
                     {s.location && <div style={{ color: "#9BA88A", fontSize: 11.5 }}>{s.location}</div>}
+                    {overdue && (
+                      <div style={{ color: "#B5502F", fontSize: 11 }}>
+                        {history.length === 0 ? "Never checked" : `Overdue — last checked ${formatHistoryStamp(history[0].date)}`}
+                      </div>
+                    )}
                   </button>
                   <button
                     onClick={() => setExpandedStationId(expanded ? null : s.id)}
@@ -7770,6 +7790,7 @@ function RecipeCard({ recipe, onOpen }) {
 function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editingRecipe, standalone = false, onSaveAndBrew }) {
   const [name, setName] = useState(editingRecipe ? editingRecipe.name : "");
   const [style, setStyle] = useState(editingRecipe ? editingRecipe.style : "");
+  const [productType, setProductType] = useState(editingRecipe ? editingRecipe.productType || "Beer" : "Beer");
   const [styleFocused, setStyleFocused] = useState(false);
   const [volume, setVolume] = useState(editingRecipe ? editingRecipe.volume : 20);
   const [og, setOg] = useState(editingRecipe ? editingRecipe.og : 1.05);
@@ -7894,6 +7915,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       efficiency: Number(efficiency) || 72,
       boilTime: Number(boilTime) || 60,
       waterChemistry: showWaterChemistry ? { sourceWater, targetPreset: targetWaterPreset, saltGrams } : null,
+      productType,
     });
     setSaving(null);
     onClose();
@@ -8011,6 +8033,18 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               ))}
             </div>
           )}
+        </div>
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Product type (for excise classification)</div>
+          <select
+            value={productType}
+            onChange={(e) => setProductType(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            {PRODUCT_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Batch volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
@@ -9430,6 +9464,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
+  const [productType, setProductType] = useState(presetRecipe ? presetRecipe.productType || "Beer" : "Beer");
   const [volume, setVolume] = useState(presetRecipe ? presetRecipe.volume : 20);
   const [og, setOg] = useState(presetRecipe ? presetRecipe.og : 1.05);
   const [fg, setFg] = useState(presetRecipe ? presetRecipe.fg : 1.01);
@@ -9464,6 +9499,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
     if (r) {
       setName(r.name);
       setStyle(r.style);
+      setProductType(r.productType || "Beer");
       setVolume(r.volume);
       setOg(r.og);
       setFg(r.fg);
@@ -9561,6 +9597,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       number: batchNumber.trim() || nextNumber,
       name: name.trim(),
       style: style.trim() || "Unspecified",
+      productType,
       volume: Number(volume) || 0,
       og: Number(og),
       fg: Number(fg),
@@ -12945,6 +12982,13 @@ function StaffTrainingRecordModal({ staffName, records, onClose }) {
   const topicsCovered = [...new Set(trainingRecords.map((r) => r.topic))];
   const outstandingTopics = TRAINING_TOPICS.filter((t) => t !== "Other" && !topicsCovered.includes(t));
 
+  // Most recent record per topic — refresher due once it's over a year old.
+  const latestByTopic = {};
+  trainingRecords.forEach((r) => {
+    if (!latestByTopic[r.topic] || r.date > latestByTopic[r.topic]) latestByTopic[r.topic] = r.date;
+  });
+  const isDueForRefresher = (topic) => latestByTopic[topic] && daysBetween(latestByTopic[topic], today()) > 365;
+
   return (
     <Modal title={staffName} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -12956,33 +13000,39 @@ function StaffTrainingRecordModal({ staffName, records, onClose }) {
           Training received
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {trainingRecords.map((r) => (
-            <div
-              key={r.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 10,
-                padding: "9px 12px",
-                background: "#F8F5EA",
-                border: "1px solid #EBE8D6",
-                borderRadius: 5,
-                fontSize: 13,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: "#2A3324" }}>{r.topic}</div>
-                {r.trainedBy && <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>by {r.trainedBy}</div>}
-              </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12 }}>{r.date}</div>
-                <div style={{ fontSize: 10.5, color: r.staffConfirmed ? "#D9A441" : "#5C9A3C", marginTop: 2 }}>
-                  {r.staffConfirmed ? "confirmed" : "not confirmed"}
+          {trainingRecords.map((r) => {
+            const isLatestForTopic = latestByTopic[r.topic] === r.date;
+            return (
+              <div
+                key={r.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "9px 12px",
+                  background: "#F8F5EA",
+                  border: `1px solid ${isLatestForTopic && isDueForRefresher(r.topic) ? "#E3B37A" : "#EBE8D6"}`,
+                  borderRadius: 5,
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "#2A3324" }}>{r.topic}</div>
+                  {r.trainedBy && <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>by {r.trainedBy}</div>}
+                  {isLatestForTopic && isDueForRefresher(r.topic) && (
+                    <div style={{ color: "#B5502F", fontSize: 10.5, marginTop: 2 }}>Due for refresher — over a year ago</div>
+                  )}
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12 }}>{r.date}</div>
+                  <div style={{ fontSize: 10.5, color: r.staffConfirmed ? "#D9A441" : "#5C9A3C", marginTop: 2 }}>
+                    {r.staffConfirmed ? "confirmed" : "not confirmed"}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {trainingRecords.length === 0 && (
             <div style={{ color: "#9BA88A", fontSize: 13, padding: "8px 2px" }}>No training logged yet.</div>
           )}
@@ -13347,7 +13397,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStationCount, onLogContractorVisit, onStartMockRecall, onStartInternalAudit }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -13429,6 +13479,26 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     .sort((a, b) => b.date.localeCompare(a.date))[0];
   const contractorVisitOverdue = latestContractorVisit && latestContractorVisit.dueDate && latestContractorVisit.dueDate < today();
 
+  // Monthly cadence — direct advice from a food safety inspector, not a
+  // fixed MPI number. Per station, since the whole point is that every
+  // station gets checked, not just whichever one was easiest.
+  const overduePestStations = pestStations.filter((s) => {
+    if (!s.active) return false;
+    const lastCheck = records.filter((r) => r.category === "Pest control" && r.stationId === s.id).sort((a, b) => b.date.localeCompare(a.date))[0];
+    return !lastCheck || daysBetween(lastCheck.date, today()) > 30;
+  });
+
+  // MPI leaves the interval to the business's own judgement rather than
+  // mandating a number — annual is the common real-world default.
+  const staffTrainingNames = [...new Set(records.filter((r) => r.category === "training" && r.staffName).map((r) => r.staffName))];
+  const staffDueForRefresher = staffTrainingNames.filter((name) => {
+    const latestByTopic = {};
+    records.filter((r) => r.category === "training" && r.staffName === name).forEach((r) => {
+      if (!latestByTopic[r.topic] || r.date > latestByTopic[r.topic]) latestByTopic[r.topic] = r.date;
+    });
+    return Object.values(latestByTopic).some((date) => daysBetween(date, today()) > 365);
+  });
+
   // Legally required at least every 12 months since 1 July 2023 (Food
   // Regulations 2015, under a National Programme) — never done at all
   // counts as overdue too, not just "over a year since the last one".
@@ -13440,7 +13510,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
   const latestInternalAudit = records.filter((r) => r.category === "Internal audit").sort((a, b) => b.date.localeCompare(a.date))[0];
   const internalAuditOverdue = !latestInternalAudit || (latestInternalAudit.dueDate && latestInternalAudit.dueDate < today());
 
-  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0);
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0) + overduePestStations.length + staffDueForRefresher.length;
 
   return (
     <>
@@ -13509,6 +13579,32 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 </span>
               </button>
             )}
+            {overduePestStations.length > 0 && (
+              <button
+                onClick={onLogPestCheck}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>
+                  {overduePestStations.length} pest station{overduePestStations.length !== 1 ? "s" : ""} overdue — monthly checks
+                </span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {overduePestStations.map((s) => s.label).join(", ")}
+                </span>
+              </button>
+            )}
+            {staffDueForRefresher.length > 0 && (
+              <button
+                onClick={() => onOpenStaff(staffDueForRefresher[0])}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>
+                  {staffDueForRefresher.length} staff member{staffDueForRefresher.length !== 1 ? "s" : ""} due for a training refresher
+                </span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {staffDueForRefresher.join(", ")}
+                </span>
+              </button>
+            )}
             {openCorrectiveActions.map((r) => {
               const daysOpen = daysBetween(r.date, today());
               const urgentColor = daysOpen >= 30 ? "#B5502F" : daysOpen >= 7 ? "#7A3E1D" : "#9B7A3E";
@@ -13574,6 +13670,15 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
               {staffNames.map((name) => {
                 const staffRecords = records.filter((r) => r.category === "training" && r.staffName === name);
                 const topicsCovered = new Set(staffRecords.map((r) => r.topic)).size;
+                // MPI leaves the refresher interval to the business's own
+                // judgement ("whenever you think staff need it") rather
+                // than mandating a number — annual is the common
+                // real-world default, tracked per topic per person here.
+                const latestByTopic = {};
+                staffRecords.forEach((r) => {
+                  if (!latestByTopic[r.topic] || r.date > latestByTopic[r.topic]) latestByTopic[r.topic] = r.date;
+                });
+                const overdueTopics = Object.entries(latestByTopic).filter(([, date]) => daysBetween(date, today()) > 365);
                 return (
                   <button
                     key={name}
@@ -13584,13 +13689,20 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                       alignItems: "center",
                       padding: "10px 14px",
                       background: "#FFFFFF",
-                      border: "1px solid #DDE0C8",
+                      border: `1px solid ${overdueTopics.length > 0 ? "#E3B37A" : "#DDE0C8"}`,
                       borderRadius: 6,
                       cursor: "pointer",
                       textAlign: "left",
                     }}
                   >
-                    <span style={{ color: "#2A3324", fontSize: 13.5 }}>{name}</span>
+                    <div>
+                      <span style={{ color: "#2A3324", fontSize: 13.5 }}>{name}</span>
+                      {overdueTopics.length > 0 && (
+                        <div style={{ color: "#B5502F", fontSize: 11 }}>
+                          {overdueTopics.length} topic{overdueTopics.length !== 1 ? "s" : ""} due for refresher
+                        </div>
+                      )}
+                    </div>
                     <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
                       {topicsCovered}/{TRAINING_TOPICS.length - 1} topics
                     </span>
@@ -13612,7 +13724,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         <button onClick={onStartMockRecall} style={secondaryBtnStyle}>Mock recall</button>
         <button onClick={onStartIllness} style={{ ...secondaryBtnStyle, background: "#FBE5DC", borderColor: "#E3B3A0", color: "#B5502F" }}>Staff sickness</button>
         <button onClick={onLogPestCheck} style={secondaryBtnStyle}>Log pest check</button>
-        <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStationCount})</button>
+        <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStations.filter((s) => s.active).length})</button>
         <button onClick={onLogContractorVisit} style={secondaryBtnStyle}>Log contractor visit</button>
         <button onClick={onStartInternalAudit} style={secondaryBtnStyle}>Internal audit</button>
         <button onClick={() => onStartNote("incident", "Something went wrong")} style={secondaryBtnStyle}>
@@ -14317,9 +14429,17 @@ This exercise tested our ability to trace and identify affected product using ou
   );
 }
 
-function ExciseReportView({ batches }) {
+function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod, onSetAbvMethod, onSetLabelAbv }) {
   const [monthFilter, setMonthFilter] = useState("");
-  const allRows = useMemo(() => exciseRowsForBatches(batches), [batches]);
+  const [labelDrafts, setLabelDrafts] = useState({});
+  const [codeDrafts, setCodeDrafts] = useState(() => {
+    const initial = {};
+    PRODUCT_TYPES.forEach((t) => {
+      initial[t] = exciseItemCodes.find((e) => e.productType === t)?.itemNumber || "";
+    });
+    return initial;
+  });
+  const allRows = useMemo(() => exciseRowsForBatches(batches, abvMethod), [batches, abvMethod]);
   const months = useMemo(() => {
     const keys = [...new Set(allRows.map((r) => monthKeyFromDate(r.date)))];
     return keys.sort().reverse();
@@ -14328,21 +14448,88 @@ function ExciseReportView({ batches }) {
   const totalDuty = rows.reduce((s, r) => s + r.duty, 0);
   const totalVolume = Math.round(rows.reduce((s, r) => s + r.volumeL, 0) * 100) / 100;
 
-  const byBand = {};
+  // Grouped by product type first — a real excise entry needs the right
+  // item number per type, on top of the duty band — then by band within
+  // each type, since that's what actually drives the duty rate.
+  const byType = {};
   rows.forEach((r) => {
-    const key = `${r.band.min}-${r.band.max}`;
-    if (!byBand[key]) byBand[key] = { band: r.band, volumeL: 0, duty: 0 };
-    byBand[key].volumeL += r.volumeL;
-    byBand[key].duty += r.duty;
+    if (!byType[r.productType]) byType[r.productType] = { volumeL: 0, duty: 0, byBand: {} };
+    byType[r.productType].volumeL += r.volumeL;
+    byType[r.productType].duty += r.duty;
+    const bandKey = `${r.band.min}-${r.band.max}`;
+    if (!byType[r.productType].byBand[bandKey]) byType[r.productType].byBand[bandKey] = { band: r.band, volumeL: 0, duty: 0 };
+    byType[r.productType].byBand[bandKey].volumeL += r.volumeL;
+    byType[r.productType].byBand[bandKey].duty += r.duty;
   });
-  const bandRows = Object.values(byBand).sort((a, b) => a.band.min - b.band.min);
+  const typeGroups = Object.entries(byType).sort((a, b) => b[1].duty - a[1].duty);
+
+  const itemNumberFor = (type) => exciseItemCodes.find((e) => e.productType === type)?.itemNumber;
+
+  const saveCode = (type) => {
+    onSaveItemCode(type, codeDrafts[type].trim());
+  };
 
   return (
     <div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", color: "#7A3E1D", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
         <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
         <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-          <strong>This is a guide, not a filing.</strong> Figures are estimated from NZ Customs rates effective 1 July 2026, based on each batch's packaged volume and measured ABV. Confirm your actual filing obligations, reporting period, and final figures with NZ Customs or your accountant before lodging a real return.
+          <strong>This is a guide, not a filing.</strong> Figures are estimated from NZ Customs rates effective 1 July 2026, based on each batch's packaged volume and either measured or label ABV. Confirm your actual filing obligations, reporting period, item classification, ABV method, and final figures with NZ Customs or your accountant before lodging a real return.
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+          ABV method for excise
+        </div>
+        <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+          {[
+            ["measured", "Measured — tested ABV"],
+            ["label", "Label — beer only"],
+          ].map(([m, label]) => (
+            <button
+              key={m}
+              onClick={() => onSetAbvMethod(m)}
+              style={{
+                flex: 1,
+                background: abvMethod === m ? "#5C9A3C" : "#F5F1E4",
+                border: "none",
+                padding: "9px",
+                color: abvMethod === m ? "#16191A" : "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: "pointer",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {abvMethod === "label" && (
+          <div style={{ color: "#7A3E1D", fontSize: 11.5, lineHeight: 1.5 }}>
+            Label strength is only available for beer, and only if you produce 2 million litres or less per year — with the label strength either verified by three consistent tests within 6 months, or set equal to or above your target strength. Confirm you actually qualify before relying on this.
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+          Excise item numbers — set once per product type, from your own Working Tariff Document lookup
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {PRODUCT_TYPES.map((t) => (
+            <div key={t} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ flex: 1, color: "#2A3324", fontSize: 13 }}>{t}</span>
+              <input
+                type="text"
+                value={codeDrafts[t]}
+                onChange={(e) => setCodeDrafts((prev) => ({ ...prev, [t]: e.target.value }))}
+                onBlur={() => saveCode(t)}
+                placeholder="e.g. 99.10.50G"
+                style={{ width: 130, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 9px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5 }}
+              />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -14360,7 +14547,7 @@ function ExciseReportView({ batches }) {
             color: "#2A3324",
             fontFamily: "'Inter', sans-serif",
             fontSize: 14,
-            marginBottom: 16,
+            marginBottom: 12,
           }}
         >
           <option value="">All time</option>
@@ -14370,6 +14557,31 @@ function ExciseReportView({ batches }) {
             </option>
           ))}
         </select>
+      )}
+
+      {rows.length > 0 && (
+        <button
+          onClick={() =>
+            downloadCSV(
+              `excise-tsw-export-${monthFilter || "all"}.csv`,
+              ["Excise item number", "Product type", "Batch", "Date", "Quantity of beverage (A) — litres", "% volume of alcohol (B)", "Volume of alcohol (C) — LAL", "Duty basis", "Estimated duty ($)"],
+              rows.map((r) => [
+                (exciseItemCodes.find((e) => e.productType === r.productType)?.itemNumber) || "NOT SET",
+                r.productType,
+                r.batchName,
+                r.date,
+                r.volumeL,
+                r.abv.toFixed(2),
+                Math.round(r.volumeL * (r.abv / 100) * 100) / 100,
+                r.band.basis,
+                r.duty.toFixed(2),
+              ])
+            )
+          }
+          style={{ width: "100%", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer", marginBottom: 16 }}
+        >
+          Export for TSW filing (CSV)
+        </button>
       )}
 
       {rows.length === 0 ? (
@@ -14387,15 +14599,30 @@ function ExciseReportView({ batches }) {
             </div>
           </div>
 
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>By duty band</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
-            {bandRows.map((b) => (
-              <div key={`${b.band.min}-${b.band.max}`} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
-                <span>
-                  {b.band.min}–{b.band.max === Infinity ? "23+" : b.band.max}% ABV
-                  <span style={{ color: "#9BA88A", fontSize: 12 }}> · {Math.round(b.volumeL * 100) / 100} L</span>
-                </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>${b.duty.toFixed(2)}</span>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>By product type</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
+            {typeGroups.map(([type, g]) => (
+              <div key={type} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div>
+                    <span style={{ color: "#2A3324", fontSize: 13.5, fontWeight: 500 }}>{type}</span>
+                    <span style={{ color: itemNumberFor(type) ? "#9BA88A" : "#B5502F", fontSize: 11.5, marginLeft: 8, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {itemNumberFor(type) || "no item number set"}
+                    </span>
+                  </div>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>${g.duty.toFixed(2)}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {Object.values(g.byBand).sort((a, b) => a.band.min - b.band.min).map((b) => (
+                    <div key={`${b.band.min}-${b.band.max}`} style={{ display: "flex", justifyContent: "space-between", padding: "7px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4, fontSize: 12.5, color: "#2A3324" }}>
+                      <span>
+                        {b.band.min}–{b.band.max === Infinity ? "23+" : b.band.max}% ABV
+                        <span style={{ color: "#9BA88A", fontSize: 11 }}> · {Math.round(b.volumeL * 100) / 100} L</span>
+                      </span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>${b.duty.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
@@ -14403,11 +14630,31 @@ function ExciseReportView({ batches }) {
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>Packaging events</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {rows.map((r, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 5, fontSize: 13 }}>
-                <span style={{ color: "#2A3324" }}>
-                  {r.batchName} <span style={{ color: "#9BA88A" }}>· {r.abv.toFixed(1)}% ABV · {r.volumeL}L · {r.date}</span>
-                </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0 }}>${r.duty.toFixed(2)}</span>
+              <div key={i} style={{ padding: "10px 12px", background: "#FFFFFF", border: `1px solid ${r.usedFallback ? "#E3B37A" : "#DDE0C8"}`, borderRadius: 5, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#2A3324" }}>
+                    {r.batchName} <span style={{ color: "#9BA88A" }}>· {r.productType} · {r.abv.toFixed(1)}% ABV{abvMethod === "label" ? (r.usedFallback ? " (measured, no label set)" : " (label)") : ""} · {r.volumeL}L · {r.date}</span>
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0 }}>${r.duty.toFixed(2)}</span>
+                </div>
+                {abvMethod === "label" && r.productType === "Beer" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                    <span style={{ color: "#9BA88A", fontSize: 11.5 }}>Label ABV:</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={labelDrafts[r.batchId] ?? r.labelAbv ?? ""}
+                      onChange={(e) => setLabelDrafts((prev) => ({ ...prev, [r.batchId]: e.target.value }))}
+                      onBlur={() => {
+                        const v = labelDrafts[r.batchId];
+                        if (v !== undefined) onSetLabelAbv(r.batchId, v === "" ? null : Number(v));
+                      }}
+                      placeholder="e.g. 5.0"
+                      style={{ width: 70, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "5px 7px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}
+                    />
+                    <span style={{ color: "#9BA88A", fontSize: 11 }}>%</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -17835,7 +18082,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-176";
+const APP_VERSION = "2026-08-03-182";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -18469,6 +18716,7 @@ function TankLogApp() {
   const [mixedPackTypes, setMixedPackTypes] = useState([]);
   const [mixedPackAssemblies, setMixedPackAssemblies] = useState([]);
   const [pestStations, setPestStations] = useState([]);
+  const [exciseItemCodes, setExciseItemCodes] = useState([]);
   const [editingMixedPackType, setEditingMixedPackType] = useState(null);
   const [showNewMixedPackType, setShowNewMixedPackType] = useState(false);
   const [assemblingMixedPackType, setAssemblingMixedPackType] = useState(null);
@@ -18614,6 +18862,7 @@ function TankLogApp() {
   const [foodSafetyDisclaimerAcceptedAt, setFoodSafetyDisclaimerAcceptedAt] = useState(null);
   const [salesModuleEnabled, setSalesModuleEnabled] = useState(true);
   const [barrelAgingModuleEnabled, setBarrelAgingModuleEnabled] = useState(true);
+  const [exciseAbvMethod, setExciseAbvMethod] = useState("measured");
   const [teammates, setTeammates] = useState([]);
   const [inviteLink, setInviteLink] = useState("");
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -18735,8 +18984,8 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes] = await Promise.all([
-        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled").eq("id", myProfile.companyId).single(),
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes] = await Promise.all([
+        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled, excise_abv_method").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
@@ -18761,6 +19010,7 @@ function TankLogApp() {
         supabase.from("mixed_pack_types").select("*"),
         supabase.from("mixed_pack_assemblies").select("*").order("assembled_date", { ascending: false }),
         supabase.from("pest_stations").select("*").order("label", { ascending: true }),
+        supabase.from("excise_item_codes").select("*"),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -18773,6 +19023,7 @@ function TankLogApp() {
         setFoodSafetyDisclaimerAcceptedAt(companyRes.data.food_safety_disclaimer_accepted_at || null);
         setSalesModuleEnabled(companyRes.data.sales_module_enabled !== false);
         setBarrelAgingModuleEnabled(companyRes.data.barrel_aging_module_enabled !== false);
+        setExciseAbvMethod(companyRes.data.excise_abv_method || "measured");
       }
       if (teammatesRes.error) console.error(teammatesRes.error);
       else setTeammates(teammatesRes.data.map(rowToProfile));
@@ -18822,6 +19073,8 @@ function TankLogApp() {
       else setMixedPackAssemblies(mixedPackAssembliesRes.data.map(rowToMixedPackAssembly));
       if (pestStationsRes.error) console.error(pestStationsRes.error);
       else setPestStations(pestStationsRes.data.map(rowToPestStation));
+      if (exciseItemCodesRes.error) console.error(exciseItemCodesRes.error);
+      else setExciseItemCodes(exciseItemCodesRes.data.map(rowToExciseItemCode));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -19380,6 +19633,12 @@ function TankLogApp() {
     if (!enabled && view === "aging") setView("home");
   };
 
+  const updateExciseAbvMethod = async (method) => {
+    const { error } = await supabase.from("companies").update({ excise_abv_method: method }).eq("id", profile.companyId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setExciseAbvMethod(method);
+  };
+
   const disconnectXero = async () => {
     const { error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -19674,6 +19933,20 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setStockTakes((prev) => [rowToStockTake(data), ...prev]);
     showToast("success", "Stock take saved.");
+  };
+
+  // The item number Customs needs on an actual excise entry, per product
+  // type — entered once by the business (ideally confirmed with their
+  // accountant), never guessed or pre-filled by the app itself.
+  const saveExciseItemCode = async (productType, itemNumber) => {
+    const existing = exciseItemCodes.find((e) => e.productType === productType);
+    const record = { id: existing?.id, productType, itemNumber };
+    const row = exciseItemCodeToRow(record, profile.companyId);
+    if (!existing) delete row.id; // let Postgres generate the real UUID — uid() is only a short client-side key
+    const { data, error } = await supabase.from("excise_item_codes").upsert(row, { onConflict: "company_id,product_type" }).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    const saved = rowToExciseItemCode(data);
+    setExciseItemCodes((prev) => (existing ? prev.map((e) => (e.id === saved.id ? saved : e)) : [...prev, saved]));
   };
 
   const addPestStation = async (station) => {
@@ -20144,6 +20417,15 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => [rowToInventoryItem(data), ...prev]);
     showToast("success", `${item.name} added to inventory.`);
+  };
+
+  // The ABV actually printed on the packaging for a batch — separate from
+  // the measured reading, since Customs recognises label strength as its
+  // own valid method for smaller beer producers, under specific conditions.
+  const setBatchLabelAbv = async (batchId, labelAbv) => {
+    const { error } = await supabase.from("batches").update({ label_abv: labelAbv }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, labelAbv } : b)));
   };
 
   const renameInventoryItem = async (id, name) => {
@@ -21266,9 +21548,7 @@ function TankLogApp() {
                 items: [
                   ["foodsafety", "Food Safety", CheckCircle2],
                   ["traceability", "Traceability", Search],
-                  // Excise hidden from nav for now — the view and its code
-                  // are untouched, just re-add this line to bring it back:
-                  // ["excise", "Excise", FileText],
+                  ["excise", "Excise", FileText],
                 ],
               },
               { items: [["settings", "Settings", Settings]] },
@@ -21482,7 +21762,7 @@ function TankLogApp() {
                   companyName={companyName}
                   onLogPestCheck={() => setShowLogPestCheckModal(true)}
                   onManagePestStations={() => setShowPestStationsModal(true)}
-                  pestStationCount={pestStations.filter((s) => s.active).length}
+                  pestStations={pestStations}
                   onLogContractorVisit={() => setShowContractorVisitModal(true)}
                   onStartMockRecall={() => setShowMockRecallModal(true)}
                   onStartInternalAudit={() => setShowInternalAuditModal(true)}
@@ -21535,7 +21815,16 @@ function TankLogApp() {
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
             )}
 
-            {!loadingData && view === "excise" && <ExciseReportView batches={batches} />}
+            {!loadingData && view === "excise" && (
+              <ExciseReportView
+                batches={batches}
+                exciseItemCodes={exciseItemCodes}
+                onSaveItemCode={saveExciseItemCode}
+                abvMethod={exciseAbvMethod}
+                onSetAbvMethod={updateExciseAbvMethod}
+                onSetLabelAbv={setBatchLabelAbv}
+              />
+            )}
 
             {!loadingData && view === "batches" && (() => {
               const matches = (b) => {
