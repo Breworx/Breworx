@@ -205,7 +205,7 @@ function mixedPackStockList(mixedPackTypes, mixedPackAssemblies, salesOrders) {
       .filter((a) => a.mixedPackTypeId === t.id)
       .reduce((sum, a) => sum + a.quantity, 0);
     const sold = (salesOrders || [])
-      .filter((o) => o.status !== "Cancelled")
+      .filter((o) => o.status !== "Draft" && o.status !== "Cancelled")
       .reduce((sum, o) => sum + (o.lines || []).filter((l) => l.mixedPackTypeId === t.id).reduce((s, l) => s + (l.qty || 0), 0), 0);
     return { ...t, assembled, available: assembled - sold };
   });
@@ -13982,18 +13982,26 @@ function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, cu
       const qtyUsed = (h.lots || []).find((l) => l.lotNumber === lotNumber)?.qty || 0;
       const batch = batches.find((b) => h.note === `${b.name} (#${b.number})`);
       if (!batch) return null;
-      const directOrders = salesOrders.flatMap((o) =>
-        (o.lines || [])
-          .filter((l) => l.batchId === batch.id)
-          .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId) }))
-      );
+      // Draft and Cancelled orders don't count as product having actually
+      // left the building — same definition of "sold" used everywhere
+      // else in the app. Matters a lot here specifically, since this
+      // feeds both the Traceability report and Mock Recall.
+      const directOrders = salesOrders
+        .filter((o) => o.status !== "Draft" && o.status !== "Cancelled")
+        .flatMap((o) =>
+          (o.lines || [])
+            .filter((l) => l.batchId === batch.id)
+            .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId) }))
+        );
       const packAssemblies = mixedPackAssemblies.filter((a) => (a.composition || []).some((c) => c.batchId === batch.id));
       const packOrders = packAssemblies.flatMap((a) =>
-        salesOrders.flatMap((o) =>
-          (o.lines || [])
-            .filter((l) => l.mixedPackTypeId === a.mixedPackTypeId && o.orderDate >= a.assembledDate)
-            .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId), viaPack: a.mixedPackTypeName }))
-        )
+        salesOrders
+          .filter((o) => o.status !== "Draft" && o.status !== "Cancelled")
+          .flatMap((o) =>
+            (o.lines || [])
+              .filter((l) => l.mixedPackTypeId === a.mixedPackTypeId && o.orderDate >= a.assembledDate)
+              .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId), viaPack: a.mixedPackTypeName }))
+          )
       );
       return { batch, qtyUsed, date: h.date, directOrders, packAssemblies, packOrders };
     })
@@ -18101,7 +18109,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-184";
+const APP_VERSION = "2026-08-03-185";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
