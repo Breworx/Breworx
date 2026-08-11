@@ -252,6 +252,17 @@ function exciseBandForAbv(abv) {
   return NZ_EXCISE_BANDS.find((b) => abv > b.min && abv <= b.max) || NZ_EXCISE_BANDS[0];
 }
 
+// Pae Ora (Healthy Futures) Alcohol Levy — unlike excise duty, there's no
+// complete published rate table available for this (2026/27 rates were
+// still pending as of the last Customs notice). This single per-litre
+// figure is derived from one confirmed real TSW calculation (beer,
+// 273.360L @ 6% ABV → $6.69 levy), not an official table — beer only,
+// since that's the only product type actually confirmed. GST at 15% on
+// the levy is well-established and independently confirmed (excise duty
+// itself doesn't attract GST, only the levy does).
+const ALCOHOL_LEVY_RATE_PER_LITRE_BEVERAGE = { Beer: 0.024476 };
+const GST_RATE = 0.15;
+
 // One row per packaging event, since excise is calculated on what actually
 // left the licensed area on a given date — a batch packaged across several
 // sessions can straddle two different reporting periods.
@@ -279,7 +290,10 @@ function exciseRowsForBatches(batches, abvMethod) {
       const volumeL = packagedVolume(e);
       if (volumeL <= 0) return;
       const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * band.rate : band.basis === "beverage" ? volumeL * band.rate : 0;
-      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, abv, measuredAbv, labelAbv: b.labelAbv, usedLabel, usedFallback, volumeL, band, duty });
+      const levyRate = ALCOHOL_LEVY_RATE_PER_LITRE_BEVERAGE[b.productType || "Beer"];
+      const levy = levyRate != null ? Math.round(volumeL * levyRate * 100) / 100 : null;
+      const levyGst = levy != null ? Math.round(levy * GST_RATE * 100) / 100 : null;
+      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, abv, measuredAbv, labelAbv: b.labelAbv, usedLabel, usedFallback, volumeL, band, duty, levy, levyGst });
     });
   });
   return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -7326,10 +7340,13 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
   );
 }
 
-function AddPOModal({ onClose, onAdd, nextPONumber }) {
+function AddPOModal({ onClose, onAdd, nextPONumber, suppliers }) {
   const [supplier, setSupplier] = useState("");
+  const [supplierFocused, setSupplierFocused] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState("");
   const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
+
+  const supplierMatches = (suppliers || []).filter((s) => s.name.toLowerCase().includes(supplier.trim().toLowerCase()));
 
   const updateLine = (id, patch) =>
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -7366,7 +7383,34 @@ function AddPOModal({ onClose, onAdd, nextPONumber }) {
   return (
     <Modal title="New purchase order" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <TextField label="Supplier" value={supplier} onChange={setSupplier} />
+        <div style={{ position: "relative" }}>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Supplier</div>
+          <input
+            type="text"
+            value={supplier}
+            onChange={(e) => setSupplier(e.target.value)}
+            onFocus={() => setSupplierFocused(true)}
+            onBlur={() => setTimeout(() => setSupplierFocused(false), 150)}
+            placeholder="Search suppliers, or type a new one"
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+          {supplierFocused && supplierMatches.length > 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 180, overflowY: "auto" }}>
+              {supplierMatches.map((s) => (
+                <button
+                  key={s.id}
+                  onMouseDown={() => {
+                    setSupplier(s.name);
+                    setSupplierFocused(false);
+                  }}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <NumberField label="Delivery cost (optional)" value={deliveryCost} onChange={setDeliveryCost} step="0.01" />
 
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
@@ -14461,6 +14505,9 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
   const rows = monthFilter ? allRows.filter((r) => monthKeyFromDate(r.date) === monthFilter) : allRows;
   const totalDuty = rows.reduce((s, r) => s + r.duty, 0);
   const totalVolume = Math.round(rows.reduce((s, r) => s + r.volumeL, 0) * 100) / 100;
+  const totalLevy = rows.reduce((s, r) => s + (r.levy || 0), 0);
+  const totalLevyGst = rows.reduce((s, r) => s + (r.levyGst || 0), 0);
+  const anyMissingLevy = rows.some((r) => r.levy == null);
 
   // Grouped by product type first — a real excise entry needs the right
   // item number per type, on top of the duty band — then by band within
@@ -14581,7 +14628,7 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
           onClick={() =>
             downloadCSV(
               `excise-tsw-export-${monthFilter || "all"}.csv`,
-              ["Goods Description", "Excise Item", "Statistical Quantity", "Statistical Unit", "Supplementary Quantity", "Supplementary Unit", "Percentage (%) Volume of Alcohol", "Estimated duty ($) — reference only, TSW calculates the real figure"],
+              ["Goods Description", "Excise Item", "Statistical Quantity", "Statistical Unit", "Supplementary Quantity", "Supplementary Unit", "Percentage (%) Volume of Alcohol", "Estimated duty ($) — reference only, TSW calculates the real figure", "Estimated alcohol levy ($) — rough guide only", "Estimated GST on levy ($) — rough guide only"],
               rows.map((r) => {
                 // TSW's own help text: "6 digits + CHECK LETTER... Do not
                 // transmit dots or spaces" — strip whatever punctuation
@@ -14601,6 +14648,8 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
                   "Litre (L)",
                   r.abv.toFixed(2),
                   r.duty.toFixed(2),
+                  r.levy != null ? r.levy.toFixed(2) : "N/A",
+                  r.levyGst != null ? r.levyGst.toFixed(2) : "N/A",
                 ];
               })
             )
@@ -14615,7 +14664,7 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
         <EmptyState icon={FileText} title="Nothing packaged yet" subtitle="Excise is calculated from packaging events, so this fills in once you've packaged a batch with a logged final gravity." />
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Volume packaged</div>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>{totalVolume} L</div>
@@ -14624,6 +14673,20 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Estimated duty</div>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalDuty.toFixed(2)}</div>
             </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 8 }}>
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Alcohol levy (estimated)</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalLevy.toFixed(2)}</div>
+            </div>
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>GST on levy (15%)</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalLevyGst.toFixed(2)}</div>
+            </div>
+          </div>
+          <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 22 }}>
+            The duty figures above are verified against Customs' official published rates. The levy figure is estimated from one confirmed real example, not an official published table — treat it as a rough guide and confirm the actual amount when you calculate the entry in TSW itself.
+            {anyMissingLevy && " Some rows are for a product type where no levy figure could be estimated at all."}
           </div>
 
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>By product type</div>
@@ -14662,7 +14725,10 @@ function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod,
                   <span style={{ color: "#2A3324" }}>
                     {r.batchName} <span style={{ color: "#9BA88A" }}>· {r.productType} · {r.abv.toFixed(1)}% ABV{r.usedLabel ? " (label)" : r.usedFallback ? " (measured, no label set)" : ""} · {r.volumeL}L · {r.date}</span>
                   </span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0 }}>${r.duty.toFixed(2)}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0, textAlign: "right" }}>
+                    ${r.duty.toFixed(2)}
+                    {r.levy != null && <div style={{ fontSize: 11, color: "#9BA88A" }}>+${r.levy.toFixed(2)} levy</div>}
+                  </span>
                 </div>
                 {abvMethod === "label" && r.productType === "Beer" && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
@@ -18109,7 +18175,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-185";
+const APP_VERSION = "2026-08-03-187";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23628,7 +23694,7 @@ function TankLogApp() {
           onOpen={openSupplierDocument}
         />
       )}
-      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} />}
+      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} suppliers={suppliers} />}
       {showAddRecipe && (
         <AddRecipeModal
           onClose={() => setShowAddRecipe(false)}
