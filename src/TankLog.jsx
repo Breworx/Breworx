@@ -7340,12 +7340,41 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
   );
 }
 
-function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory }) {
+function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtractDocument }) {
   const [supplier, setSupplier] = useState("");
   const [supplierFocused, setSupplierFocused] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState("");
   const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
   const [focusedLineId, setFocusedLineId] = useState(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState("");
+
+  const handleImportFile = async (file) => {
+    if (!file || !onExtractDocument) return;
+    setExtracting(true);
+    setExtractError("");
+    const result = await onExtractDocument(file, "order");
+    setExtracting(false);
+    if (result.error) {
+      setExtractError(result.error);
+      return;
+    }
+    if (result.supplier) setSupplier(result.supplier);
+    if (result.deliveryCost != null) setDeliveryCost(String(result.deliveryCost));
+    if (result.lines && result.lines.length > 0) {
+      setLines(
+        result.lines.map((l) => ({
+          id: uid(),
+          name: l.name || "",
+          category: "Grain",
+          qty: l.qty ?? 1,
+          unit: l.unit || "kg",
+          costMode: "perUnit",
+          costInput: l.costPerUnit != null ? String(l.costPerUnit) : "",
+        }))
+      );
+    }
+  };
 
   const supplierMatches = (suppliers || []).filter((s) => s.name.toLowerCase().includes(supplier.trim().toLowerCase()));
 
@@ -7384,6 +7413,43 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory }) {
   return (
     <Modal title="New purchase order" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {onExtractDocument && (
+          <div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                background: extracting ? "#E8E4D4" : "#EAF2E4",
+                border: `1px dashed ${extracting ? "#C9C4A8" : "#8FB86C"}`,
+                borderRadius: 6,
+                padding: "12px",
+                color: extracting ? "#A3AC94" : "#3F6B32",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                cursor: extracting ? "default" : "pointer",
+              }}
+            >
+              {extracting ? "Reading document…" : "📄 Import from a photo or PDF — fills in the fields below"}
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => handleImportFile(e.target.files?.[0])}
+                disabled={extracting}
+                style={{ display: "none" }}
+              />
+            </label>
+            {extractError && (
+              <div style={{ color: "#B5502F", fontSize: 12, marginTop: 6 }}>{extractError} — check the fields below and fill in anything missing.</div>
+            )}
+            {!extractError && !extracting && (
+              <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 6 }}>
+                Always double-check what comes back — especially names, since a supplier's spelling might not match yours exactly.
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ position: "relative" }}>
           <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Supplier</div>
           <input
@@ -7557,24 +7623,93 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory }) {
   );
 }
 
-function ReceivePOModal({ po, onClose, onConfirm }) {
+function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
   const [lotNumbers, setLotNumbers] = useState(() => {
     const init = {};
     po.lines.forEach((l) => (init[l.id] = ""));
     return init;
   });
+  const [costOverrides, setCostOverrides] = useState(() => {
+    const init = {};
+    po.lines.forEach((l) => (init[l.id] = l.costPerUnit != null ? String(l.costPerUnit) : ""));
+    return init;
+  });
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState("");
+
+  const handleImportFile = async (file) => {
+    if (!file || !onExtractDocument) return;
+    setExtracting(true);
+    setExtractError("");
+    const result = await onExtractDocument(file, "receiving");
+    setExtracting(false);
+    if (result.error) {
+      setExtractError(result.error);
+      return;
+    }
+    // Match extracted lines back to the PO's existing lines by name — a
+    // close, not necessarily exact, match, since a docket's wording often
+    // differs slightly from what was typed when the order was placed.
+    (result.lines || []).forEach((el) => {
+      if (!el.name) return;
+      const match = po.lines.find((l) => l.name.toLowerCase().includes(el.name.toLowerCase()) || el.name.toLowerCase().includes(l.name.toLowerCase()));
+      if (!match) return;
+      if (el.lotNumber) setLotNumbers((prev) => ({ ...prev, [match.id]: el.lotNumber }));
+      if (el.costPerUnit != null) setCostOverrides((prev) => ({ ...prev, [match.id]: String(el.costPerUnit) }));
+    });
+  };
 
   const submit = () => {
-    onConfirm(lotNumbers);
+    const costs = {};
+    Object.entries(costOverrides).forEach(([id, v]) => {
+      costs[id] = v === "" ? null : Number(v);
+    });
+    onConfirm(lotNumbers, costs);
     onClose();
   };
 
   return (
     <Modal title={`Receive ${po.poNumber}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {onExtractDocument && (
+          <div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                background: extracting ? "#E8E4D4" : "#EAF2E4",
+                border: `1px dashed ${extracting ? "#C9C4A8" : "#8FB86C"}`,
+                borderRadius: 6,
+                padding: "12px",
+                color: extracting ? "#A3AC94" : "#3F6B32",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                cursor: extracting ? "default" : "pointer",
+              }}
+            >
+              {extracting ? "Reading document…" : "📄 Import from a photo or PDF — fills in lot numbers and prices below"}
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => handleImportFile(e.target.files?.[0])}
+                disabled={extracting}
+                style={{ display: "none" }}
+              />
+            </label>
+            {extractError && (
+              <div style={{ color: "#B5502F", fontSize: 12, marginTop: 6 }}>{extractError} — check the fields below and fill in anything missing.</div>
+            )}
+            {!extractError && !extracting && (
+              <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 6 }}>
+                Matched to these order lines by name — double-check nothing landed on the wrong item if names differ from the docket.
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
-          Enter the lot or batch number printed on each item as it arrives — this is what ties inventory back to this
-          specific delivery.
+          Enter the lot or batch number printed on each item as it arrives, and adjust the price if the delivery docket differs from what was ordered.
         </div>
         {po.lines.map((l) => (
           <div
@@ -7589,11 +7724,23 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
             <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
               {l.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
             </div>
-            <TextField
-              label="Lot / batch #"
-              value={lotNumbers[l.id]}
-              onChange={(v) => setLotNumbers((prev) => ({ ...prev, [l.id]: v }))}
-            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <TextField
+                  label="Lot / batch #"
+                  value={lotNumbers[l.id]}
+                  onChange={(v) => setLotNumbers((prev) => ({ ...prev, [l.id]: v }))}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <NumberField
+                  label="Cost per unit"
+                  value={costOverrides[l.id]}
+                  onChange={(v) => setCostOverrides((prev) => ({ ...prev, [l.id]: v }))}
+                  step="0.01"
+                />
+              </div>
+            </div>
           </div>
         ))}
         <button
@@ -7623,7 +7770,7 @@ function ReceivePOModal({ po, onClose, onConfirm }) {
   );
 }
 
-function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete }) {
+function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete, onExtractDocument }) {
   const [showReceive, setShowReceive] = useState(false);
   const batchesForLine = (lineName, lotNumber) => {
     const item = inventory.find((it) => it.name.toLowerCase() === lineName.toLowerCase());
@@ -7763,7 +7910,8 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete }) {
         <ReceivePOModal
           po={po}
           onClose={() => setShowReceive(false)}
-          onConfirm={(lotNumbers) => onReceive(po.id, lotNumbers)}
+          onConfirm={(lotNumbers, costOverrides) => onReceive(po.id, lotNumbers, costOverrides)}
+          onExtractDocument={onExtractDocument}
         />
       )}
 
@@ -18207,7 +18355,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-188";
+const APP_VERSION = "2026-08-03-189";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19770,6 +19918,28 @@ function TankLogApp() {
     setXeroConnection(null);
   };
 
+  // Reads a photo or PDF of an invoice/docket via Claude's vision and
+  // returns structured line items — the API key itself never reaches the
+  // browser, it only ever lives in the Edge Function. mode is "order" (a
+  // supplier invoice/PO) or "receiving" (a delivery docket, which may
+  // have lot numbers printed on it that an order-stage document wouldn't).
+  const extractDocument = async (file, mode) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const fileBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = () => reject(new Error("Couldn't read that file"));
+      reader.readAsDataURL(file);
+    });
+    const res = await fetch(`${supabaseUrl}/functions/v1/extract-document`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+      body: JSON.stringify({ fileBase64, mediaType: file.type, mode }),
+    });
+    return res.json();
+  };
+
   const callXeroApi = async (action, extra) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -20825,25 +20995,34 @@ function TankLogApp() {
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
   };
 
-  const receivePO = async (id, lotNumbers) => {
+  const receivePO = async (id, lotNumbers, costOverrides) => {
     const po = purchaseOrders.find((p) => p.id === id);
     if (!po) return;
+
+    // A delivery docket's actual price can differ from what was quoted
+    // when the order was placed — costOverrides lets the real, received
+    // price win, falling back to the original PO line if nothing changed.
+    const effectiveCost = (line) => {
+      const override = costOverrides && costOverrides[line.id];
+      return override != null ? override : line.costPerUnit;
+    };
 
     // Delivery cost is spread across lines in proportion to each line's own
     // value — a line that's a bigger share of the order's cost carries a
     // bigger share of the delivery cost too.
-    const totalValue = po.lines.reduce((sum, l) => sum + (l.qty || 0) * (l.costPerUnit || 0), 0);
+    const totalValue = po.lines.reduce((sum, l) => sum + (l.qty || 0) * (effectiveCost(l) || 0), 0);
     const deliveryCost = po.deliveryCost || 0;
 
     let nextInventory = [...inventory];
     const finalizedLines = [];
     for (const line of po.lines) {
       const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
-      finalizedLines.push({ ...line, lotNumber });
+      const costPerUnit = effectiveCost(line);
+      finalizedLines.push({ ...line, lotNumber, costPerUnit });
       const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
-      const lineValue = (line.qty || 0) * (line.costPerUnit || 0);
+      const lineValue = (line.qty || 0) * (costPerUnit || 0);
       const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
-      const unitCost = line.costPerUnit != null ? line.costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
+      const unitCost = costPerUnit != null ? costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
       const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: po.poNumber, unitCost };
       const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
 
@@ -23309,7 +23488,7 @@ function TankLogApp() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} onDelete={deletePO} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} onDelete={deletePO} onExtractDocument={extractDocument} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
@@ -23726,7 +23905,7 @@ function TankLogApp() {
           onOpen={openSupplierDocument}
         />
       )}
-      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} suppliers={suppliers} inventory={inventory} />}
+      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} suppliers={suppliers} inventory={inventory} onExtractDocument={extractDocument} />}
       {showAddRecipe && (
         <AddRecipeModal
           onClose={() => setShowAddRecipe(false)}
