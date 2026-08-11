@@ -7340,11 +7340,12 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
   );
 }
 
-function AddPOModal({ onClose, onAdd, nextPONumber, suppliers }) {
+function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory }) {
   const [supplier, setSupplier] = useState("");
   const [supplierFocused, setSupplierFocused] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState("");
   const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
+  const [focusedLineId, setFocusedLineId] = useState(null);
 
   const supplierMatches = (suppliers || []).filter((s) => s.name.toLowerCase().includes(supplier.trim().toLowerCase()));
 
@@ -7445,8 +7446,39 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers }) {
                 <Trash2 size={14} />
               </button>
             )}
-            <div style={{ marginBottom: 10 }}>
-              <TextField label={`Item ${i + 1}`} value={line.name} onChange={(v) => updateLine(line.id, { name: v })} />
+            <div style={{ marginBottom: 10, position: "relative" }}>
+              <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Item {i + 1}</div>
+              <input
+                type="text"
+                value={line.name}
+                onChange={(e) => updateLine(line.id, { name: e.target.value })}
+                onFocus={() => setFocusedLineId(line.id)}
+                onBlur={() => setTimeout(() => setFocusedLineId((cur) => (cur === line.id ? null : cur)), 150)}
+                placeholder="Search inventory, or type a new item"
+                style={{ width: "100%", boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+              />
+              {focusedLineId === line.id &&
+                line.name.trim().length > 0 &&
+                (() => {
+                  const matches = (inventory || []).filter((it) => it.name.toLowerCase().includes(line.name.trim().toLowerCase()));
+                  if (matches.length === 0) return null;
+                  return (
+                    <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 180, overflowY: "auto" }}>
+                      {matches.map((it) => (
+                        <button
+                          key={it.id}
+                          onMouseDown={() => {
+                            updateLine(line.id, { name: it.name, category: it.category, unit: it.unit });
+                            setFocusedLineId(null);
+                          }}
+                          style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                        >
+                          {it.name}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
               <SelectField
@@ -18175,7 +18207,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-187";
+const APP_VERSION = "2026-08-03-188";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23694,7 +23726,7 @@ function TankLogApp() {
           onOpen={openSupplierDocument}
         />
       )}
-      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} suppliers={suppliers} />}
+      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} suppliers={suppliers} inventory={inventory} />}
       {showAddRecipe && (
         <AddRecipeModal
           onClose={() => setShowAddRecipe(false)}
