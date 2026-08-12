@@ -49,6 +49,7 @@ export function rowToBatch(row) {
     pitchedYeastHarvestId: row.pitched_yeast_harvest_id || null,
     batchAdditions: row.batch_additions || [],
     brewDays: row.brew_days || [],
+    brewDaysPlanned: row.brew_days_planned || 1,
     hopDumpLog: row.hop_dump_log || [],
     yeastDumpLog: row.yeast_dump_log || [],
   };
@@ -103,6 +104,7 @@ export function batchToRow(batch, userId, companyId) {
     pitched_yeast_harvest_id: batch.pitchedYeastHarvestId || null,
     batch_additions: batch.batchAdditions || [],
     brew_days: batch.brewDays || [],
+    brew_days_planned: batch.brewDaysPlanned || 1,
     hop_dump_log: batch.hopDumpLog || [],
     yeast_dump_log: batch.yeastDumpLog || [],
   };
