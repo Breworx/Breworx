@@ -16895,6 +16895,22 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                           >
                             {batch.name}
                           </span>
+                          {batch.brewDaysPlanned > 1 && (
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                marginLeft: 6,
+                                background: "rgba(22, 25, 26, 0.25)",
+                                borderRadius: 10,
+                                padding: "1px 6px",
+                                fontSize: 10,
+                                fontFamily: "'JetBrains Mono', monospace",
+                                color: "#16191A",
+                              }}
+                            >
+                              ×{batch.brewDaysPlanned}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -16933,6 +16949,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
   const [volume, setVolume] = useState(batch ? batch.volume : 20);
   const [startDate, setStartDate] = useState(batch ? batch.startDate : presetStartDate || today());
   const [plannedDays, setPlannedDays] = useState(batch ? batch.plannedDays ?? "" : "");
+  const [brewDaysPlanned, setBrewDaysPlanned] = useState(batch ? batch.brewDaysPlanned || 1 : 1);
   const [tankId, setTankId] = useState(batch ? batch.tankId || "" : presetTankId || "");
   const [recipeId, setRecipeId] = useState(batch ? batch.recipeId || "" : "");
   const [saving, setSaving] = useState(false);
@@ -16981,6 +16998,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
         schedule: [],
         readings: [],
         plannedDays: plannedDays === "" ? null : Number(plannedDays),
+        brewDaysPlanned: Number(brewDaysPlanned) || 1,
       });
     } else {
       await onSave(batch.id, {
@@ -16989,6 +17007,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
         volume: Number(volume) || 0,
         startDate,
         plannedDays: plannedDays === "" ? null : Number(plannedDays),
+        brewDaysPlanned: Number(brewDaysPlanned) || 1,
         tankId: tank ? tank.id : null,
         tankName: tank ? tank.name : null,
         recipeId: recipeId || null,
@@ -17046,6 +17065,12 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
         </label>
 
         <NumberField label="Estimated days in tank (optional)" value={plannedDays} onChange={setPlannedDays} step="1" suffix="days" />
+        <div>
+          <NumberField label="Brew days needed to fill this tank" value={brewDaysPlanned} onChange={setBrewDaysPlanned} step="1" />
+          <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 4 }}>
+            For a tank that takes more than one brew to fill — shows as a note on the calendar. Log each actual brew day from the batch itself once brewing starts.
+          </div>
+        </div>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
@@ -18403,7 +18428,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-191";
+const APP_VERSION = "2026-08-03-192";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19674,6 +19699,7 @@ function TankLogApp() {
       volume: patch.volume,
       start_date: patch.startDate,
       planned_days: patch.plannedDays,
+      brew_days_planned: patch.brewDaysPlanned,
       tank_id: patch.tankId,
       tank_name: patch.tankName,
       recipe_id: patch.recipeId,
