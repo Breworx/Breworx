@@ -1429,13 +1429,25 @@ function downloadJSON(filename, data) {
   URL.revokeObjectURL(url);
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Local calendar date, not UTC — .toISOString() always returns the UTC
+// date, which for anyone east of Greenwich (NZ included) shows yesterday's
+// date for a large chunk of every day. This uses the browser's own local
+// time, which is already correct automatically — no timezone setting needed.
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+// Stays in local time the whole way through — parsing as local, adding
+// days as local, and extracting local components at the end. The old
+// version round-tripped through .toISOString() (UTC) on the way out,
+// which shifted the result back a day for anyone east of Greenwich.
 const addDays = (dateStr, n) => {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + n);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
 // Scrolls a just-focused field into view after a short delay — long enough
@@ -18355,7 +18367,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-189";
+const APP_VERSION = "2026-08-03-190";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
