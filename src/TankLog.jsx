@@ -2383,8 +2383,13 @@ function findMissingIngredients(ingredientLines, inventory) {
   return missing;
 }
 
+// A batch scheduled ahead of time (via the lightweight "Schedule a brew"
+// flow) has genuinely no readings yet, until brewing actually starts —
+// this must never return undefined, or anything that does latest.gravity
+// crashes outright rather than just showing an empty/neutral state.
 function latestReading(batch) {
-  return batch.readings[batch.readings.length - 1];
+  if (batch.readings && batch.readings.length > 0) return batch.readings[batch.readings.length - 1];
+  return { gravity: batch.og ?? null, temp: null, date: batch.startDate };
 }
 
 function Tank({ batch, vesselType }) {
@@ -14211,6 +14216,38 @@ function deductFromLotsFIFO(lots, amount, preferredLotId) {
   return { updatedLots, lotsUsed, cost: Math.round(costAccum * 100) / 100 };
 }
 
+// What's needed across every scheduled (not-yet-brewed) batch, checked
+// against current stock — a forecast, not a snapshot, since it's driven
+// by what's coming up rather than just a fixed low-stock threshold.
+// Ingredient quantities scale with the batch's own planned volume if it
+// differs from the linked recipe's base volume.
+function ingredientsNeededForScheduled(batches, recipes, inventory) {
+  const scheduled = batches.filter((b) => b.startDate > today() && b.stage === "Brewing");
+  const needed = {};
+  scheduled.forEach((b) => {
+    const recipe = b.recipeId ? recipes.find((r) => r.id === b.recipeId) : null;
+    const source = recipe && recipe.ingredients.length > 0 ? recipe.ingredients : b.ingredients || [];
+    if (source.length === 0) return;
+    const scale = recipe && recipe.volume > 0 && b.volume > 0 ? b.volume / recipe.volume : 1;
+    source.forEach((ing) => {
+      if (!ing.name || !ing.name.trim()) return;
+      const key = ing.name.trim().toLowerCase();
+      const scaledQty = (Number(ing.qty) || 0) * scale;
+      if (!needed[key]) needed[key] = { name: ing.name.trim(), unit: ing.unit, totalQty: 0, batches: [] };
+      needed[key].totalQty += scaledQty;
+      needed[key].batches.push({ batchName: b.name, batchDate: b.startDate, qty: Math.round(scaledQty * 100) / 100 });
+    });
+  });
+  return Object.values(needed)
+    .map((n) => {
+      const item = inventory.find((it) => it.name.toLowerCase() === n.name.toLowerCase());
+      const available = item ? item.qty : 0;
+      const shortfall = Math.max(0, Math.round((n.totalQty - available) * 100) / 100);
+      return { ...n, totalQty: Math.round(n.totalQty * 100) / 100, available, shortfall, inStock: !!item };
+    })
+    .sort((a, b) => b.shortfall - a.shortfall);
+}
+
 function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, customers) {
   const usageEntries = (item.history || []).filter((h) => h.type === "batch" && (h.lots || []).some((l) => l.lotNumber === lotNumber));
   return usageEntries
@@ -16725,7 +16762,90 @@ function AgingOverviewView({ batches, tanks, onOpenBatch }) {
   );
 }
 
-function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled, reminders, onOpenDay }) {
+function IngredientsNeededModal({ batches, recipes, inventory, onClose, onOpenPO }) {
+  const [expandedKey, setExpandedKey] = useState(null);
+  const rows = ingredientsNeededForScheduled(batches, recipes, inventory);
+  const short = rows.filter((r) => r.shortfall > 0);
+  const covered = rows.filter((r) => r.shortfall === 0);
+
+  return (
+    <Modal title="Ingredients needed for scheduled brews" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          Totalled across every batch scheduled for a future date, checked against what's currently in stock.
+        </div>
+        {rows.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>
+            No scheduled batches have a recipe attached yet, so there's nothing to check — link a recipe when scheduling to see this.
+          </div>
+        ) : (
+          <>
+            {short.length > 0 && (
+              <div>
+                <div style={{ color: "#B5502F", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Short — {short.length} to order
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {short.map((r) => (
+                    <div key={r.name} style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 5, padding: "10px 12px" }}>
+                      <button
+                        onClick={() => setExpandedKey(expandedKey === r.name ? null : r.name)}
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+                      >
+                        <span style={{ color: "#2A3324", fontSize: 13.5 }}>{r.name}{!r.inStock && <span style={{ color: "#B5502F", fontSize: 11 }}> — not in inventory yet</span>}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#B5502F", fontSize: 12.5, flexShrink: 0 }}>
+                          short {r.shortfall} {r.unit}
+                        </span>
+                      </button>
+                      <div style={{ color: "#7A3E1D", fontSize: 11.5, marginTop: 4 }}>
+                        Need {r.totalQty} {r.unit} · have {r.available} {r.unit}
+                      </div>
+                      {expandedKey === r.name && (
+                        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                          {r.batches.map((b, i) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 8px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                              <span style={{ color: "#2A3324" }}>{b.batchName}</span>
+                              <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>{b.qty} {r.unit} · {b.batchDate}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {onOpenPO && (
+                  <button
+                    onClick={onOpenPO}
+                    style={{ marginTop: 10, width: "100%", background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer" }}
+                  >
+                    + New purchase order
+                  </button>
+                )}
+              </div>
+            )}
+            {covered.length > 0 && (
+              <details>
+                <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+                  Covered — {covered.length} already in stock
+                </summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8 }}>
+                  {covered.map((r) => (
+                    <div key={r.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "7px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                      <span style={{ color: "#2A3324" }}>{r.name}</span>
+                      <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>need {r.totalQty} {r.unit} · have {r.available} {r.unit}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled, reminders, onOpenDay, recipes, inventory, onCheckIngredients }) {
   const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
   const daysBack = 7;
   const daysForward = 35;
@@ -16751,6 +16871,14 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
 
   return (
     <div>
+      {onCheckIngredients && (
+        <button
+          onClick={onCheckIngredients}
+          style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 16, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px 14px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" }}
+        >
+          <Package size={15} /> Ingredients needed for scheduled brews
+        </button>
+      )}
       {calendarTanks.length === 0 ? (
         <EmptyState icon={Calendar} title="No fermenters yet" subtitle="Set up a fermenter in Brewery first, then you can schedule batches against it here." />
       ) : (
@@ -16871,9 +16999,9 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                             width: (endIdx - startIdx + 1) * dayWidth - 4,
                             top: 7,
                             height: 34,
-                            background: STAGE_COLOR[batch.stage] || "#5C9A3C",
+                            background: isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
                             opacity: isEstimate ? 0.6 : 1,
-                            border: isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
+                            border: isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
                             borderRadius: 5,
                             cursor: "pointer",
                             display: "flex",
@@ -17066,7 +17194,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
 
         <NumberField label="Estimated days in tank (optional)" value={plannedDays} onChange={setPlannedDays} step="1" suffix="days" />
         <div>
-          <NumberField label="Brew days needed to fill this tank" value={brewDaysPlanned} onChange={setBrewDaysPlanned} step="1" />
+          <NumberField label="Batches to fill tank" value={brewDaysPlanned} onChange={setBrewDaysPlanned} step="1" />
           <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 4 }}>
             For a tank that takes more than one brew to fill — shows as a note on the calendar. Log each actual brew day from the batch itself once brewing starts.
           </div>
@@ -18428,7 +18556,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-192";
+const APP_VERSION = "2026-08-03-194";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19105,6 +19233,7 @@ function TankLogApp() {
   const [batchPreset, setBatchPreset] = useState(null);
   const [editScheduledBatchId, setEditScheduledBatchId] = useState(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showIngredientsNeeded, setShowIngredientsNeeded] = useState(false);
   const [showQuickJump, setShowQuickJump] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -22952,8 +23081,23 @@ function TankLogApp() {
                   onEditScheduled={setEditScheduledBatchId}
                   reminders={reminders}
                   onOpenDay={setActiveReminderDay}
+                  recipes={recipes}
+                  inventory={inventory}
+                  onCheckIngredients={() => setShowIngredientsNeeded(true)}
                 />
               </>
+            )}
+            {showIngredientsNeeded && (
+              <IngredientsNeededModal
+                batches={batches}
+                recipes={recipes}
+                inventory={inventory}
+                onClose={() => setShowIngredientsNeeded(false)}
+                onOpenPO={() => {
+                  setShowIngredientsNeeded(false);
+                  setShowAddPO(true);
+                }}
+              />
             )}
 
             {!loadingData && view === "aging" && (
