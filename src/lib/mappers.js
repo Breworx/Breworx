@@ -369,6 +369,8 @@ export function rowToSupplier(row) {
     address: row.address,
     leadTimeDays: row.lead_time_days ?? null,
     notes: row.notes,
+    approved: row.approved || false,
+    approvedNotes: row.approved_notes || "",
     createdAt: row.created_at || null,
   };
 }
@@ -545,6 +547,8 @@ export function supplierToRow(supplier, companyId) {
     address: supplier.address || null,
     lead_time_days: supplier.leadTimeDays ?? null,
     notes: supplier.notes || null,
+    approved: supplier.approved ?? false,
+    approved_notes: supplier.approvedNotes || null,
   };
 }
 
