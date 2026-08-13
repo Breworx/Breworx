@@ -16919,6 +16919,16 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
     });
   };
 
+  // A scheduled batch is genuinely blocked, not just visually overlapping,
+  // when something else's occupancy (including a live-extended overrun)
+  // covers the day it's meant to start — the actual thing worth warning
+  // about, versus mere lane-packing which just handles the display.
+  const conflictFor = (occ, entry) => {
+    if (entry.batch.startDate <= today()) return null;
+    const blocker = occ.find((o) => o.batch.id !== entry.batch.id && o.start <= entry.start && o.end >= entry.start);
+    return blocker ? blocker.batch : null;
+  };
+
   return (
     <div>
       {onCheckIngredients && (
@@ -17041,19 +17051,21 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                       const startIdx = Math.max(0, dayIndex(start));
                       const endIdx = Math.min(totalDays - 1, dayIndex(end));
                       const isScheduled = batch.startDate > today();
+                      const blocker = isScheduled ? conflictFor(occ, { batch, start, end }) : null;
                       return (
                         <button
                           key={batch.id}
                           onClick={() => (isScheduled ? onEditScheduled(batch.id) : onOpenBatch(batch.id))}
+                          title={blocker ? `Can't start until ${blocker.name} is out of this tank` : undefined}
                           style={{
                             position: "absolute",
                             left: startIdx * dayWidth + 2,
                             width: (endIdx - startIdx + 1) * dayWidth - 4,
                             top: 7 + lane * 40,
                             height: 34,
-                            background: isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
+                            background: blocker ? "#E3A87A" : isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
                             opacity: isEstimate ? 0.6 : 1,
-                            border: isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
+                            border: blocker ? "1px solid #B5502F" : isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
                             borderRadius: 5,
                             cursor: "pointer",
                             display: "flex",
@@ -17062,6 +17074,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                             overflow: "hidden",
                           }}
                         >
+                          {blocker && <AlertTriangle size={11} color="#7A3E1D" style={{ flexShrink: 0, marginRight: 4 }} />}
                           <span
                             style={{
                               color: "#16191A",
@@ -17139,6 +17152,25 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
       : [{ id: uid(), tankId: "", volume: "" }]
   );
   const [saving, setSaving] = useState(false);
+
+  // Same live-extension logic as the calendar itself — a batch running
+  // past its estimate still genuinely blocks the tank, so this needs to
+  // check that, not just the original planned end date.
+  const conflictingBatch = useMemo(() => {
+    const checkTankIds = splitMode ? splitRows.map((r) => r.tankId).filter(Boolean) : tankId ? [tankId] : [];
+    if (checkTankIds.length === 0) return null;
+    for (const otherBatch of batches) {
+      if (batch && otherBatch.id === batch.id) continue;
+      if (!batchTankIds(otherBatch).some((id) => checkTankIds.includes(id))) continue;
+      const fullyDone = otherBatch.stage === "Packaged" && remainingVolume(otherBatch) === 0;
+      if (fullyDone) continue;
+      const estimatedEnd = otherBatch.plannedDays ? addDays(otherBatch.startDate, otherBatch.plannedDays) : addDays(today(), 1);
+      const liveFloor = addDays(today(), 1);
+      const end = estimatedEnd > liveFloor ? estimatedEnd : liveFloor;
+      if (otherBatch.startDate <= startDate && end >= startDate) return otherBatch;
+    }
+    return null;
+  }, [tankId, splitMode, splitRows, startDate, batches, batch]);
 
   const searchableRecipes = activeRecipesByFamily(recipes);
   const applyRecipe = (id) => {
@@ -17226,6 +17258,15 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
             ? "Just block out the slot — no recipe, ingredients, or gravity readings needed yet. Fill those in on the day you actually brew."
             : "This is scheduled for a future date and hasn't started brewing yet — change anything below, or remove it entirely."}
         </div>
+
+        {conflictingBatch && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", color: "#7A3E1D", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 5, padding: "10px 12px", lineHeight: 1.5 }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 12.5 }}>
+              <strong>{conflictingBatch.name}</strong> is still in this tank and hasn't moved out yet — this can't actually be brewed on {startDate} until that's cleared. Pick a later date, a different tank, or move {conflictingBatch.name} along first.
+            </span>
+          </div>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Recipe (optional)</span>
@@ -18744,7 +18785,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-200";
+const APP_VERSION = "2026-08-03-201";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
