@@ -432,12 +432,20 @@ function tankIsOccupied(batches, tankId, excludeBatchId) {
 }
 
 function occupyingBatch(batches, tankId, excludeBatchId) {
-  return batches.find((b) => {
+  const candidates = batches.filter((b) => {
     if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
   });
+  if (candidates.length === 0) return undefined;
+  // A tank can genuinely have both something actively in it AND a future
+  // brew already queued up for after it's out — scheduling deliberately
+  // allows that. Whatever's physically in the tank right now should
+  // always win here; only fall back to a scheduled one if nothing has
+  // actually started yet. Without this, batch order (not reality) would
+  // decide which one showed.
+  return candidates.find((b) => b.startDate <= today()) || candidates[0];
 }
 
 function aggregatePackagingCounts(batch) {
