@@ -17086,6 +17086,12 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
   const [brewDaysPlanned, setBrewDaysPlanned] = useState(batch ? batch.brewDaysPlanned || 1 : 1);
   const [tankId, setTankId] = useState(batch ? batch.tankId || "" : presetTankId || "");
   const [recipeId, setRecipeId] = useState(batch ? batch.recipeId || "" : "");
+  const [splitMode, setSplitMode] = useState(batch ? (batch.splitTanks || []).length > 0 : false);
+  const [splitRows, setSplitRows] = useState(
+    batch && batch.splitTanks && batch.splitTanks.length > 0
+      ? batch.splitTanks.map((s) => ({ id: uid(), tankId: s.tankId, volume: String(s.volume) }))
+      : [{ id: uid(), tankId: "", volume: "" }]
+  );
   const [saving, setSaving] = useState(false);
 
   const searchableRecipes = activeRecipesByFamily(recipes);
@@ -17104,6 +17110,14 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
     setSaving(true);
     const tank = tanks.find((t) => t.id === tankId) || null;
     const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
+    const finalSplitTanks = splitMode
+      ? splitRows
+          .filter((r) => r.tankId && Number(r.volume) > 0)
+          .map((r) => {
+            const t = tanks.find((tk) => tk.id === r.tankId);
+            return { tankId: r.tankId, tankName: t ? t.name : "", volume: Number(r.volume) || 0, additions: [] };
+          })
+      : [];
     if (isNew) {
       await onCreate({
         id: uid(),
@@ -17124,10 +17138,10 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
         startDate,
         recipeId: recipeId || null,
         recipeName: activeRecipe ? activeRecipe.name : null,
-        tankId: tank ? tank.id : null,
-        tankName: tank ? tank.name : null,
+        tankId: splitMode ? null : tank ? tank.id : null,
+        tankName: splitMode ? null : tank ? tank.name : null,
         brewStage: null,
-        splitTanks: [],
+        splitTanks: finalSplitTanks,
         ingredients: [],
         schedule: [],
         readings: [],
@@ -17142,8 +17156,9 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
         startDate,
         plannedDays: plannedDays === "" ? null : Number(plannedDays),
         brewDaysPlanned: Number(brewDaysPlanned) || 1,
-        tankId: tank ? tank.id : null,
-        tankName: tank ? tank.name : null,
+        tankId: splitMode ? null : tank ? tank.id : null,
+        tankName: splitMode ? null : tank ? tank.name : null,
+        splitTanks: finalSplitTanks,
         recipeId: recipeId || null,
         recipeName: activeRecipe ? activeRecipe.name : null,
         readings: batch.readings.map((r, i) => (i === 0 ? { ...r, date: startDate } : r)),
@@ -17206,28 +17221,103 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
           </div>
         </div>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
-          <select
-            value={tankId}
-            onChange={(e) => setTankId(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
-          >
-            <option value="">Unassigned</option>
-            {sortedTanks(calendarTanks).map((t) => {
-              const currentlyOccupied = tankIsOccupied(batches, t.id, batch?.id);
-              const occupied = currentlyOccupied && startDate <= today();
-              const occupant = currentlyOccupied ? occupyingBatch(batches, t.id, batch?.id) : null;
-              return (
-                <option key={t.id} value={t.id} disabled={occupied}>
-                  {t.name} ({t.capacity}L)
-                  {occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
-                  {!occupied && currentlyOccupied ? ` — currently in use by ${occupant?.name || "another batch"}` : ""}
-                </option>
-              );
-            })}
-          </select>
-        </label>
+        <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
+          {[
+            [false, "One tank"],
+            [true, "Split across tanks"],
+          ].map(([mode, label]) => (
+            <button
+              key={String(mode)}
+              onClick={() => setSplitMode(mode)}
+              style={{
+                flex: 1,
+                background: splitMode === mode ? "#5C9A3C" : "#F5F1E4",
+                border: "none",
+                padding: "9px",
+                color: splitMode === mode ? "#16191A" : "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 12.5,
+                cursor: "pointer",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {!splitMode ? (
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
+            <select
+              value={tankId}
+              onChange={(e) => setTankId(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+            >
+              <option value="">Unassigned</option>
+              {sortedTanks(calendarTanks).map((t) => {
+                const currentlyOccupied = tankIsOccupied(batches, t.id, batch?.id);
+                const occupied = currentlyOccupied && startDate <= today();
+                const occupant = currentlyOccupied ? occupyingBatch(batches, t.id, batch?.id) : null;
+                return (
+                  <option key={t.id} value={t.id} disabled={occupied}>
+                    {t.name} ({t.capacity}L)
+                    {occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                    {!occupied && currentlyOccupied ? ` — currently in use by ${occupant?.name || "another batch"}` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        ) : (
+          <div>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tanks</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 5 }}>
+              {splitRows.map((row) => (
+                <div key={row.id} style={{ display: "flex", gap: 8 }}>
+                  <select
+                    value={row.tankId}
+                    onChange={(e) => setSplitRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, tankId: e.target.value } : r)))}
+                    style={{ flex: 2, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13.5 }}
+                  >
+                    <option value="">Pick a tank</option>
+                    {sortedTanks(calendarTanks).map((t) => {
+                      const currentlyOccupied = tankIsOccupied(batches, t.id, batch?.id);
+                      const occupied = currentlyOccupied && startDate <= today();
+                      return (
+                        <option key={t.id} value={t.id} disabled={occupied}>
+                          {t.name} ({t.capacity}L){occupied ? " — occupied" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={row.volume}
+                    onChange={(e) => setSplitRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, volume: e.target.value } : r)))}
+                    placeholder="Litres"
+                    style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5 }}
+                  />
+                  {splitRows.length > 1 && (
+                    <button
+                      onClick={() => setSplitRows((prev) => prev.filter((r) => r.id !== row.id))}
+                      style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+                      aria-label="Remove"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setSplitRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }])}
+              style={{ marginTop: 8, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", width: "100%", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+            >
+              + Add another tank
+            </button>
+          </div>
+        )}
 
         <button
           onClick={submit}
@@ -18562,7 +18652,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-196";
+const APP_VERSION = "2026-08-03-197";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19837,6 +19927,7 @@ function TankLogApp() {
       brew_days_planned: patch.brewDaysPlanned,
       tank_id: patch.tankId,
       tank_name: patch.tankName,
+      split_tanks: patch.splitTanks,
       recipe_id: patch.recipeId,
       recipe_name: patch.recipeName,
       readings: patch.readings,
