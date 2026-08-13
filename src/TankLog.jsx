@@ -19171,10 +19171,11 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-206";
+const APP_VERSION = "2026-08-03-208";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   return (
     <div
       style={{
@@ -19187,36 +19188,49 @@ function UpdateBanner({ onRefresh }) {
         borderTop: "1px solid #C9D1AC",
         padding: "8px 16px",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        flexWrap: "wrap",
+        flexDirection: "column",
+        gap: 6,
       }}
     >
-      <CheckCircle2 size={14} color="#8FCB6C" />
-      <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
-        A new version of Brewpoint is available.
-      </span>
-      <button
-        onClick={() => {
-          setRefreshing(true);
-          onRefresh();
-        }}
-        disabled={refreshing}
-        style={{
-          background: refreshing ? "#3A4A2E" : "none",
-          border: "1px solid #C9D1AC",
-          borderRadius: 5,
-          padding: "4px 10px",
-          color: "#F5F1E4",
-          fontFamily: "'Oswald', sans-serif",
-          fontWeight: 500,
-          fontSize: 12,
-          cursor: refreshing ? "default" : "pointer",
-        }}
-      >
-        {refreshing ? "Refreshing…" : "Refresh"}
-      </button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
+        <CheckCircle2 size={14} color="#8FCB6C" />
+        <span style={{ color: "#F5F1E4", fontSize: 12.5, fontFamily: "'Inter', sans-serif" }}>
+          A new version of Brewpoint is available.
+        </span>
+        <button
+          onClick={() => {
+            setRefreshing(true);
+            onRefresh();
+          }}
+          disabled={refreshing}
+          style={{
+            background: refreshing ? "#3A4A2E" : "none",
+            border: "1px solid #C9D1AC",
+            borderRadius: 5,
+            padding: "4px 10px",
+            color: "#F5F1E4",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 12,
+            cursor: refreshing ? "default" : "pointer",
+          }}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+        <button
+          onClick={() => setShowHelp((v) => !v)}
+          style={{ background: "none", border: "none", color: "#C9D1AC", fontFamily: "'Inter', sans-serif", fontSize: 11, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+        >
+          {showHelp ? "Hide" : "Still showing this after refreshing?"}
+        </button>
+      </div>
+      {showHelp && (
+        <div style={{ color: "#C9D1AC", fontSize: 11.5, lineHeight: 1.6, textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
+          <strong>If it's on your home screen:</strong> fully close it first — swipe it away in the app switcher, not just the home button — then reopen from the icon. Still stuck? Long-press the icon → delete it, load the site fresh in Safari, then Share → Add to Home Screen again.
+          <br />
+          <strong>If you're in Safari/Chrome:</strong> Settings → Safari → Advanced → Website Data → search "breworx" → swipe to delete, then reload the page.
+        </div>
+      )}
     </div>
   );
 }
