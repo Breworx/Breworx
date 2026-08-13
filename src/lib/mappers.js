@@ -292,6 +292,8 @@ export function rowToFoodSafetyRecord(row) {
     stationId: row.station_id || null,
     pestActivity: row.pest_activity || null,
     photoUrl: row.photo_url || null,
+    batchId: row.batch_id || null,
+    batchName: row.batch_name || null,
     createdAt: row.created_at || null,
   };
 }
@@ -320,6 +322,8 @@ export function foodSafetyRecordToRow(record, userId, companyId) {
     station_id: record.stationId || null,
     pest_activity: record.pestActivity || null,
     photo_url: record.photoUrl || null,
+    batch_id: record.batchId || null,
+    batch_name: record.batchName || null,
   };
 }
 
