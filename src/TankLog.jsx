@@ -3065,6 +3065,234 @@ function PestStationsModal({ stations, records, onClose, onAdd, onUpdate }) {
   );
 }
 
+// A real MPI-recognised verifier's actual visit — distinct from the
+// internal audit (your own self-review) and from the mock recall's draft
+// notification to the verifier. Findings that need action feed into the
+// same open-corrective-action tracking as everything else in Food Safety.
+// A real customer complaint, tied to a specific batch where possible —
+// feeds the same traceability data the mock recall already uses, so a
+// pattern across complaints (same batch, same lot) is easy to spot later.
+function LogComplaintModal({ batches, onClose, onSave }) {
+  const [customerName, setCustomerName] = useState("");
+  const [date, setDate] = useState(today());
+  const [description, setDescription] = useState("");
+  const [batchQuery, setBatchQuery] = useState("");
+  const [batchFocused, setBatchFocused] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [hasAction, setHasAction] = useState(false);
+  const [correctiveAction, setCorrectiveAction] = useState("");
+
+  const batchMatches = batchQuery.trim()
+    ? batches.filter((b) => b.name.toLowerCase().includes(batchQuery.trim().toLowerCase()) || (b.number || "").toLowerCase().includes(batchQuery.trim().toLowerCase())).slice(0, 8)
+    : [];
+  const selectedBatch = batches.find((b) => b.id === selectedBatchId);
+
+  const submit = () => {
+    if (!customerName.trim() || !description.trim()) return;
+    if (hasAction && !correctiveAction.trim()) return;
+    onSave({
+      category: "Complaint",
+      date,
+      completedBy: customerName.trim(),
+      notes: description.trim(),
+      batchId: selectedBatchId || null,
+      batchName: selectedBatch ? selectedBatch.name : null,
+      correctiveAction: hasAction ? correctiveAction.trim() : null,
+      correctiveActionResolved: !hasAction,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log a customer complaint" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Customer / complainant name" value={customerName} onChange={setCustomerName} />
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <TextField label="What happened" value={description} onChange={setDescription} placeholder="What they reported" />
+        <div style={{ position: "relative" }}>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Batch involved (optional, but worth linking if known)</div>
+          <input
+            type="text"
+            value={selectedBatch ? selectedBatch.name : batchQuery}
+            onChange={(e) => {
+              setBatchQuery(e.target.value);
+              setSelectedBatchId("");
+            }}
+            onFocus={() => setBatchFocused(true)}
+            onBlur={() => setTimeout(() => setBatchFocused(false), 150)}
+            placeholder="Search by batch name or number"
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          />
+          {batchFocused && !selectedBatch && batchMatches.length > 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 180, overflowY: "auto" }}>
+              {batchMatches.map((b) => (
+                <button
+                  key={b.id}
+                  onMouseDown={() => {
+                    setSelectedBatchId(b.id);
+                    setBatchFocused(false);
+                  }}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                >
+                  {b.name} <span style={{ color: "#9BA88A" }}>#{b.number}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Any corrective action taken?</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              [false, "No action needed"],
+              [true, "Yes"],
+            ].map(([val, label]) => (
+              <button
+                key={label}
+                onClick={() => setHasAction(val)}
+                style={{
+                  background: hasAction === val ? (val ? "#D9A441" : "#5C9A3C") : "#F5F1E4",
+                  border: `1px solid ${hasAction === val ? (val ? "#D9A441" : "#5C9A3C") : "#DDE0C8"}`,
+                  borderRadius: 20,
+                  padding: "6px 14px",
+                  color: hasAction === val ? "#16191A" : "#5C6B54",
+                  fontSize: 12.5,
+                  fontFamily: "'Inter', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {hasAction && (
+          <TextField
+            label="Corrective action (required)"
+            value={correctiveAction}
+            onChange={setCorrectiveAction}
+            placeholder="What was done in response"
+          />
+        )}
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function LogVerifierVisitModal({ onClose, onSave, onUploadPhoto }) {
+  const [verifierName, setVerifierName] = useState("");
+  const [date, setDate] = useState(today());
+  const [findings, setFindings] = useState("");
+  const [hasNonConformance, setHasNonConformance] = useState(false);
+  const [correctiveAction, setCorrectiveAction] = useState("");
+  const [nextVisitDue, setNextVisitDue] = useState("");
+  const [photoUrl, setPhotoUrl] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoSelect = async (file) => {
+    if (!file) return;
+    setUploadingPhoto(true);
+    const url = await onUploadPhoto(file);
+    setUploadingPhoto(false);
+    if (url) setPhotoUrl(url);
+  };
+
+  const submit = () => {
+    if (!verifierName.trim()) return;
+    if (hasNonConformance && !correctiveAction.trim()) return;
+    onSave({
+      category: "Verifier visit",
+      date,
+      completedBy: verifierName.trim(),
+      notes: findings.trim(),
+      dueDate: nextVisitDue || null,
+      photoUrl,
+      correctiveAction: hasNonConformance ? correctiveAction.trim() : null,
+      correctiveActionResolved: !hasNonConformance,
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log a verifier visit" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Verifier name" value={verifierName} onChange={setVerifierName} placeholder="Your recognised MPI verifier" />
+        <TextField label="Visit date" type="date" value={date} onChange={setDate} />
+        <TextField label="Findings / notes" value={findings} onChange={setFindings} placeholder="What they checked, general comments" />
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Any non-conformances raised?</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              [false, "None"],
+              [true, "Yes"],
+            ].map(([val, label]) => (
+              <button
+                key={label}
+                onClick={() => setHasNonConformance(val)}
+                style={{
+                  background: hasNonConformance === val ? (val ? "#B5502F" : "#5C9A3C") : "#F5F1E4",
+                  border: `1px solid ${hasNonConformance === val ? (val ? "#B5502F" : "#5C9A3C") : "#DDE0C8"}`,
+                  borderRadius: 20,
+                  padding: "6px 14px",
+                  color: hasNonConformance === val ? "#FFFFFF" : "#5C6B54",
+                  fontSize: 12.5,
+                  fontFamily: "'Inter', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {hasNonConformance && (
+          <TextField
+            label="Corrective action (required)"
+            value={correctiveAction}
+            onChange={setCorrectiveAction}
+            placeholder="What you'll do to address it"
+          />
+        )}
+        <TextField label="Next visit due (optional)" type="date" value={nextVisitDue} onChange={setNextVisitDue} />
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Visit report (optional)</div>
+          {photoUrl ? (
+            <div style={{ position: "relative", width: 90 }}>
+              <img src={photoUrl} alt="" style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 6, border: "1px solid #DDE0C8" }} />
+              <button
+                onClick={() => setPhotoUrl(null)}
+                aria-label="Remove"
+                style={{ position: "absolute", top: -6, right: -6, background: "#B5502F", border: "none", borderRadius: "50%", width: 20, height: 20, color: "#FFFFFF", cursor: "pointer", fontSize: 12, lineHeight: "20px", padding: 0 }}
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <label
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#F5F1E4", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "9px 14px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: uploadingPhoto ? "default" : "pointer" }}
+            >
+              {uploadingPhoto ? "Uploading…" : "+ Add a photo or scan"}
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => handlePhotoSelect(e.target.files?.[0])} disabled={uploadingPhoto} style={{ display: "none" }} />
+            </label>
+          )}
+        </div>
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function LogContractorVisitModal({ onClose, onSave, onUploadPhoto }) {
   const [contractorName, setContractorName] = useState("");
   const [date, setDate] = useState(today());
@@ -3797,6 +4025,8 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
   const [address, setAddress] = useState(supplier ? supplier.address || "" : "");
   const [leadTimeDays, setLeadTimeDays] = useState(supplier?.leadTimeDays ?? "");
   const [notes, setNotes] = useState(supplier ? supplier.notes || "" : "");
+  const [approved, setApproved] = useState(supplier ? supplier.approved || false : false);
+  const [approvedNotes, setApprovedNotes] = useState(supplier ? supplier.approvedNotes || "" : "");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -3810,6 +4040,8 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
       address: address.trim(),
       leadTimeDays: leadTimeDays === "" ? null : Number(leadTimeDays),
       notes: notes.trim(),
+      approved,
+      approvedNotes: approvedNotes.trim(),
     });
     setSaving(false);
     onClose();
@@ -3825,6 +4057,40 @@ function SupplierFormModal({ supplier, onClose, onSave }) {
         <TextField label="Address (optional)" value={address} onChange={setAddress} />
         <NumberField label="Usual lead time (days, optional)" value={leadTimeDays} onChange={setLeadTimeDays} step="1" suffix="days" />
         <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
+        <div>
+          <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>Approved supplier</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              [false, "Not yet approved"],
+              [true, "Approved"],
+            ].map(([val, label]) => (
+              <button
+                key={label}
+                onClick={() => setApproved(val)}
+                style={{
+                  background: approved === val ? (val ? "#5C9A3C" : "#F5F1E4") : "#F5F1E4",
+                  border: `1px solid ${approved === val ? (val ? "#5C9A3C" : "#DDE0C8") : "#DDE0C8"}`,
+                  borderRadius: 20,
+                  padding: "6px 14px",
+                  color: approved === val && val ? "#16191A" : "#5C6B54",
+                  fontSize: 12.5,
+                  fontFamily: "'Inter', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {approved && (
+          <TextField
+            label="How verified (optional)"
+            value={approvedNotes}
+            onChange={setApprovedNotes}
+            placeholder="e.g. sighted their food safety certification, 12 Aug 2026"
+          />
+        )}
         <button
           onClick={submit}
           disabled={saving}
@@ -13567,6 +13833,8 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
     "Pest control": "Pest control",
     "Pest control — contractor visit": "Pest control (contractor)",
     "Internal audit": "Internal audit",
+    "Verifier visit": "Verifier visit",
+    "Complaint": "Customer complaint",
   };
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
   const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
@@ -13668,7 +13936,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit, onLogVerifierVisit, onLogComplaint }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -13684,6 +13952,8 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     "Pest control": "Pest control",
     "Pest control — contractor visit": "Pest control (contractor)",
     "Internal audit": "Internal audit",
+    "Verifier visit": "Verifier visit",
+    "Complaint": "Customer complaint",
   };
   const categoryColor = {
     checklist: "#D9A441",
@@ -13750,6 +14020,15 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     .sort((a, b) => b.date.localeCompare(a.date))[0];
   const contractorVisitOverdue = latestContractorVisit && latestContractorVisit.dueDate && latestContractorVisit.dueDate < today();
 
+  // Unlike internal audit or water testing, verifier visit frequency is
+  // genuinely risk-based and set by the verifier themselves — so this
+  // only flags overdue against a date you were actually told, never a
+  // default cadence invented here. Never-logged doesn't count as overdue.
+  const latestVerifierVisit = records
+    .filter((r) => r.category === "Verifier visit")
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  const verifierVisitOverdue = latestVerifierVisit && latestVerifierVisit.dueDate && latestVerifierVisit.dueDate < today();
+
   // Monthly cadence — direct advice from a food safety inspector, not a
   // fixed MPI number. Per station, since the whole point is that every
   // station gets checked, not just whichever one was easiest.
@@ -13781,7 +14060,13 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
   const latestInternalAudit = records.filter((r) => r.category === "Internal audit").sort((a, b) => b.date.localeCompare(a.date))[0];
   const internalAuditOverdue = !latestInternalAudit || (latestInternalAudit.dueDate && latestInternalAudit.dueDate < today());
 
-  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0) + overduePestStations.length + staffDueForRefresher.length;
+  // Same honesty as internal audit — no MPI-mandated interval for water
+  // testing exists, quarterly is just a sensible chosen default, computed
+  // from the last logged test the same way pest control checks are.
+  const latestWaterTest = records.filter((r) => r.category === "water").sort((a, b) => b.date.localeCompare(a.date))[0];
+  const waterTestOverdue = !latestWaterTest || daysBetween(latestWaterTest.date, today()) > 91;
+
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0) + overduePestStations.length + staffDueForRefresher.length + (waterTestOverdue ? 1 : 0) + (verifierVisitOverdue ? 1 : 0);
 
   return (
     <>
@@ -13873,6 +14158,28 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 </span>
                 <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
                   {staffDueForRefresher.join(", ")}
+                </span>
+              </button>
+            )}
+            {waterTestOverdue && (
+              <button
+                onClick={() => onStartNote("water", "Log water test")}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Water test due — quarterly</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {latestWaterTest ? `last done ${latestWaterTest.date}` : "never done"}
+                </span>
+              </button>
+            )}
+            {verifierVisitOverdue && (
+              <button
+                onClick={onLogVerifierVisit}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>Verifier visit overdue</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  was due {latestVerifierVisit.dueDate}
                 </span>
               </button>
             )}
@@ -13998,6 +14305,8 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
         <button onClick={onManagePestStations} style={secondaryBtnStyle}>Pest stations ({pestStations.filter((s) => s.active).length})</button>
         <button onClick={onLogContractorVisit} style={secondaryBtnStyle}>Log contractor visit</button>
         <button onClick={onStartInternalAudit} style={secondaryBtnStyle}>Internal audit</button>
+        <button onClick={onLogVerifierVisit} style={secondaryBtnStyle}>Log verifier visit</button>
+        <button onClick={onLogComplaint} style={secondaryBtnStyle}>Log complaint</button>
         <button onClick={() => onStartNote("incident", "Something went wrong")} style={secondaryBtnStyle}>
           Something went wrong
         </button>
@@ -14025,7 +14334,22 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                   textAlign: "left",
                 }}
               >
-                <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.name}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.name}</span>
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontFamily: "'Inter', sans-serif",
+                      color: s.approved ? "#3F6B32" : "#B5502F",
+                      background: s.approved ? "#EAF2E4" : "#FBE5D2",
+                      border: `1px solid ${s.approved ? "#8FB86C" : "#E3B37A"}`,
+                      borderRadius: 10,
+                      padding: "1px 8px",
+                    }}
+                  >
+                    {s.approved ? "Approved" : "Not approved"}
+                  </span>
+                </span>
                 <span style={{ color: "#9BA88A", fontSize: 11.5 }}>Documents →</span>
               </button>
             ))}
@@ -14156,6 +14480,21 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                   <>
                     <div style={{ whiteSpace: "pre-line" }}>{r.notes}</div>
                     {r.dueDate && <div style={{ color: "#9BA88A", marginTop: 5 }}>Next internal audit due {r.dueDate}</div>}
+                  </>
+                )}
+                {r.category === "Verifier visit" && (
+                  <>
+                    {r.completedBy} — {r.notes || "no findings noted"}
+                    {r.correctiveAction && <div style={{ color: "#B5502F", marginTop: 3 }}>Non-conformance: {r.correctiveAction}</div>}
+                    {r.dueDate && <div style={{ color: "#9BA88A", marginTop: 3 }}>Next visit due {r.dueDate}</div>}
+                    {r.photoUrl && <img src={r.photoUrl} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, marginTop: 5 }} />}
+                  </>
+                )}
+                {r.category === "Complaint" && (
+                  <>
+                    {r.completedBy}{r.batchName ? ` — ${r.batchName}` : ""}
+                    <div style={{ marginTop: 3 }}>{r.notes}</div>
+                    {r.correctiveAction && <div style={{ color: "#B5502F", marginTop: 3 }}>Action taken: {r.correctiveAction}</div>}
                   </>
                 )}
                 {r.category === "illness" && (() => {
@@ -18824,7 +19163,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-205";
+const APP_VERSION = "2026-08-03-206";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19619,6 +19958,8 @@ function TankLogApp() {
   const [showPestStationsModal, setShowPestStationsModal] = useState(false);
   const [showLogPestCheckModal, setShowLogPestCheckModal] = useState(false);
   const [showContractorVisitModal, setShowContractorVisitModal] = useState(false);
+  const [showVerifierVisitModal, setShowVerifierVisitModal] = useState(false);
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [showMockRecallModal, setShowMockRecallModal] = useState(false);
   const [showInternalAuditModal, setShowInternalAuditModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
@@ -22548,6 +22889,8 @@ function TankLogApp() {
                   onLogContractorVisit={() => setShowContractorVisitModal(true)}
                   onStartMockRecall={() => setShowMockRecallModal(true)}
                   onStartInternalAudit={() => setShowInternalAuditModal(true)}
+                  onLogVerifierVisit={() => setShowVerifierVisitModal(true)}
+                  onLogComplaint={() => setShowComplaintModal(true)}
                 />
               </>
             )}
@@ -22574,6 +22917,20 @@ function TankLogApp() {
                 onClose={() => setShowContractorVisitModal(false)}
                 onSave={addFoodSafetyRecord}
                 onUploadPhoto={uploadFoodSafetyPhoto}
+              />
+            )}
+            {showVerifierVisitModal && (
+              <LogVerifierVisitModal
+                onClose={() => setShowVerifierVisitModal(false)}
+                onSave={addFoodSafetyRecord}
+                onUploadPhoto={uploadFoodSafetyPhoto}
+              />
+            )}
+            {showComplaintModal && (
+              <LogComplaintModal
+                batches={batches}
+                onClose={() => setShowComplaintModal(false)}
+                onSave={addFoodSafetyRecord}
               />
             )}
             {showMockRecallModal && (
