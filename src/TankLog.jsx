@@ -2478,6 +2478,7 @@ function BatchCard({ batch, onOpen, tanks }) {
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
   const vesselType = tanks ? tanks.find((t) => t.id === batch.tankId)?.type : null;
+  const isScheduled = batch.startDate > today();
   return (
     <button
       onClick={() => onOpen(batch.id)}
@@ -2485,8 +2486,8 @@ function BatchCard({ batch, onOpen, tanks }) {
         display: "flex",
         gap: 16,
         alignItems: "center",
-        background: "#FFFFFF",
-        border: "1px solid #DDE0C8",
+        background: isScheduled ? "#FBF8F0" : "#FFFFFF",
+        border: isScheduled ? "1px dashed #B8AD8A" : "1px solid #DDE0C8",
         borderRadius: 6,
         padding: "16px 18px",
         cursor: "pointer",
@@ -2494,8 +2495,8 @@ function BatchCard({ batch, onOpen, tanks }) {
         width: "100%",
         transition: "border-color 0.15s",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#C9D1AC")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#DDE0C8")}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = isScheduled ? "#9B8F6F" : "#C9D1AC")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = isScheduled ? "#B8AD8A" : "#DDE0C8")}
     >
       <Tank batch={batch} vesselType={vesselType} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2525,7 +2526,24 @@ function BatchCard({ batch, onOpen, tanks }) {
               {batch.name}
             </h3>
           </div>
-          <StagePill stage={batch.stage} />
+          {isScheduled ? (
+            <span
+              style={{
+                flexShrink: 0,
+                background: "#C9BD98",
+                color: "#3F3826",
+                borderRadius: 20,
+                padding: "3px 10px",
+                fontSize: 11,
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 500,
+              }}
+            >
+              Scheduled
+            </span>
+          ) : (
+            <StagePill stage={batch.stage} />
+          )}
         </div>
         <div style={{ color: "#5C6B54", fontSize: 13, marginTop: 2 }}>
           {batch.style}{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : ""}
@@ -18652,7 +18670,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-197";
+const APP_VERSION = "2026-08-03-198";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
