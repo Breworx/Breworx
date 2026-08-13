@@ -16979,6 +16979,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
               <div style={{ display: "flex" }}>
                 {dayList.map((d) => {
                   const dayReminders = reminders.filter((r) => r.dueDate === d);
+                  const isTodayCol = d === today();
                   return (
                     <div
                       key={d}
@@ -16987,7 +16988,8 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                         width: dayWidth,
                         minHeight: 40,
                         flexShrink: 0,
-                        borderLeft: "1px solid #F5F1E4",
+                        borderLeft: "1px solid #DDE0C8",
+                        background: isTodayCol ? "rgba(92, 154, 60, 0.08)" : "transparent",
                         cursor: "pointer",
                         display: "flex",
                         flexWrap: "wrap",
