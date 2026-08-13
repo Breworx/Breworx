@@ -16893,6 +16893,27 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
       })
       .filter((o) => o.end >= rangeStart && o.start <= dayList[dayList.length - 1]);
 
+  // Scheduling doesn't block overlapping future dates in the same tank on
+  // its own — someone can genuinely plan three brews in a row before
+  // moving one out. Without this, overlapping entries would render on top
+  // of each other at the same position and hide all but one. Standard
+  // calendar lane-packing: sort by start date, place each item in the
+  // first lane whose last occupant has already ended.
+  const assignLanes = (occ) => {
+    const sorted = [...occ].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    const laneEnds = [];
+    return sorted.map((o) => {
+      let lane = laneEnds.findIndex((end) => end < o.start);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(o.end);
+      } else {
+        laneEnds[lane] = o.end;
+      }
+      return { ...o, lane };
+    });
+  };
+
   return (
     <div>
       {onCheckIngredients && (
@@ -16979,9 +17000,11 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
             </div>
 
             {sortedTanks(calendarTanks).map((tank) => {
-              const occ = occupancyForTank(tank.id);
+              const occ = assignLanes(occupancyForTank(tank.id));
+              const laneCount = occ.length > 0 ? Math.max(...occ.map((o) => o.lane)) + 1 : 1;
+              const rowHeight = Math.max(48, laneCount * 40 + 8);
               return (
-                <div key={tank.id} style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", minHeight: 48 }}>
+                <div key={tank.id} style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", minHeight: rowHeight }}>
                   <div style={{ width: 120, flexShrink: 0, paddingRight: 10 }}>
                     <div
                       style={{
@@ -17006,10 +17029,10 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                           const covered = occ.some((o) => d >= o.start && d <= o.end);
                           if (!covered) onScheduleTank(tank.id, d);
                         }}
-                        style={{ width: dayWidth, height: 48, flexShrink: 0, borderLeft: "1px solid #F5F1E4", cursor: "pointer" }}
+                        style={{ width: dayWidth, height: rowHeight, flexShrink: 0, borderLeft: "1px solid #F5F1E4", cursor: "pointer" }}
                       />
                     ))}
-                    {occ.map(({ batch, start, end, isEstimate }) => {
+                    {occ.map(({ batch, start, end, isEstimate, lane }) => {
                       const startIdx = Math.max(0, dayIndex(start));
                       const endIdx = Math.min(totalDays - 1, dayIndex(end));
                       const isScheduled = batch.startDate > today();
@@ -17021,7 +17044,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                             position: "absolute",
                             left: startIdx * dayWidth + 2,
                             width: (endIdx - startIdx + 1) * dayWidth - 4,
-                            top: 7,
+                            top: 7 + lane * 40,
                             height: 34,
                             background: isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
                             opacity: isEstimate ? 0.6 : 1,
@@ -17422,6 +17445,10 @@ function HomeView({
 
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
+  const upcomingScheduled = batches
+    .filter((b) => b.startDate > today() && b.stage === "Brewing")
+    .sort((a, b) => (a.startDate < b.startDate ? -1 : 1))
+    .slice(0, 4);
 
   const daysSince = (dateStr) => Math.floor((new Date(today()) - new Date(dateStr)) / 86400000);
 
@@ -17517,6 +17544,48 @@ function HomeView({
           </h1>
         )}
       </div>
+
+      {upcomingScheduled.length > 0 && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Upcoming brews</span>
+            <button
+              onClick={() => onGoTo("production")}
+              style={{ background: "none", border: "none", color: "#5C9A3C", fontSize: 12, fontFamily: "'Inter', sans-serif", cursor: "pointer", padding: 0 }}
+            >
+              View calendar
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+            {upcomingScheduled.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => onGoTo("production")}
+                style={{
+                  flexShrink: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  background: "#FBF8F0",
+                  border: "1px dashed #B8AD8A",
+                  borderRadius: 6,
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  minWidth: 130,
+                }}
+              >
+                <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, color: "#2A3324", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {b.name}
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9B8F6F" }}>
+                  {b.startDate}{b.tankName ? ` · ${b.tankName}` : b.splitTanks && b.splitTanks.length > 0 ? ` · ${b.splitTanks.length} tanks` : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {totalTasks > 0 && (
         <div>
@@ -18670,7 +18739,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-198";
+const APP_VERSION = "2026-08-03-199";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
