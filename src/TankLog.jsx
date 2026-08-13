@@ -18785,7 +18785,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-201";
+const APP_VERSION = "2026-08-03-202";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22570,7 +22570,13 @@ function TankLogApp() {
                 if (!q) return true;
                 return b.name.toLowerCase().includes(q) || (b.style || "").toLowerCase().includes(q) || (b.number || "").toLowerCase().includes(q);
               };
-              const fFerm = fermentingBatches.filter(matches);
+              // Scheduled batches haven't started yet, so they don't
+              // belong competing for attention at the top — this is meant
+              // to be a live view of what's actually fermenting right now.
+              const fFerm = fermentingBatches
+                .filter(matches)
+                .slice()
+                .sort((a, b) => (a.startDate > today()) - (b.startDate > today()));
               const fCond = conditioningBatches.filter(matches);
               const fProg = inProgressBatches.filter(matches);
               const fPack = packagedBatches.filter(matches);
