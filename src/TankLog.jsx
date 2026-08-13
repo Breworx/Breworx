@@ -16957,6 +16957,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                       flexShrink: 0,
                       textAlign: "center",
                       padding: "4px 0",
+                      borderLeft: "1px solid #DDE0C8",
                       background: isToday ? "#5C9A3C" : "transparent",
                       borderRadius: isToday ? 4 : 0,
                     }}
@@ -17046,7 +17047,14 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                           const covered = occ.some((o) => d >= o.start && d <= o.end);
                           if (!covered) onScheduleTank(tank.id, d);
                         }}
-                        style={{ width: dayWidth, height: rowHeight, flexShrink: 0, borderLeft: "1px solid #F5F1E4", cursor: "pointer" }}
+                        style={{
+                          width: dayWidth,
+                          height: rowHeight,
+                          flexShrink: 0,
+                          borderLeft: "1px solid #DDE0C8",
+                          background: d === today() ? "rgba(92, 154, 60, 0.08)" : "transparent",
+                          cursor: "pointer",
+                        }}
                       />
                     ))}
                     {occ.map(({ batch, start, end, isEstimate, lane }) => {
@@ -17501,6 +17509,7 @@ function HomeView({
   const daysSince = (dateStr) => Math.floor((new Date(today()) - new Date(dateStr)) / 86400000);
 
   const brewTasks = [...fermentingBatches, ...conditioningBatches]
+    .filter((b) => b.startDate <= today())
     .map((b) => ({ batch: b, next: (b.schedule || []).find((s) => !s.done) }))
     .filter((x) => x.next);
 
@@ -17551,7 +17560,7 @@ function HomeView({
   };
 
   const stats = [
-    ["Fermenting", fermentingBatches.length, STAGE_COLOR.Primary, "batches"],
+    ["Fermenting", fermentingBatches.filter((b) => b.startDate <= today()).length, STAGE_COLOR.Primary, "batches"],
     ["Conditioning", conditioningBatches.length, STAGE_COLOR.Conditioning, "batches"],
     ["Packaging", inProgressBatches.length, "#D4A24C", "batches"],
     ["Finished Stock", packagedBatches.length, "#9BA88A", "batches"],
@@ -17776,6 +17785,7 @@ function HomeView({
       {(() => {
         const brewDayBatches = batches.filter((b) => {
           if (b.stage !== "Brewing") return false;
+          if (b.startDate > today()) return false;
           const t = tanks.find((tk) => tk.id === b.tankId);
           return t && (t.type === "Mash Tun" || t.type === "Kettle");
         });
@@ -18787,7 +18797,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-202";
+const APP_VERSION = "2026-08-03-204";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
