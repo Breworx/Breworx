@@ -2531,10 +2531,16 @@ function BatchCard({ batch, onOpen, tanks }) {
           {batch.style}{batchTankSummary(batch) ? ` · ${batchTankSummary(batch)}` : ""}
         </div>
         <div style={{ display: "flex", gap: 18, marginTop: 10, fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#5C6B54" }}>
-          <span>SG {latest.gravity.toFixed(3)}</span>
-          <span>{latest.temp}°C</span>
-          <span>{days}d</span>
-          <span style={{ color: STAGE_COLOR[batch.stage] }}>{pct.toFixed(0)}% attn</span>
+          {latest.gravity != null ? (
+            <>
+              <span>SG {latest.gravity.toFixed(3)}</span>
+              <span>{latest.temp}°C</span>
+              <span>{days}d</span>
+              <span style={{ color: STAGE_COLOR[batch.stage] }}>{pct.toFixed(0)}% attn</span>
+            </>
+          ) : (
+            <span style={{ color: "#9BA88A" }}>Scheduled for {batch.startDate}</span>
+          )}
         </div>
         {batch.packaging && (() => {
           const totals = aggregatePackagingCounts(batch);
@@ -11663,10 +11669,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
         {[
-          ["OG", batch.og.toFixed(3)],
-          ["Current SG", latest.gravity.toFixed(3)],
-          ["Target FG", batch.fg.toFixed(3)],
-          ["Attenuation", `${pct.toFixed(0)}%`],
+          ["OG", batch.og != null ? batch.og.toFixed(3) : "—"],
+          ["Current SG", latest.gravity != null ? latest.gravity.toFixed(3) : "—"],
+          ["Target FG", batch.fg != null ? batch.fg.toFixed(3) : "—"],
+          ["Attenuation", batch.og != null && latest.gravity != null ? `${pct.toFixed(0)}%` : "—"],
         ].map(([label, val]) => (
           <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
             <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
@@ -13031,10 +13037,10 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Recipe</td><td>{batch.recipeName || "—"}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Mash pH</td><td>{batch.mashPh != null ? batch.mashPh.toFixed(2) : "—"}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Mash temp</td><td>{batch.mashTemp != null ? `${batch.mashTemp.toFixed(1)}°C` : "—"}</td></tr>
-            <tr><td style={{ padding: "4px 0", color: "#555" }}>Target OG / FG</td><td>{batch.og.toFixed(3)} / {batch.fg.toFixed(3)}</td></tr>
-            <tr><td style={{ padding: "4px 0", color: "#555" }}>Actual FG (latest reading)</td><td>{latest.gravity.toFixed(3)}</td></tr>
-            <tr><td style={{ padding: "4px 0", color: "#555" }}>Attenuation</td><td>{pct.toFixed(0)}%</td></tr>
-            <tr><td style={{ padding: "4px 0", color: "#555" }}>ABV (current)</td><td>{calcABV(batch.og, latest.gravity).toFixed(1)}%</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Target OG / FG</td><td>{batch.og != null ? batch.og.toFixed(3) : "—"} / {batch.fg != null ? batch.fg.toFixed(3) : "—"}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Actual FG (latest reading)</td><td>{latest.gravity != null ? latest.gravity.toFixed(3) : "—"}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>Attenuation</td><td>{batch.og != null && latest.gravity != null ? `${pct.toFixed(0)}%` : "—"}</td></tr>
+            <tr><td style={{ padding: "4px 0", color: "#555" }}>ABV (current)</td><td>{calcABV(batch.og, latest.gravity) != null ? `${calcABV(batch.og, latest.gravity).toFixed(1)}%` : "—"}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Days in tank</td><td>{days}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Ingredient cost</td><td>{batch.ingredientCost ? `$${batch.ingredientCost.toFixed(2)}` : "—"}</td></tr>
           </tbody>
@@ -15812,7 +15818,7 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
               }}
             >
               <span>{rem}L</span>
-              {latest && <span>SG {latest.gravity.toFixed(3)}</span>}
+              {latest && latest.gravity != null && <span>SG {latest.gravity.toFixed(3)}</span>}
               <span>{days}d</span>
             </div>
           </div>
@@ -16047,7 +16053,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
   const selectedFamily = recipes.find((r) => r.familyId === selectedFamilyId && r.isActive) || recipes.find((r) => r.familyId === selectedFamilyId);
   const familyRecipeIds = new Set(recipes.filter((r) => r.familyId === selectedFamilyId).map((r) => r.id));
   const familyBatches = batches
-    .filter((b) => b.recipeId && familyRecipeIds.has(b.recipeId))
+    .filter((b) => b.recipeId && familyRecipeIds.has(b.recipeId) && b.og != null)
     .slice()
     .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
 
@@ -18556,7 +18562,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-194";
+const APP_VERSION = "2026-08-03-196";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22380,8 +22386,8 @@ function TankLogApp() {
                             b.stage,
                             b.startDate,
                             b.volume,
-                            b.og.toFixed(3),
-                            latestReading(b).gravity.toFixed(3),
+                            b.og != null ? b.og.toFixed(3) : "",
+                            latestReading(b).gravity != null ? latestReading(b).gravity.toFixed(3) : "",
                             b.ingredientCost ?? "",
                             b.tankName || "",
                           ])
