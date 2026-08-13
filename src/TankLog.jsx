@@ -15346,7 +15346,7 @@ function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size = 42 }) 
   );
 }
 
-function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetCleanStage }) {
+function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, onCycleClean, onSetCleanStage }) {
   const empty = !batch;
   const latest = batch ? latestReading(batch) : null;
   const color = batch ? STAGE_COLOR[batch.stage] || "#5C9A3C" : "#C9D1AC";
@@ -15410,6 +15410,11 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.05em", textTransform: "uppercase", color: "#C9D1AC" }}>
             {tank.type} · {tank.capacity}L
           </span>
+          {scheduledBatch && (
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: "#9B8F6F", background: "#FBF8F0", border: "1px dashed #C9BD98", borderRadius: 10, padding: "2px 8px", marginTop: 2 }}>
+              Scheduled: {scheduledBatch.name} · {scheduledBatch.startDate}
+            </span>
+          )}
           <button
             onClick={() => onCycleClean(tank.id)}
             style={{
@@ -15460,6 +15465,11 @@ function TankWallCard({ tank, batch, onOpen, onQuickLog, onCycleClean, onSetClea
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>
             {tank.type} · {tank.capacity}L
           </span>
+          {scheduledBatch && (
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: "#9B8F6F", background: "#FBF8F0", border: "1px dashed #C9BD98", borderRadius: 10, padding: "2px 8px", marginTop: 3 }}>
+              Scheduled: {scheduledBatch.name} · {scheduledBatch.startDate}
+            </span>
+          )}
         </div>
 
         <svg width="92" height="146" viewBox="0 0 120 200">
@@ -17901,9 +17911,26 @@ function HomeView({
                       const bOcc = occupyingBatch(batches, b.id) ? 0 : 1;
                       return aOcc - bOcc;
                     })
-                    .map((t) => (
-                      <TankWallCard key={t.id} tank={t} batch={occupyingBatch(batches, t.id)} onOpen={onOpenBatch} onQuickLog={onQuickLog} onCycleClean={onCycleClean} onSetCleanStage={onSetCleanStage} />
-                    ))}
+                    .map((t) => {
+                      const occ = occupyingBatch(batches, t.id);
+                      // A batch that's only scheduled hasn't actually
+                      // started yet — the tank is genuinely still empty,
+                      // so show its real state (CIP/sanitised) with a
+                      // small note, not a fake "brewing" display.
+                      const isScheduled = occ && occ.startDate > today();
+                      return (
+                        <TankWallCard
+                          key={t.id}
+                          tank={t}
+                          batch={isScheduled ? null : occ}
+                          scheduledBatch={isScheduled ? occ : null}
+                          onOpen={onOpenBatch}
+                          onQuickLog={onQuickLog}
+                          onCycleClean={onCycleClean}
+                          onSetCleanStage={onSetCleanStage}
+                        />
+                      );
+                    })}
                 </div>
               </div>
             );
@@ -18797,7 +18824,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-204";
+const APP_VERSION = "2026-08-03-205";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19814,8 +19841,13 @@ function TankLogApp() {
     if (!tank) return;
     const occupant = occupyingBatch(batches, tank.id);
     if (occupant) {
-      setSelectedId(occupant.id);
-      setView("batches");
+      if (occupant.startDate > today()) {
+        setEditScheduledBatchId(occupant.id);
+        setView("production");
+      } else {
+        setSelectedId(occupant.id);
+        setView("batches");
+      }
     } else {
       setView("brewery");
     }
@@ -23269,7 +23301,7 @@ function TankLogApp() {
                           )}
                         </div>
                         <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
-                          {t.capacity}L{occupant ? ` · occupied by ${occupant.name}` : " · empty"}
+                          {t.capacity}L{occupant ? (occupant.startDate > today() ? ` · scheduled: ${occupant.name}` : ` · occupied by ${occupant.name}`) : " · empty"}
                           {t.type === "Barrel" && t.barrelSource ? ` · previously ${t.barrelSource}` : ""}
                         </div>
                       </div>
