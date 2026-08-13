@@ -16886,9 +16886,14 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
         const events = packagingEvents(b);
         const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
         const estimatedEnd = b.plannedDays ? addDays(b.startDate, b.plannedDays) : addDays(today(), 1);
+        // Once the estimate has passed, keep the bar growing day by day
+        // for as long as the batch is genuinely still here — batchTankIds
+        // above already stops matching the moment it's actually moved to
+        // a different tank, so this only extends while it's real.
+        const liveFloor = addDays(today(), 1);
         const end = fullyDone
           ? (events.length > 0 ? events[events.length - 1].date : b.startDate)
-          : estimatedEnd;
+          : (estimatedEnd > liveFloor ? estimatedEnd : liveFloor);
         return { batch: b, start: b.startDate, end, isEstimate: !fullyDone && !!b.plannedDays };
       })
       .filter((o) => o.end >= rangeStart && o.start <= dayList[dayList.length - 1]);
@@ -18739,7 +18744,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-199";
+const APP_VERSION = "2026-08-03-200";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
