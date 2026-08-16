@@ -7686,7 +7686,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
   const [supplier, setSupplier] = useState("");
   const [supplierFocused, setSupplierFocused] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState("");
-  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "", lotNumber: "" }]);
   const [focusedLineId, setFocusedLineId] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
@@ -7713,6 +7713,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
           unit: l.unit || "kg",
           costMode: "perUnit",
           costInput: l.costPerUnit != null ? String(l.costPerUnit) : "",
+          lotNumber: l.lotNumber || "",
         }))
       );
     }
@@ -7724,7 +7725,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
 
   const addLine = () =>
-    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "" }]);
+    setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "", lotNumber: "" }]);
 
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
   const [saving, setSaving] = useState(false);
@@ -7744,7 +7745,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
         const qty = Number(l.qty) || 0;
         const raw = l.costInput === "" ? null : Number(l.costInput);
         const costPerUnit = raw == null ? null : l.costMode === "total" ? (qty > 0 ? raw / qty : null) : raw;
-        return { id: l.id, name: l.name.trim(), category: l.category, qty, unit: l.unit, costPerUnit };
+        return { id: l.id, name: l.name.trim(), category: l.category, qty, unit: l.unit, costPerUnit, lotNumber: l.lotNumber?.trim() || null };
       }),
       deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
     });
@@ -7919,6 +7920,11 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
                 </span>
               )}
             </div>
+            <TextField
+              label="Lot / batch # (optional — only if your supplier shows it on the PO itself)"
+              value={line.lotNumber || ""}
+              onChange={(v) => updateLine(line.id, { lotNumber: v })}
+            />
           </div>
         ))}
         <button
@@ -7968,7 +7974,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
 function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
   const [lotNumbers, setLotNumbers] = useState(() => {
     const init = {};
-    po.lines.forEach((l) => (init[l.id] = ""));
+    po.lines.forEach((l) => (init[l.id] = l.lotNumber || ""));
     return init;
   });
   const [costOverrides, setCostOverrides] = useState(() => {
@@ -8051,7 +8057,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
           </div>
         )}
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
-          Enter the lot or batch number printed on each item as it arrives, and adjust the price if the delivery docket differs from what was ordered.
+          Enter the lot or batch number printed on each item as it arrives, and adjust the price if the delivery docket differs from what was ordered. Already filled in below where a lot number was entered on the PO itself — double-check it matches what's actually arrived.
         </div>
         {po.lines.map((l) => (
           <div
@@ -19198,7 +19204,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-209";
+const APP_VERSION = "2026-08-03-210";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
