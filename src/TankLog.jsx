@@ -7682,11 +7682,24 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
   );
 }
 
-function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtractDocument }) {
-  const [supplier, setSupplier] = useState("");
+function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory, onExtractDocument, editingPO }) {
+  const [supplier, setSupplier] = useState(editingPO ? editingPO.supplier : "");
   const [supplierFocused, setSupplierFocused] = useState(false);
-  const [deliveryCost, setDeliveryCost] = useState("");
-  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "", lotNumber: "" }]);
+  const [deliveryCost, setDeliveryCost] = useState(editingPO?.deliveryCost != null ? String(editingPO.deliveryCost) : "");
+  const [lines, setLines] = useState(
+    editingPO
+      ? editingPO.lines.map((l) => ({
+          id: l.id,
+          name: l.name,
+          category: l.category,
+          qty: l.qty,
+          unit: l.unit,
+          costMode: "perUnit",
+          costInput: l.costPerUnit != null ? String(l.costPerUnit) : "",
+          lotNumber: l.lotNumber || "",
+        }))
+      : [{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "", lotNumber: "" }]
+  );
   const [focusedLineId, setFocusedLineId] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
@@ -7734,27 +7747,36 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
     const cleanLines = lines.filter((l) => l.name.trim());
     if (!supplier.trim() || cleanLines.length === 0) return;
     setSaving(true);
-    await onAdd({
-      id: uid(),
-      poNumber: nextPONumber,
-      supplier: supplier.trim(),
-      orderDate: today(),
-      receivedDate: null,
-      status: "Draft",
-      lines: cleanLines.map((l) => {
-        const qty = Number(l.qty) || 0;
-        const raw = l.costInput === "" ? null : Number(l.costInput);
-        const costPerUnit = raw == null ? null : l.costMode === "total" ? (qty > 0 ? raw / qty : null) : raw;
-        return { id: l.id, name: l.name.trim(), category: l.category, qty, unit: l.unit, costPerUnit, lotNumber: l.lotNumber?.trim() || null };
-      }),
-      deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
+    const mappedLines = cleanLines.map((l) => {
+      const qty = Number(l.qty) || 0;
+      const raw = l.costInput === "" ? null : Number(l.costInput);
+      const costPerUnit = raw == null ? null : l.costMode === "total" ? (qty > 0 ? raw / qty : null) : raw;
+      return { id: l.id, name: l.name.trim(), category: l.category, qty, unit: l.unit, costPerUnit, lotNumber: l.lotNumber?.trim() || null };
     });
+    if (editingPO) {
+      await onSave(editingPO.id, {
+        supplier: supplier.trim(),
+        lines: mappedLines,
+        deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
+      });
+    } else {
+      await onAdd({
+        id: uid(),
+        poNumber: nextPONumber,
+        supplier: supplier.trim(),
+        orderDate: today(),
+        receivedDate: null,
+        status: "Draft",
+        lines: mappedLines,
+        deliveryCost: deliveryCost === "" ? null : Number(deliveryCost),
+      });
+    }
     setSaving(false);
     onClose();
   };
 
   return (
-    <Modal title="New purchase order" onClose={onClose}>
+    <Modal title={editingPO ? `Edit ${editingPO.poNumber}` : "New purchase order"} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {onExtractDocument && (
           <div>
@@ -7964,7 +7986,7 @@ function AddPOModal({ onClose, onAdd, nextPONumber, suppliers, inventory, onExtr
             cursor: saving ? "default" : "pointer",
           }}
         >
-          {saving ? "Saving…" : `Create ${nextPONumber}`}
+          {saving ? "Saving…" : editingPO ? "Save changes" : `Create ${nextPONumber}`}
         </button>
       </div>
     </Modal>
@@ -7982,6 +8004,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
     po.lines.forEach((l) => (init[l.id] = l.costPerUnit != null ? String(l.costPerUnit) : ""));
     return init;
   });
+  const [deliveryCostInput, setDeliveryCostInput] = useState(po.deliveryCost != null ? String(po.deliveryCost) : "");
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
 
@@ -8012,7 +8035,8 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
     Object.entries(costOverrides).forEach(([id, v]) => {
       costs[id] = v === "" ? null : Number(v);
     });
-    onConfirm(lotNumbers, costs);
+    const deliveryCostOverride = deliveryCostInput === "" ? null : Number(deliveryCostInput);
+    onConfirm(lotNumbers, costs, deliveryCostOverride);
     onClose();
   };
 
@@ -8058,6 +8082,12 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
         )}
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           Enter the lot or batch number printed on each item as it arrives, and adjust the price if the delivery docket differs from what was ordered. Already filled in below where a lot number was entered on the PO itself — double-check it matches what's actually arrived.
+        </div>
+        <div>
+          <NumberField label="Delivery cost (optional)" value={deliveryCostInput} onChange={setDeliveryCostInput} step="0.01" />
+          <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 4 }}>
+            Add or change this if the freight charge arrives separately from the supplier's invoice — it's still split across the items below in proportion to their value, same as if it'd been on the original order.
+          </div>
         </div>
         {po.lines.map((l) => (
           <div
@@ -8254,11 +8284,31 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete, onEx
         </button>
       )}
 
+      {po.status !== "Received" && (
+        <button
+          onClick={() => onEdit(po)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#5C6B54",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+            marginTop: 10,
+          }}
+        >
+          Edit order
+        </button>
+      )}
+
       {showReceive && (
         <ReceivePOModal
           po={po}
           onClose={() => setShowReceive(false)}
-          onConfirm={(lotNumbers, costOverrides) => onReceive(po.id, lotNumbers, costOverrides)}
+          onConfirm={(lotNumbers, costOverrides, deliveryCostOverride) => onReceive(po.id, lotNumbers, costOverrides, deliveryCostOverride)}
           onExtractDocument={onExtractDocument}
         />
       )}
@@ -19204,7 +19254,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-210";
+const APP_VERSION = "2026-08-03-211";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -19882,6 +19932,7 @@ function TankLogApp() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showAddPO, setShowAddPO] = useState(false);
+  const [editingPO, setEditingPO] = useState(null);
   const [recipes, setRecipes] = useState([]);
   const [selectedRecipeId, setSelectedRecipeId] = useState(null);
   const [missingIngredientsPrompt, setMissingIngredientsPrompt] = useState(null);
@@ -21837,6 +21888,23 @@ function TankLogApp() {
     logActivity("created", "purchase order", po.poNumber, `Purchase order ${po.poNumber} created for ${po.supplier}`);
   };
 
+  // Only for Draft/Sent orders — a Received PO has already moved into
+  // real inventory with real lots, so editing it after the fact would
+  // leave those records out of sync with whatever changed here.
+  const updatePO = async (id, patch) => {
+    const po = purchaseOrders.find((p) => p.id === id);
+    if (!po) return;
+    const updated = { ...po, ...patch };
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update(poToRow(updated, user.id, profile.companyId))
+      .eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    showToast("success", `${po.poNumber} updated.`);
+    logActivity("updated", "purchase order", po.poNumber, `Purchase order ${po.poNumber} edited`);
+  };
+
   const deletePO = (po) => {
     askConfirm(
       `Delete ${po.poNumber}? You'll have a few seconds to undo right after.`,
@@ -21869,7 +21937,7 @@ function TankLogApp() {
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
   };
 
-  const receivePO = async (id, lotNumbers, costOverrides) => {
+  const receivePO = async (id, lotNumbers, costOverrides, deliveryCostOverride) => {
     const po = purchaseOrders.find((p) => p.id === id);
     if (!po) return;
 
@@ -21883,9 +21951,11 @@ function TankLogApp() {
 
     // Delivery cost is spread across lines in proportion to each line's own
     // value — a line that's a bigger share of the order's cost carries a
-    // bigger share of the delivery cost too.
+    // bigger share of the delivery cost too. The freight charge itself can
+    // be added or changed at receiving time too, for when it arrives on a
+    // separate invoice rather than the supplier's own.
     const totalValue = po.lines.reduce((sum, l) => sum + (l.qty || 0) * (effectiveCost(l) || 0), 0);
-    const deliveryCost = po.deliveryCost || 0;
+    const deliveryCost = deliveryCostOverride != null ? deliveryCostOverride : po.deliveryCost || 0;
 
     let nextInventory = [...inventory];
     const finalizedLines = [];
@@ -21925,10 +21995,10 @@ function TankLogApp() {
 
     const { error: poError } = await supabase
       .from("purchase_orders")
-      .update({ status: "Received", received_date: today(), lines: finalizedLines })
+      .update({ status: "Received", received_date: today(), lines: finalizedLines, delivery_cost: deliveryCost })
       .eq("id", id);
     if (poError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today(), lines: finalizedLines } : p)));
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today(), lines: finalizedLines, deliveryCost } : p)));
     showToast("success", `${po.poNumber} received — inventory updated.`);
     logActivity("received", "purchase order", po.poNumber, `Purchase order ${po.poNumber} received from ${po.supplier} — inventory updated`);
   };
@@ -24399,7 +24469,7 @@ function TankLogApp() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} onDelete={deletePO} onExtractDocument={extractDocument} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} onDelete={deletePO} onExtractDocument={extractDocument} onEdit={setEditingPO} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
@@ -24824,7 +24894,19 @@ function TankLogApp() {
           onOpen={openSupplierDocument}
         />
       )}
-      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} nextPONumber={nextPONumber} suppliers={suppliers} inventory={inventory} onExtractDocument={extractDocument} />}
+      {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} onSave={updatePO} nextPONumber={nextPONumber} suppliers={suppliers} inventory={inventory} onExtractDocument={extractDocument} />}
+      {editingPO && (
+        <AddPOModal
+          onClose={() => setEditingPO(null)}
+          onAdd={addPO}
+          onSave={updatePO}
+          nextPONumber={nextPONumber}
+          suppliers={suppliers}
+          inventory={inventory}
+          onExtractDocument={extractDocument}
+          editingPO={editingPO}
+        />
+      )}
       {showAddRecipe && (
         <AddRecipeModal
           onClose={() => setShowAddRecipe(false)}
