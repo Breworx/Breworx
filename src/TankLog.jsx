@@ -2049,15 +2049,42 @@ function parseBeerXML(xmlText) {
     Array.from(container.getElementsByTagName(itemTag)).forEach((el) => {
       const itemName = text(el, "NAME") || itemTag;
       const entry = { id: uid(), name: itemName, category, qty: qtyFn(el), unit };
+      // The file's own figures are specific to what that recipe actually
+      // used, so they're more accurate than a generic library default —
+      // read them directly first, and only fall back to library matching
+      // when the file itself doesn't provide them (some exports omit it).
       if (category === "Grain") {
-        const match = findLibraryMatch(itemName, MALT_LIBRARY_FLAT);
-        if (match) { entry.potential = match.potential; entry.colorLovibond = match.colorLovibond; entry.libSourced = true; }
+        const yieldPct = num(el, "YIELD");
+        const colorL = num(el, "COLOR");
+        if (yieldPct != null) entry.potential = Math.round((yieldPct / 100) * 46 * 10) / 10;
+        if (colorL != null) entry.colorLovibond = colorL;
+        if (entry.potential != null || entry.colorLovibond != null) entry.libSourced = false;
+        if (entry.potential == null || entry.colorLovibond == null) {
+          const match = findLibraryMatch(itemName, MALT_LIBRARY_FLAT);
+          if (match) {
+            if (entry.potential == null) entry.potential = match.potential;
+            if (entry.colorLovibond == null) entry.colorLovibond = match.colorLovibond;
+            entry.libSourced = true;
+          }
+        }
       } else if (category === "Hops") {
-        const match = findLibraryMatch(itemName, HOP_LIBRARY_FLAT);
-        if (match) { entry.alphaAcid = match.alphaAcid; entry.libSourced = true; }
+        const alpha = num(el, "ALPHA");
+        if (alpha != null) {
+          entry.alphaAcid = alpha;
+          entry.libSourced = false;
+        } else {
+          const match = findLibraryMatch(itemName, HOP_LIBRARY_FLAT);
+          if (match) { entry.alphaAcid = match.alphaAcid; entry.libSourced = true; }
+        }
       } else if (category === "Yeast") {
-        const match = findLibraryMatch(itemName, YEAST_LIBRARY_FLAT);
-        if (match) { entry.attenuation = match.attenuation; entry.libSourced = true; }
+        const atten = num(el, "ATTENUATION");
+        if (atten != null) {
+          entry.attenuation = atten;
+          entry.libSourced = false;
+        } else {
+          const match = findLibraryMatch(itemName, YEAST_LIBRARY_FLAT);
+          if (match) { entry.attenuation = match.attenuation; entry.libSourced = true; }
+        }
       }
       ingredients.push(entry);
     });
@@ -19171,7 +19198,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-208";
+const APP_VERSION = "2026-08-03-209";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
