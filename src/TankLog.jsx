@@ -7993,7 +7993,13 @@ function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory
   );
 }
 
-function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
+function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDocument, otherSentPOs }) {
+  const [combinedPOs, setCombinedPOs] = useState([]);
+  const [combineQuery, setCombineQuery] = useState("");
+  const [combineFocused, setCombineFocused] = useState(false);
+  const allPOs = [po, ...combinedPOs];
+  const allLines = allPOs.flatMap((p) => p.lines.map((l) => ({ ...l, _poNumber: p.poNumber })));
+
   const [lotNumbers, setLotNumbers] = useState(() => {
     const init = {};
     po.lines.forEach((l) => (init[l.id] = l.lotNumber || ""));
@@ -8007,6 +8013,52 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
   const [deliveryCostInput, setDeliveryCostInput] = useState(po.deliveryCost != null ? String(po.deliveryCost) : "");
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
+
+  const combineMatches = combineQuery.trim()
+    ? (otherSentPOs || []).filter(
+        (p) =>
+          !combinedPOs.some((c) => c.id === p.id) &&
+          (p.poNumber.toLowerCase().includes(combineQuery.trim().toLowerCase()) || p.supplier.toLowerCase().includes(combineQuery.trim().toLowerCase()))
+      )
+    : (otherSentPOs || []).filter((p) => !combinedPOs.some((c) => c.id === p.id));
+
+  const addCombinedPO = (otherPO) => {
+    setCombinedPOs((prev) => [...prev, otherPO]);
+    setLotNumbers((prev) => {
+      const next = { ...prev };
+      otherPO.lines.forEach((l) => (next[l.id] = l.lotNumber || ""));
+      return next;
+    });
+    setCostOverrides((prev) => {
+      const next = { ...prev };
+      otherPO.lines.forEach((l) => (next[l.id] = l.costPerUnit != null ? String(l.costPerUnit) : ""));
+      return next;
+    });
+    setDeliveryCostInput((prev) => {
+      const current = prev === "" ? 0 : Number(prev);
+      const added = otherPO.deliveryCost || 0;
+      return String(Math.round((current + added) * 100) / 100);
+    });
+    setCombineQuery("");
+    setCombineFocused(false);
+  };
+
+  const removeCombinedPO = (id) => {
+    const removed = combinedPOs.find((p) => p.id === id);
+    setCombinedPOs((prev) => prev.filter((p) => p.id !== id));
+    if (removed) {
+      setLotNumbers((prev) => {
+        const next = { ...prev };
+        removed.lines.forEach((l) => delete next[l.id]);
+        return next;
+      });
+      setCostOverrides((prev) => {
+        const next = { ...prev };
+        removed.lines.forEach((l) => delete next[l.id]);
+        return next;
+      });
+    }
+  };
 
   const handleImportFile = async (file) => {
     if (!file || !onExtractDocument) return;
@@ -8036,12 +8088,16 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
       costs[id] = v === "" ? null : Number(v);
     });
     const deliveryCostOverride = deliveryCostInput === "" ? null : Number(deliveryCostInput);
-    onConfirm(lotNumbers, costs, deliveryCostOverride);
+    if (combinedPOs.length > 0) {
+      onConfirmMultiple(allPOs.map((p) => p.id), lotNumbers, costs, deliveryCostOverride);
+    } else {
+      onConfirm(lotNumbers, costs, deliveryCostOverride);
+    }
     onClose();
   };
 
   return (
-    <Modal title={`Receive ${po.poNumber}`} onClose={onClose}>
+    <Modal title={combinedPOs.length > 0 ? `Receive ${allPOs.map((p) => p.poNumber).join(" & ")}` : `Receive ${po.poNumber}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {onExtractDocument && (
           <div>
@@ -8089,7 +8145,57 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
             Add or change this if the freight charge arrives separately from the supplier's invoice — it's still split across the items below in proportion to their value, same as if it'd been on the original order.
           </div>
         </div>
-        {po.lines.map((l) => (
+
+        {(otherSentPOs || []).length > 0 && (
+          <div style={{ position: "relative" }}>
+            <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>
+              Arrived in the same delivery as another order? Combine it here so the delivery cost splits across both.
+            </div>
+            <input
+              type="text"
+              value={combineQuery}
+              onChange={(e) => setCombineQuery(e.target.value)}
+              onFocus={() => setCombineFocused(true)}
+              onBlur={() => setTimeout(() => setCombineFocused(false), 150)}
+              placeholder="Search by PO number or supplier"
+              style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+            />
+            {combineFocused && combineMatches.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 180, overflowY: "auto" }}>
+                {combineMatches.map((p) => (
+                  <button
+                    key={p.id}
+                    onMouseDown={() => addCombinedPO(p)}
+                    style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                  >
+                    {p.poNumber} <span style={{ color: "#9BA88A" }}>— {p.supplier}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {combinedPOs.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {combinedPOs.map((p) => (
+                  <span
+                    key={p.id}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "#EAF2E4", border: "1px solid #8FB86C", borderRadius: 20, padding: "4px 6px 4px 12px", fontSize: 12.5, color: "#3F6B32" }}
+                  >
+                    {p.poNumber}
+                    <button
+                      onClick={() => removeCombinedPO(p.id)}
+                      aria-label={`Remove ${p.poNumber} from this combined delivery`}
+                      style={{ background: "none", border: "none", color: "#3F6B32", cursor: "pointer", padding: 4, display: "flex" }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {allLines.map((l) => (
           <div
             key={l.id}
             style={{
@@ -8101,6 +8207,9 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
           >
             <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
               {l.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
+              {combinedPOs.length > 0 && (
+                <span style={{ color: "#8FB86C", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, marginLeft: 8 }}>{l._poNumber}</span>
+              )}
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 1 }}>
@@ -8141,14 +8250,14 @@ function ReceivePOModal({ po, onClose, onConfirm, onExtractDocument }) {
             cursor: "pointer",
           }}
         >
-          <Truck size={16} /> Confirm receipt & add to inventory
+          <Truck size={16} /> {combinedPOs.length > 0 ? "Confirm receipt of both & add to inventory" : "Confirm receipt & add to inventory"}
         </button>
       </div>
     </Modal>
   );
 }
 
-function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete, onExtractDocument }) {
+function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple, inventory, onDelete, onExtractDocument, onEdit, allPOs }) {
   const [showReceive, setShowReceive] = useState(false);
   const batchesForLine = (lineName, lotNumber) => {
     const item = inventory.find((it) => it.name.toLowerCase() === lineName.toLowerCase());
@@ -8309,7 +8418,9 @@ function PODetail({ po, onBack, onMarkSent, onReceive, inventory, onDelete, onEx
           po={po}
           onClose={() => setShowReceive(false)}
           onConfirm={(lotNumbers, costOverrides, deliveryCostOverride) => onReceive(po.id, lotNumbers, costOverrides, deliveryCostOverride)}
+          onConfirmMultiple={(poIds, lotNumbers, costOverrides, deliveryCostOverride) => onReceiveMultiple(poIds, lotNumbers, costOverrides, deliveryCostOverride)}
           onExtractDocument={onExtractDocument}
+          otherSentPOs={(allPOs || []).filter((p) => p.status === "Sent" && p.id !== po.id)}
         />
       )}
 
@@ -19254,7 +19365,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-211";
+const APP_VERSION = "2026-08-03-212";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22003,6 +22114,82 @@ function TankLogApp() {
     logActivity("received", "purchase order", po.poNumber, `Purchase order ${po.poNumber} received from ${po.supplier} — inventory updated`);
   };
 
+  // Two or more separately-placed orders that arrived in the same delivery
+  // — the freight charge gets split proportionally across every line from
+  // every order combined, not just one PO's lines, and each PO ends up
+  // storing its own genuine share of that shared cost.
+  const receiveMultiplePOs = async (poIds, lotNumbers, costOverrides, deliveryCostOverride) => {
+    const pos = purchaseOrders.filter((p) => poIds.includes(p.id));
+    if (pos.length === 0) return;
+    const allLines = pos.flatMap((p) => p.lines.map((l) => ({ ...l, _poId: p.id })));
+
+    const effectiveCost = (line) => {
+      const override = costOverrides && costOverrides[line.id];
+      return override != null ? override : line.costPerUnit;
+    };
+
+    const totalValue = allLines.reduce((sum, l) => sum + (l.qty || 0) * (effectiveCost(l) || 0), 0);
+    const deliveryCost = deliveryCostOverride != null ? deliveryCostOverride : pos.reduce((sum, p) => sum + (p.deliveryCost || 0), 0);
+
+    let nextInventory = [...inventory];
+    const finalizedLinesByPO = {};
+    const deliverySharesByPO = {};
+    pos.forEach((p) => {
+      finalizedLinesByPO[p.id] = [];
+      deliverySharesByPO[p.id] = 0;
+    });
+
+    for (const line of allLines) {
+      const poForLine = pos.find((p) => p.id === line._poId);
+      const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
+      const costPerUnit = effectiveCost(line);
+      const { _poId, ...cleanLine } = line;
+      finalizedLinesByPO[line._poId].push({ ...cleanLine, lotNumber, costPerUnit });
+      const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      const lineValue = (line.qty || 0) * (costPerUnit || 0);
+      const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
+      deliverySharesByPO[line._poId] += deliveryShare;
+      const unitCost = costPerUnit != null ? costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
+      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: poForLine.poNumber, unitCost };
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${poForLine.poNumber} — ${poForLine.supplier} (combined delivery)` };
+
+      if (idx >= 0) {
+        const item = nextInventory[idx];
+        const newQty = Math.round((item.qty + line.qty) * 100) / 100;
+        const newLots = [...(item.lots || []), lotEntry];
+        const newHistory = [...(item.history || []), historyEntry];
+        const { error } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots, history: newHistory }).eq("id", item.id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); continue; }
+        nextInventory[idx] = { ...item, qty: newQty, lots: newLots, history: newHistory };
+      } else {
+        const newItem = { id: uid(), name: line.name, category: line.category, qty: line.qty, unit: line.unit, threshold: 0, lots: [lotEntry], history: [historyEntry] };
+        const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItem, user.id, profile.companyId)).select().single();
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); continue; }
+        nextInventory = [rowToInventoryItem(data), ...nextInventory];
+      }
+    }
+    setInventory(nextInventory);
+
+    for (const p of pos) {
+      const share = Math.round(deliverySharesByPO[p.id] * 100) / 100;
+      const { error: poError } = await supabase
+        .from("purchase_orders")
+        .update({ status: "Received", received_date: today(), lines: finalizedLinesByPO[p.id], delivery_cost: share })
+        .eq("id", p.id);
+      if (poError) showToast("error", `Something didn't save for ${p.poNumber} — check your connection and try again.`);
+    }
+    setPurchaseOrders((prev) =>
+      prev.map((p) => {
+        const match = pos.find((x) => x.id === p.id);
+        if (!match) return p;
+        return { ...p, status: "Received", receivedDate: today(), lines: finalizedLinesByPO[p.id], deliveryCost: Math.round(deliverySharesByPO[p.id] * 100) / 100 };
+      })
+    );
+    const poNumbers = pos.map((p) => p.poNumber).join(" & ");
+    showToast("success", `${poNumbers} received together — inventory updated.`);
+    logActivity("received", "purchase order", poNumbers, `${pos.length} purchase orders received together as one combined delivery — inventory updated`);
+  };
+
   const advance = async (id) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
@@ -24469,7 +24656,7 @@ function TankLogApp() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} inventory={inventory} onDelete={deletePO} onExtractDocument={extractDocument} onEdit={setEditingPO} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} onReceiveMultiple={receiveMultiplePOs} inventory={inventory} onDelete={deletePO} onExtractDocument={extractDocument} onEdit={setEditingPO} allPOs={purchaseOrders} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
