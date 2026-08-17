@@ -8075,7 +8075,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     // differs slightly from what was typed when the order was placed.
     (result.lines || []).forEach((el) => {
       if (!el.name) return;
-      const match = po.lines.find((l) => l.name.toLowerCase().includes(el.name.toLowerCase()) || el.name.toLowerCase().includes(l.name.toLowerCase()));
+      const match = allLines.find((l) => l.name.toLowerCase().includes(el.name.toLowerCase()) || el.name.toLowerCase().includes(l.name.toLowerCase()));
       if (!match) return;
       if (el.lotNumber) setLotNumbers((prev) => ({ ...prev, [match.id]: el.lotNumber }));
       if (el.costPerUnit != null) setCostOverrides((prev) => ({ ...prev, [match.id]: String(el.costPerUnit) }));
@@ -8132,6 +8132,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
             {!extractError && !extracting && (
               <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 6 }}>
                 Matched to these order lines by name — double-check nothing landed on the wrong item if names differ from the docket.
+                {combinedPOs.length > 0 && " Combined orders that arrived on separate paperwork? Tap this again for each one — it matches against every order's lines, not just the first."}
               </div>
             )}
           </div>
@@ -19365,7 +19366,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-212";
+const APP_VERSION = "2026-08-03-213";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
