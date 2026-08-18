@@ -5667,6 +5667,125 @@ function AddLotModal({ itemName, onClose, onSave }) {
   );
 }
 
+// For ingredients that existed before this app did — search for an
+// existing item to add opening stock to it, or type a new name to create
+// it. Each line becomes a genuine, dated, costed lot, so opening stock
+// behaves exactly like anything received going forward, not a special
+// case that skips traceability.
+function BulkOpeningStockModal({ inventory, onClose, onSave }) {
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", unit: "kg", qty: "", unitCost: "", lotNumber: "" }]);
+  const [focusedLineId, setFocusedLineId] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const addLine = () => setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", unit: "kg", qty: "", unitCost: "", lotNumber: "" }]);
+  const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
+
+  const submit = async () => {
+    const cleanLines = lines.filter((l) => l.name.trim() && Number(l.qty) > 0);
+    if (cleanLines.length === 0) return;
+    setSaving(true);
+    await onSave(
+      cleanLines.map((l) => ({
+        name: l.name.trim(),
+        category: l.category,
+        unit: l.unit,
+        qty: Number(l.qty),
+        unitCost: l.unitCost === "" ? null : Number(l.unitCost),
+        lotNumber: l.lotNumber.trim() || "Opening stock",
+      }))
+    );
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <Modal title="Bring in opening stock" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          For ingredients you already had before starting to track them here. Search for an existing item, or type a new name and it'll be created. Each line becomes its own dated, costed lot.
+        </div>
+        {lines.map((line, i) => {
+          const matches = line.name.trim()
+            ? inventory.filter((it) => it.name.toLowerCase().includes(line.name.trim().toLowerCase())).slice(0, 6)
+            : [];
+          return (
+            <div key={line.id} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ color: "#9BA88A", fontSize: 11 }}>Item {i + 1}</span>
+                {lines.length > 1 && (
+                  <button onClick={() => removeLine(line.id)} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 2 }}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+              <div style={{ position: "relative", marginBottom: 8 }}>
+                <input
+                  type="text"
+                  value={line.name}
+                  onChange={(e) => updateLine(line.id, { name: e.target.value })}
+                  onFocus={() => setFocusedLineId(line.id)}
+                  onBlur={() => setTimeout(() => setFocusedLineId(null), 150)}
+                  placeholder="Search existing items, or type a new name"
+                  style={{ width: "100%", boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+                />
+                {focusedLineId === line.id && matches.length > 0 && (
+                  <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 160, overflowY: "auto" }}>
+                    {matches.map((it) => (
+                      <button
+                        key={it.id}
+                        onMouseDown={() => updateLine(line.id, { name: it.name, category: it.category, unit: it.unit })}
+                        style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "8px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+                      >
+                        {it.name} <span style={{ color: "#9BA88A", fontSize: 11 }}>· already have {it.qty} {it.unit}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={CATEGORIES} />
+                <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "mL", "ea"]} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <NumberField label="Quantity you have" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.1" suffix={line.unit} />
+                <NumberField label="Cost per unit (optional)" value={line.unitCost} onChange={(v) => updateLine(line.id, { unitCost: v })} step="0.01" />
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <TextField label="Lot / reference (optional — defaults to 'Opening stock')" value={line.lotNumber} onChange={(v) => updateLine(line.id, { lotNumber: v })} />
+              </div>
+            </div>
+          );
+        })}
+        <button
+          onClick={addLine}
+          style={{ background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "10px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" }}
+        >
+          + Add another item
+        </button>
+        <button
+          onClick={submit}
+          disabled={saving}
+          style={{
+            background: saving ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: saving ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : "Bring in stock"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function RenameModal({ title, currentName, onClose, onSave }) {
   const [name, setName] = useState(currentName);
 
@@ -19445,7 +19564,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-217";
+const APP_VERSION = "2026-08-03-218";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20108,6 +20227,7 @@ function TankLogApp() {
   const [consumables, setConsumables] = useState([]);
   const [packageTypes, setPackageTypes] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
+  const [showBulkOpeningStock, setShowBulkOpeningStock] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
   const [batchQuery, setBatchQuery] = useState("");
@@ -21847,6 +21967,36 @@ function TankLogApp() {
 
   // Same lot shape a PO receipt creates, just entered directly — for
   // stock that came in without a formal PO, so it's still traceable.
+  // One pass over several items at once — creates whichever ones don't
+  // exist yet, then adds a real, dated lot to each, same underlying
+  // effect as addManualLot just run line by line for a whole batch of
+  // opening stock instead of one item at a time.
+  const addBulkOpeningStock = async (lines) => {
+    let nextInventory = [...inventory];
+    let successCount = 0;
+    for (const line of lines) {
+      let item = nextInventory.find((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      if (!item) {
+        const newItemPayload = { name: line.name, category: line.category, qty: 0, unit: line.unit, threshold: 0 };
+        const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItemPayload, user.id, profile.companyId)).select().single();
+        if (error) { showToast("error", `Couldn't create ${line.name} — check your connection and try again.`); continue; }
+        item = rowToInventoryItem(data);
+        nextInventory = [item, ...nextInventory];
+      }
+      const lotEntry = { id: uid(), lotNumber: line.lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: null, unitCost: line.unitCost };
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `Opening stock — ${line.lotNumber}` };
+      const newQty = Math.round((item.qty + line.qty) * 100) / 100;
+      const newLots = [...(item.lots || []), lotEntry];
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error: updateError } = await supabase.from("inventory_items").update({ qty: newQty, lots: newLots, history: newHistory }).eq("id", item.id);
+      if (updateError) { showToast("error", `Couldn't save stock for ${line.name} — check your connection and try again.`); continue; }
+      nextInventory = nextInventory.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: newLots, history: newHistory } : it));
+      successCount++;
+    }
+    setInventory(nextInventory);
+    showToast("success", `${successCount} item${successCount !== 1 ? "s" : ""} brought in.`);
+  };
+
   const addManualLot = async (itemId, entry) => {
     const item = inventory.find((it) => it.id === itemId);
     if (!item) return;
@@ -23573,6 +23723,12 @@ function TankLogApp() {
                       marginBottom: 8,
                     }}
                   />
+                  <button
+                    onClick={() => setShowBulkOpeningStock(true)}
+                    style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 8, display: "block" }}
+                  >
+                    Bring in opening stock
+                  </button>
                   {inventory.length > 0 && (
                     <button
                       onClick={() =>
@@ -24984,6 +25140,13 @@ function TankLogApp() {
           onAdd={addInventoryItem}
           suppliers={suppliers}
           storageKey="brewpoint-last-ingredient-category"
+        />
+      )}
+      {showBulkOpeningStock && (
+        <BulkOpeningStockModal
+          inventory={inventory}
+          onClose={() => setShowBulkOpeningStock(false)}
+          onSave={addBulkOpeningStock}
         />
       )}
       {showAddConsumable && (
