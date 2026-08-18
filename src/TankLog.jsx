@@ -8217,13 +8217,29 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
         {allPOs.map((p) => (
           <div key={p.id}>
             {combinedPOs.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, marginTop: p.id === po.id ? 0 : 8 }}>
-                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{p.poNumber} — {p.supplier}</span>
+              <div style={{ marginBottom: 8, marginTop: p.id === po.id ? 0 : 8 }}>
+                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>
+                  {p.poNumber} — {p.supplier}
+                </div>
                 {onExtractDocument && (
                   <label
-                    style={{ display: "flex", alignItems: "center", gap: 5, color: extracting ? "#A3AC94" : "#5C9A3C", fontFamily: "'Inter', sans-serif", fontSize: 11.5, cursor: extracting ? "default" : "pointer" }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      background: extracting ? "#E8E4D4" : "#EAF2E4",
+                      border: `1px dashed ${extracting ? "#C9C4A8" : "#8FB86C"}`,
+                      borderRadius: 6,
+                      padding: "10px",
+                      color: extracting ? "#A3AC94" : "#3F6B32",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12.5,
+                      cursor: extracting ? "default" : "pointer",
+                      marginBottom: 8,
+                    }}
                   >
-                    📄 {extracting ? "Reading…" : `Import ${p.poNumber}'s invoice`}
+                    {extracting ? "Reading document…" : `📄 Import ${p.poNumber}'s invoice — fills in this order's lines only`}
                     <input
                       type="file"
                       accept="image/*,application/pdf"
@@ -19411,7 +19427,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-215";
+const APP_VERSION = "2026-08-03-216";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
