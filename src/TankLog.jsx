@@ -2638,7 +2638,7 @@ function BatchCard({ batch, onOpen, tanks }) {
   );
 }
 
-function InventoryItemCard({ item, onAdjust, onOpen, suppliers }) {
+function InventoryItemCard({ item, onAdjust, onOpen, suppliers, isOwner }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
   const supplierName = item.supplierId ? suppliers.find((s) => s.id === item.supplierId)?.name : null;
@@ -2698,7 +2698,7 @@ function InventoryItemCard({ item, onAdjust, onOpen, suppliers }) {
               · {supplierName}
             </span>
           )}
-          {inventoryItemValue(item) > 0 && (
+          {isOwner && inventoryItemValue(item) > 0 && (
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#5C9A3C" }}>
               · ${inventoryItemValue(item).toFixed(2)}
             </span>
@@ -5123,21 +5123,23 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
         >
           Edit customer
         </button>
-        <button
-          onClick={onDelete}
-          style={{
-            background: "none",
-            border: "1px solid #DDE0C8",
-            borderRadius: 5,
-            padding: "11px 16px",
-            color: "#B5502F",
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 13.5,
-            cursor: "pointer",
-          }}
-        >
-          Delete
-        </button>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            style={{
+              background: "none",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "11px 16px",
+              color: "#B5502F",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13.5,
+              cursor: "pointer",
+            }}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   );
@@ -5217,9 +5219,11 @@ function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
                   <button onClick={() => onEdit(s)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
                     Edit
                   </button>
-                  <button onClick={() => onDelete(s)} style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
-                    Delete
-                  </button>
+                  {onDelete && (
+                    <button onClick={() => onDelete(s)} style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -7328,24 +7332,26 @@ function PackageTypeDetail({ packageType, consumables, onBack, onDelete, onRenam
         })}
       </div>
 
-      <button
-        onClick={() => onDelete(packageType.id)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          background: "none",
-          border: "1px solid #DDE0C8",
-          borderRadius: 5,
-          padding: "9px 12px",
-          color: "#5C6B54",
-          fontFamily: "'Inter', sans-serif",
-          fontSize: 12.5,
-          cursor: "pointer",
-        }}
-      >
-        <Trash2 size={14} /> Delete package type
-      </button>
+      {onDelete && (
+        <button
+          onClick={() => onDelete(packageType.id)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            background: "none",
+            border: "1px solid #DDE0C8",
+            borderRadius: 5,
+            padding: "9px 12px",
+            color: "#5C6B54",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 12.5,
+            cursor: "pointer",
+          }}
+        >
+          <Trash2 size={14} /> Delete package type
+        </button>
+      )}
     </div>
   );
 }
@@ -7808,12 +7814,14 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
             Cancel order
           </button>
         )}
-        <button
-          onClick={() => onDelete(order)}
-          style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
-        >
-          Delete
-        </button>
+        {onDelete && (
+          <button
+            onClick={() => onDelete(order)}
+            style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   );
@@ -10114,23 +10122,25 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
         <FileText size={14} /> Print / Save as PDF
       </button>
 
-      <button
-        onClick={() => onDelete(recipe)}
-        style={{
-          width: "100%",
-          background: "none",
-          border: "1px solid #E3D3A0",
-          borderRadius: 5,
-          padding: "11px",
-          color: "#5C9A3C",
-          fontFamily: "'Inter', sans-serif",
-          fontSize: 13,
-          cursor: "pointer",
-          marginTop: 10,
-        }}
-      >
-        Delete recipe
-      </button>
+      {onDelete && (
+        <button
+          onClick={() => onDelete(recipe)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "1px solid #E3D3A0",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#5C9A3C",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+            marginTop: 10,
+          }}
+        >
+          Delete recipe
+        </button>
+      )}
 
       {(() => {
         const calcOgVal = calcOG(recipe.ingredients, recipe.volume, recipe.efficiency);
@@ -13692,23 +13702,25 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         <FileText size={14} /> Print / Save as PDF
       </button>
 
-      <button
-        onClick={() => onDeleteBatch(batch)}
-        style={{
-          width: "100%",
-          background: "none",
-          border: "1px solid #E3D3A0",
-          borderRadius: 5,
-          padding: "11px",
-          color: "#5C9A3C",
-          fontFamily: "'Inter', sans-serif",
-          fontSize: 13,
-          cursor: "pointer",
-          marginTop: 10,
-        }}
-      >
-        Delete batch
-      </button>
+      {onDeleteBatch && (
+        <button
+          onClick={() => onDeleteBatch(batch)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "1px solid #E3D3A0",
+            borderRadius: 5,
+            padding: "11px",
+            color: "#5C9A3C",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            cursor: "pointer",
+            marginTop: 10,
+          }}
+        >
+          Delete batch
+        </button>
+      )}
 
       <div className="bp-print-sheet" style={{ display: "none" }}>
         <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, margin: "0 0 2px" }}>{batch.name}</h1>
@@ -13845,9 +13857,11 @@ function SupplierDocumentsModal({ supplier, documents, onClose, onUpload, onDele
                 <button onClick={() => onOpen(doc)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
                   View
                 </button>
-                <button onClick={() => onDelete(doc)} style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
-                  Delete
-                </button>
+                {onDelete && (
+                  <button onClick={() => onDelete(doc)} style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -19564,7 +19578,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-218";
+const APP_VERSION = "2026-08-03-219";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20275,6 +20289,10 @@ function TankLogApp() {
     } catch {}
   };
   const [profile, setProfile] = useState(null);
+  // Matches the existing role check already used for inviting/removing
+  // teammates and deleting the company — anyone who isn't specifically
+  // the owner is treated as staff for financial and destructive actions.
+  const isOwner = profile?.role === "owner";
 
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   useEffect(() => {
@@ -23213,8 +23231,8 @@ function TankLogApp() {
                 items: [
                   ["foodsafety", "Food Safety", CheckCircle2],
                   ["traceability", "Traceability", Search],
-                  ["excise", "Excise", FileText],
-                ],
+                  isOwner && ["excise", "Excise", FileText],
+                ].filter(Boolean),
               },
               { items: [["settings", "Settings", Settings]] },
             ].filter(Boolean).map((group, gi) => (
@@ -23643,7 +23661,7 @@ function TankLogApp() {
 
               return (
                 <>
-                  {totalValue > 0 && (
+                  {isOwner && totalValue > 0 && (
                     <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 12 }}>
                       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
                         {inventoryQuery.trim() ? "Value of matching ingredients" : "Total ingredient value"}
@@ -23818,7 +23836,7 @@ function TankLogApp() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {g.items.map((it) => (
-                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} suppliers={suppliers} />
+                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustInventory} onOpen={setSelectedInventoryId} suppliers={suppliers} isOwner={isOwner} />
                         ))}
                       </div>
                     </div>
@@ -23847,7 +23865,7 @@ function TankLogApp() {
 
               return (
                 <>
-                  {totalValue > 0 && (
+                  {isOwner && totalValue > 0 && (
                     <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 12 }}>
                       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
                         {consumableQuery.trim() ? "Value of matching consumables" : "Total consumables value"}
@@ -23948,7 +23966,7 @@ function TankLogApp() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {g.items.map((it) => (
-                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustConsumable} onOpen={setSelectedConsumableId} suppliers={suppliers} />
+                          <InventoryItemCard key={it.id} item={it} onAdjust={adjustConsumable} onOpen={setSelectedConsumableId} suppliers={suppliers} isOwner={isOwner} />
                         ))}
                       </div>
                     </div>
@@ -24435,6 +24453,7 @@ function TankLogApp() {
                         type="checkbox"
                         checked={salesModuleEnabled}
                         onChange={(e) => toggleSalesModule(e.target.checked)}
+                        disabled={!isOwner}
                         style={{ width: 18, height: 18, accentColor: "#5C9A3C", cursor: "pointer", flexShrink: 0 }}
                       />
                     </label>
@@ -24452,6 +24471,7 @@ function TankLogApp() {
                         type="checkbox"
                         checked={barrelAgingModuleEnabled}
                         onChange={(e) => toggleBarrelAgingModule(e.target.checked)}
+                        disabled={!isOwner}
                         style={{ width: 18, height: 18, accentColor: "#5C9A3C", cursor: "pointer", flexShrink: 0 }}
                       />
                     </label>
@@ -24517,7 +24537,11 @@ function TankLogApp() {
                     Xero
                   </div>
                   <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
-                    {xeroConnection ? (
+                    {!isOwner ? (
+                      <div style={{ color: "#9BA88A", fontSize: 12.5 }}>
+                        {xeroConnection ? `Connected to ${xeroConnection.tenant_name}.` : "Not connected."} Only the account owner can manage the Xero connection.
+                      </div>
+                    ) : xeroConnection ? (
                       <>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                           <CheckCircle2 size={15} color="#D9A441" />
@@ -24733,39 +24757,41 @@ function TankLogApp() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() =>
-                    downloadJSON(`brewpoint-backup-${today()}.json`, {
-                      exportedAt: new Date().toISOString(),
-                      company: companyName,
-                      batches,
-                      recipes,
-                      inventory,
-                      consumables,
-                      packageTypes,
-                      purchaseOrders,
-                      tanks,
-                      suppliers,
-                      foodSafetyRecords,
-                    })
-                  }
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 7,
-                    background: "none",
-                    border: "1px solid #DDE0C8",
-                    borderRadius: 5,
-                    padding: "12px",
-                    color: "#5C6B54",
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 13.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  <FileText size={15} /> Download full backup
-                </button>
+                {isOwner && (
+                  <button
+                    onClick={() =>
+                      downloadJSON(`brewpoint-backup-${today()}.json`, {
+                        exportedAt: new Date().toISOString(),
+                        company: companyName,
+                        batches,
+                        recipes,
+                        inventory,
+                        consumables,
+                        packageTypes,
+                        purchaseOrders,
+                        tanks,
+                        suppliers,
+                        foodSafetyRecords,
+                      })
+                    }
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 7,
+                      background: "none",
+                      border: "1px solid #DDE0C8",
+                      borderRadius: 5,
+                      padding: "12px",
+                      color: "#5C6B54",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13.5,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <FileText size={15} /> Download full backup
+                  </button>
+                )}
 
                 <button
                   onClick={() => supabase.auth.signOut()}
@@ -24837,7 +24863,7 @@ function TankLogApp() {
             onDiscardRemaining={setDiscardTarget}
             onAssignTank={setAssignTankTarget}
             onToggleScheduleStep={toggleScheduleStep}
-            onDeleteBatch={setDeleteBatchTarget}
+            onDeleteBatch={isOwner ? setDeleteBatchTarget : undefined}
             stages={stages}
             onLogDiacetylTest={setDiacetylTestTarget}
             onToggleFault={toggleBatchFault}
@@ -24916,7 +24942,7 @@ function TankLogApp() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} onReceiveMultiple={receiveMultiplePOs} inventory={inventory} onDelete={deletePO} onExtractDocument={extractDocument} onEdit={setEditingPO} allPOs={purchaseOrders} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} onReceiveMultiple={receiveMultiplePOs} inventory={inventory} onDelete={isOwner ? deletePO : undefined} onExtractDocument={extractDocument} onEdit={setEditingPO} allPOs={purchaseOrders} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
@@ -24929,7 +24955,7 @@ function TankLogApp() {
               setSelectedRecipeId(null);
               setShowAdd(true);
             }}
-            onDelete={setDeleteRecipeTarget}
+            onDelete={isOwner ? setDeleteRecipeTarget : undefined}
             versions={recipes
               .filter((r) => r.familyId === selectedRecipe.familyId)
               .sort((a, b) => (b.version || 1) - (a.version || 1))}
@@ -24960,7 +24986,7 @@ function TankLogApp() {
             onLogAdjustment={setAdjustTarget}
             suppliers={suppliers}
             onChangeSupplier={updateInventorySupplier}
-            onDelete={deleteInventoryItem}
+            onDelete={isOwner ? deleteInventoryItem : undefined}
             onRename={renameInventoryItem}
             onAddLot={addManualLot}
           />
@@ -24977,7 +25003,7 @@ function TankLogApp() {
             backLabel="All consumables"
             showCost
             onChangeCost={updateConsumableCost}
-            onDelete={deleteConsumable}
+            onDelete={isOwner ? deleteConsumable : undefined}
             onRename={renameConsumable}
           />
         )}
@@ -24987,7 +25013,7 @@ function TankLogApp() {
             packageType={selectedPackageType}
             consumables={consumables}
             onBack={() => setSelectedPackageTypeId(null)}
-            onDelete={deletePackageType}
+            onDelete={isOwner ? deletePackageType : undefined}
             onRename={renamePackageType}
           />
         )}
@@ -24997,7 +25023,7 @@ function TankLogApp() {
             customer={selectedCustomer}
             onBack={() => setSelectedCustomerId(null)}
             onEdit={() => setEditingCustomer(selectedCustomer)}
-            onDelete={() => deleteCustomer(selectedCustomer)}
+            onDelete={isOwner ? () => deleteCustomer(selectedCustomer) : undefined}
             xeroConnected={!!xeroConnection}
             onLinkXero={openXeroContactLink}
             onUnlinkXero={unlinkCustomerFromXero}
@@ -25017,7 +25043,7 @@ function TankLogApp() {
             onAdvance={advanceSalesOrderStatus}
             onCancel={cancelSalesOrder}
             onTogglePaid={toggleSalesOrderPaid}
-            onDelete={deleteSalesOrder}
+            onDelete={isOwner ? deleteSalesOrder : undefined}
           />
         )}
         </div>
@@ -25055,7 +25081,7 @@ function TankLogApp() {
             recipes={recipes}
             onSave={updateScheduledBatch}
             onCreate={addBatch}
-            onDelete={deleteBatch}
+            onDelete={isOwner ? deleteBatch : undefined}
             onClose={() => {
               setEditScheduledBatchId(null);
               setShowScheduleModal(false);
@@ -25158,7 +25184,7 @@ function TankLogApp() {
           unitOptions={["ea", "box", "roll"]}
           title="New consumable"
           submitLabel="Add to consumables"
-          showCost
+          showCost={isOwner}
           storageKey="brewpoint-last-consumable-category"
         />
       )}
@@ -25309,10 +25335,10 @@ function TankLogApp() {
             setEditingSupplier(s);
             setShowSupplierForm(true);
           }}
-          onDelete={(s) => {
+          onDelete={isOwner ? (s) => {
             setShowSuppliersModal(false);
             setDeleteSupplierTarget(s);
-          }}
+          } : undefined}
         />
       )}
       {showSupplierForm && (
@@ -25344,7 +25370,7 @@ function TankLogApp() {
           documents={supplierDocuments.filter((d) => d.supplierId === viewingSupplierDocs.id)}
           onClose={() => setViewingSupplierDocs(null)}
           onUpload={uploadSupplierDocument}
-          onDelete={deleteSupplierDocument}
+          onDelete={isOwner ? deleteSupplierDocument : undefined}
           onOpen={openSupplierDocument}
         />
       )}
