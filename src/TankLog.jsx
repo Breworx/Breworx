@@ -8013,6 +8013,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
   const [deliveryCostInput, setDeliveryCostInput] = useState(po.deliveryCost != null ? String(po.deliveryCost) : "");
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
+  const [unmatchedItems, setUnmatchedItems] = useState([]);
 
   const combineMatches = combineQuery.trim()
     ? (otherSentPOs || []).filter(
@@ -8064,6 +8065,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     if (!file || !onExtractDocument) return;
     setExtracting(true);
     setExtractError("");
+    setUnmatchedItems([]);
     const result = await onExtractDocument(file, "receiving");
     setExtracting(false);
     if (result.error) {
@@ -8073,13 +8075,20 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     // Match extracted lines back to the PO's existing lines by name — a
     // close, not necessarily exact, match, since a docket's wording often
     // differs slightly from what was typed when the order was placed.
+    // Anything that doesn't match gets surfaced, not silently dropped —
+    // otherwise a naming mismatch just quietly loses that line's data.
+    const unmatched = [];
     (result.lines || []).forEach((el) => {
       if (!el.name) return;
       const match = allLines.find((l) => l.name.toLowerCase().includes(el.name.toLowerCase()) || el.name.toLowerCase().includes(l.name.toLowerCase()));
-      if (!match) return;
+      if (!match) {
+        unmatched.push(el.name);
+        return;
+      }
       if (el.lotNumber) setLotNumbers((prev) => ({ ...prev, [match.id]: el.lotNumber }));
       if (el.costPerUnit != null) setCostOverrides((prev) => ({ ...prev, [match.id]: String(el.costPerUnit) }));
     });
+    if (unmatched.length > 0) setUnmatchedItems(unmatched);
   };
 
   const submit = () => {
@@ -8129,7 +8138,12 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
             {extractError && (
               <div style={{ color: "#B5502F", fontSize: 12, marginTop: 6 }}>{extractError} — check the fields below and fill in anything missing.</div>
             )}
-            {!extractError && !extracting && (
+            {!extractError && !extracting && unmatchedItems.length > 0 && (
+              <div style={{ color: "#B5502F", fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+                Couldn't match {unmatchedItems.length} item{unmatchedItems.length !== 1 ? "s" : ""} on the document to anything on the order{combinedPOs.length > 0 ? "s" : ""} — enter these by hand: {unmatchedItems.join(", ")}.
+              </div>
+            )}
+            {!extractError && !extracting && unmatchedItems.length === 0 && (
               <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 6 }}>
                 Matched to these order lines by name — double-check nothing landed on the wrong item if names differ from the docket.
                 {combinedPOs.length > 0 && " Combined orders that arrived on separate paperwork? Tap this again for each one — it matches against every order's lines, not just the first."}
@@ -19366,7 +19380,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-213";
+const APP_VERSION = "2026-08-03-214";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
