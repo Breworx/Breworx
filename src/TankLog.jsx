@@ -8061,7 +8061,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     }
   };
 
-  const handleImportFile = async (file) => {
+  const handleImportFile = async (file, targetPOId) => {
     if (!file || !onExtractDocument) return;
     setExtracting(true);
     setExtractError("");
@@ -8075,12 +8075,17 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     // Match extracted lines back to the PO's existing lines by name — a
     // close, not necessarily exact, match, since a docket's wording often
     // differs slightly from what was typed when the order was placed.
-    // Anything that doesn't match gets surfaced, not silently dropped —
-    // otherwise a naming mismatch just quietly loses that line's data.
+    // Scoped to just the PO this scan is actually for — combined orders
+    // can genuinely share near-identical item names (two "Munich Malt"
+    // lines from different suppliers' invoices), and matching against the
+    // full combined set let one order's scan silently overwrite another's
+    // correct figures. Anything that doesn't match within its own PO gets
+    // surfaced, not silently dropped.
+    const scopedLines = targetPOId ? allLines.filter((l) => allPOs.find((p) => p.id === targetPOId)?.lines.some((pl) => pl.id === l.id)) : allLines;
     const unmatched = [];
     (result.lines || []).forEach((el) => {
       if (!el.name) return;
-      const match = allLines.find((l) => l.name.toLowerCase().includes(el.name.toLowerCase()) || el.name.toLowerCase().includes(l.name.toLowerCase()));
+      const match = scopedLines.find((l) => l.name.toLowerCase().includes(el.name.toLowerCase()) || el.name.toLowerCase().includes(l.name.toLowerCase()));
       if (!match) {
         unmatched.push(el.name);
         return;
@@ -8108,7 +8113,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
   return (
     <Modal title={combinedPOs.length > 0 ? `Receive ${allPOs.map((p) => p.poNumber).join(" & ")}` : `Receive ${po.poNumber}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {onExtractDocument && (
+        {onExtractDocument && combinedPOs.length === 0 && (
           <div>
             <label
               style={{
@@ -8130,7 +8135,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
               <input
                 type="file"
                 accept="image/*,application/pdf"
-                onChange={(e) => handleImportFile(e.target.files?.[0])}
+                onChange={(e) => handleImportFile(e.target.files?.[0], po.id)}
                 disabled={extracting}
                 style={{ display: "none" }}
               />
@@ -8140,13 +8145,12 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
             )}
             {!extractError && !extracting && unmatchedItems.length > 0 && (
               <div style={{ color: "#B5502F", fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
-                Couldn't match {unmatchedItems.length} item{unmatchedItems.length !== 1 ? "s" : ""} on the document to anything on the order{combinedPOs.length > 0 ? "s" : ""} — enter these by hand: {unmatchedItems.join(", ")}.
+                Couldn't match {unmatchedItems.length} item{unmatchedItems.length !== 1 ? "s" : ""} on the document to anything on the order — enter these by hand: {unmatchedItems.join(", ")}.
               </div>
             )}
             {!extractError && !extracting && unmatchedItems.length === 0 && (
               <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 6 }}>
                 Matched to these order lines by name — double-check nothing landed on the wrong item if names differ from the docket.
-                {combinedPOs.length > 0 && " Combined orders that arrived on separate paperwork? Tap this again for each one — it matches against every order's lines, not just the first."}
               </div>
             )}
           </div>
@@ -8210,41 +8214,68 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
           </div>
         )}
 
-        {allLines.map((l) => (
-          <div
-            key={l.id}
-            style={{
-              background: "#F5F1E4",
-              border: "1px solid #DDE0C8",
-              borderRadius: 6,
-              padding: "12px 12px",
-            }}
-          >
-            <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
-              {l.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
-              {combinedPOs.length > 0 && (
-                <span style={{ color: "#8FB86C", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, marginLeft: 8 }}>{l._poNumber}</span>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <div style={{ flex: 1 }}>
-                <TextField
-                  label="Lot / batch #"
-                  value={lotNumbers[l.id]}
-                  onChange={(v) => setLotNumbers((prev) => ({ ...prev, [l.id]: v }))}
-                />
+        {allPOs.map((p) => (
+          <div key={p.id}>
+            {combinedPOs.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, marginTop: p.id === po.id ? 0 : 8 }}>
+                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{p.poNumber} — {p.supplier}</span>
+                {onExtractDocument && (
+                  <label
+                    style={{ display: "flex", alignItems: "center", gap: 5, color: extracting ? "#A3AC94" : "#5C9A3C", fontFamily: "'Inter', sans-serif", fontSize: 11.5, cursor: extracting ? "default" : "pointer" }}
+                  >
+                    📄 {extracting ? "Reading…" : `Import ${p.poNumber}'s invoice`}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => handleImportFile(e.target.files?.[0], p.id)}
+                      disabled={extracting}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                )}
               </div>
-              <div style={{ flex: 1 }}>
-                <NumberField
-                  label="Cost per unit"
-                  value={costOverrides[l.id]}
-                  onChange={(v) => setCostOverrides((prev) => ({ ...prev, [l.id]: v }))}
-                  step="0.01"
-                />
-              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {p.lines.map((l) => (
+                <div
+                  key={l.id}
+                  style={{
+                    background: "#F5F1E4",
+                    border: "1px solid #DDE0C8",
+                    borderRadius: 6,
+                    padding: "12px 12px",
+                  }}
+                >
+                  <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
+                    {l.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <TextField
+                        label="Lot / batch #"
+                        value={lotNumbers[l.id]}
+                        onChange={(v) => setLotNumbers((prev) => ({ ...prev, [l.id]: v }))}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <NumberField
+                        label="Cost per unit"
+                        value={costOverrides[l.id]}
+                        onChange={(v) => setCostOverrides((prev) => ({ ...prev, [l.id]: v }))}
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ))}
+        {combinedPOs.length > 0 && !extractError && !extracting && unmatchedItems.length > 0 && (
+          <div style={{ color: "#B5502F", fontSize: 12, marginTop: -4, lineHeight: 1.5 }}>
+            Couldn't match {unmatchedItems.length} item{unmatchedItems.length !== 1 ? "s" : ""} from the last scan — enter these by hand: {unmatchedItems.join(", ")}.
+          </div>
+        )}
         <button
           onClick={submit}
           style={{
@@ -19380,7 +19411,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-214";
+const APP_VERSION = "2026-08-03-215";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
