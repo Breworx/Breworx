@@ -229,6 +229,19 @@ const remainingVolume = (batch) => {
   return Math.max(0, Math.round(rem * 100) / 100);
 };
 
+// What's actually still in stock is worth its real, weighted cost across
+// whatever lots remain — not just current qty times the most recent price,
+// which would misstate value whenever older stock was bought at a
+// different price than what's most recently arrived. Falls back to the
+// flat costPerUnit for items with no lot-level history (consumables, or
+// anything added before lot tracking existed).
+function inventoryItemValue(item) {
+  if (item.lots && item.lots.length > 0) {
+    return item.lots.reduce((sum, lot) => sum + (lot.remainingQty || 0) * (lot.unitCost || 0), 0);
+  }
+  return (item.qty || 0) * (item.costPerUnit || 0);
+}
+
 // NZ Customs alcohol excise duty rates, effective 1 July 2026 (the annual
 // CPI-indexed adjustment). Source: customs.govt.nz "New excise duty rates
 // for alcohol from 1 July 2026". Two different calculation bases apply
@@ -2683,6 +2696,11 @@ function InventoryItemCard({ item, onAdjust, onOpen, suppliers }) {
           {supplierName && (
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#9BA88A" }}>
               · {supplierName}
+            </span>
+          )}
+          {inventoryItemValue(item) > 0 && (
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: "#5C9A3C" }}>
+              · ${inventoryItemValue(item).toFixed(2)}
             </span>
           )}
         </div>
@@ -19427,7 +19445,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-216";
+const APP_VERSION = "2026-08-03-217";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23471,9 +23489,21 @@ function TankLogApp() {
                 category: cat,
                 items: filtered.filter((it) => it.category === cat),
               })).filter((g) => g.items.length > 0);
+              const totalValue = filtered.reduce((sum, it) => sum + inventoryItemValue(it), 0);
 
               return (
                 <>
+                  {totalValue > 0 && (
+                    <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
+                        {inventoryQuery.trim() ? "Value of matching ingredients" : "Total ingredient value"}
+                      </div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, color: "#2A3324" }}>${totalValue.toFixed(2)}</div>
+                      <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>
+                        Based on what's still in stock, at what it actually cost per lot — a rough figure, not a formal stocktake valuation.
+                      </div>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <button
                       data-tour="page-inventory-stocktake"
@@ -23657,9 +23687,21 @@ function TankLogApp() {
                 category: cat,
                 items: filtered.filter((it) => it.category === cat),
               })).filter((g) => g.items.length > 0);
+              const totalValue = filtered.reduce((sum, it) => sum + inventoryItemValue(it), 0);
 
               return (
                 <>
+                  {totalValue > 0 && (
+                    <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
+                        {consumableQuery.trim() ? "Value of matching consumables" : "Total consumables value"}
+                      </div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, color: "#2A3324" }}>${totalValue.toFixed(2)}</div>
+                      <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>
+                        Based on what's still in stock at its most recent cost — a rough figure, not a formal stocktake valuation.
+                      </div>
+                    </div>
+                  )}
                   <input
                     type="text"
                     value={consumableQuery}
