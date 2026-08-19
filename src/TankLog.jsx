@@ -5680,6 +5680,13 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
   const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", unit: "kg", qty: "", unitCost: "", lotNumber: "" }]);
   const [focusedLineId, setFocusedLineId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  const hasEnteredWork = lines.some((l) => l.name.trim() || l.qty !== "" || l.unitCost !== "");
+  const requestClose = () => {
+    if (hasEnteredWork) { setConfirmDiscard(true); return; }
+    onClose();
+  };
 
   const addLine = () => setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", unit: "kg", qty: "", unitCost: "", lotNumber: "" }]);
   const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -5704,7 +5711,8 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
   };
 
   return (
-    <Modal title="Bring in opening stock" onClose={onClose}>
+    <>
+    <Modal title="Bring in opening stock" onClose={requestClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           For ingredients you already had before starting to track them here. Search for an existing item, or type a new name and it'll be created. Each line becomes its own dated, costed lot.
@@ -5787,6 +5795,16 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
         </button>
       </div>
     </Modal>
+    {confirmDiscard && (
+      <ConfirmDialogModal
+        message="Discard this opening stock entry? Nothing you've typed will be saved."
+        confirmLabel="Discard"
+        destructive
+        onCancel={() => setConfirmDiscard(false)}
+        onConfirm={() => { setConfirmDiscard(false); onClose(); }}
+      />
+    )}
+    </>
   );
 }
 
@@ -12211,7 +12229,7 @@ function TrendChart({ points, valueKey, color, formatValue }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -12659,7 +12677,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               ))}
             </div>
 
-            {batch.ingredientCost > 0 && (() => {
+            {isOwner && batch.ingredientCost > 0 && (() => {
               const totalVolumePackaged = CONTAINERS.reduce((sum, c) => sum + (totals[c.key] || 0) * c.volumeL, 0);
               if (totalVolumePackaged <= 0) return null;
               const costPerLitre = batch.ingredientCost / totalVolumePackaged;
@@ -13739,7 +13757,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Attenuation</td><td>{batch.og != null && latest.gravity != null ? `${pct.toFixed(0)}%` : "—"}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>ABV (current)</td><td>{calcABV(batch.og, latest.gravity) != null ? `${calcABV(batch.og, latest.gravity).toFixed(1)}%` : "—"}</td></tr>
             <tr><td style={{ padding: "4px 0", color: "#555" }}>Days in tank</td><td>{days}</td></tr>
-            <tr><td style={{ padding: "4px 0", color: "#555" }}>Ingredient cost</td><td>{batch.ingredientCost ? `$${batch.ingredientCost.toFixed(2)}` : "—"}</td></tr>
+            {isOwner && <tr><td style={{ padding: "4px 0", color: "#555" }}>Ingredient cost</td><td>{batch.ingredientCost ? `$${batch.ingredientCost.toFixed(2)}` : "—"}</td></tr>}
           </tbody>
         </table>
 
@@ -16621,7 +16639,7 @@ function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, onCycle
 // any version of it side by side — target vs actual OG/FG, attenuation,
 // ABV, days in tank, and cost — so drift or consistency across brews of
 // the same beer is visible at a glance instead of buried per-batch.
-function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
+function RecipeAnalyticsView({ recipes, batches, onOpenBatch, isOwner }) {
   const [query, setQuery] = useState("");
   const [selectedFamilyId, setSelectedFamilyId] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
@@ -16955,7 +16973,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
               {metricRow("Pre-boil gravity", (r) => r.batch.preBoilGravity, (v) => v.toFixed(3))}
               {metricRow("Days in tank", (r) => r.days, (v) => `${v}d`)}
               {metricRow("Days to diacetyl pass", (r) => r.daysToDiacetylPass, (v) => `${v}d`)}
-              {metricRow("Ingredient cost", (r) => r.batch.ingredientCost, (v) => `$${v.toFixed(2)}`)}
+              {isOwner && metricRow("Ingredient cost", (r) => r.batch.ingredientCost, (v) => `$${v.toFixed(2)}`)}
               {metricRow(
                 "Faults",
                 (r) => (currentFaults(r.batch).length > 0 ? currentFaults(r.batch) : null),
@@ -17097,7 +17115,7 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch }) {
                       {batch.preBoilGravity != null && <span>PBG {batch.preBoilGravity.toFixed(3)}</span>}
                       <span>{days}d</span>
                       {daysToDiacetylPass != null && <span>diacetyl {daysToDiacetylPass}d</span>}
-                      {batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
+                      {isOwner && batch.ingredientCost > 0 && <span>${batch.ingredientCost.toFixed(0)}</span>}
                     </div>
                     {currentFaults(batch).length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -19578,7 +19596,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-220";
+const APP_VERSION = "2026-08-03-222";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23575,21 +23593,27 @@ function TankLogApp() {
                     <button
                       onClick={() => {
                         const all = [...fFerm, ...fCond, ...fProg, ...fPack];
+                        const headers = ["Number", "Name", "Style", "Stage", "Brew date", "Volume (L)", "OG", "FG (latest reading)"];
+                        if (isOwner) headers.push("Ingredient cost");
+                        headers.push("Tank");
                         downloadCSV(
                           `batches-${today()}.csv`,
-                          ["Number", "Name", "Style", "Stage", "Brew date", "Volume (L)", "OG", "FG (latest reading)", "Ingredient cost", "Tank"],
-                          all.map((b) => [
-                            b.number,
-                            b.name,
-                            b.style,
-                            b.stage,
-                            b.startDate,
-                            b.volume,
-                            b.og != null ? b.og.toFixed(3) : "",
-                            latestReading(b).gravity != null ? latestReading(b).gravity.toFixed(3) : "",
-                            b.ingredientCost ?? "",
-                            b.tankName || "",
-                          ])
+                          headers,
+                          all.map((b) => {
+                            const row = [
+                              b.number,
+                              b.name,
+                              b.style,
+                              b.stage,
+                              b.startDate,
+                              b.volume,
+                              b.og != null ? b.og.toFixed(3) : "",
+                              latestReading(b).gravity != null ? latestReading(b).gravity.toFixed(3) : "",
+                            ];
+                            if (isOwner) row.push(b.ingredientCost ?? "");
+                            row.push(b.tankName || "");
+                            return row;
+                          })
                         );
                       }}
                       style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 16, display: "block" }}
@@ -24211,6 +24235,7 @@ function TankLogApp() {
                     setSelectedId(id);
                     setView("batches");
                   }}
+                  isOwner={isOwner}
                 />
               </>
             )}
@@ -24879,6 +24904,7 @@ function TankLogApp() {
         {selected && (
           <BatchDetail
             batch={selected}
+            isOwner={isOwner}
             onBack={() => setSelectedId(null)}
             onAdvance={advance}
             onMoveBack={moveStageBack}
