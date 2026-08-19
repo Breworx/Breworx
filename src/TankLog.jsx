@@ -19578,7 +19578,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-219";
+const APP_VERSION = "2026-08-03-220";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20736,6 +20736,14 @@ function TankLogApp() {
     setCreatingInvite(false);
     if (error) { console.error(error); showToast("error", `Couldn't create an invite link: ${error.message || "unknown error"}`); return; }
     setInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data}`);
+  };
+
+  const updateTeammateRole = async (teammate, newRole) => {
+    const { error } = await supabase.rpc("update_teammate_role", { member_id: teammate.id, new_role: newRole });
+    if (error) { showToast("error", `Couldn't update ${teammate.name}'s role: ${error.message || "unknown error"}`); return; }
+    setTeammates((prev) => prev.map((t) => (t.id === teammate.id ? { ...t, role: newRole } : t)));
+    if (teammate.id === user.id) setProfile((prev) => (prev ? { ...prev, role: newRole } : prev));
+    showToast("success", `${teammate.name} is now ${newRole === "owner" ? "an owner" : "a member"}.`);
   };
 
   const removeTeammate = (teammate) => {
@@ -24734,9 +24742,28 @@ function TankLogApp() {
                           {t.createdAt && (
                             <span style={{ color: "#9BA88A", fontSize: 11 }}>Joined {t.createdAt.slice(0, 10)}</span>
                           )}
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
-                            {t.role}
-                          </span>
+                          {profile?.role === "owner" && t.id !== user.id ? (
+                            <button
+                              onClick={() => updateTeammateRole(t, t.role === "owner" ? "member" : "owner")}
+                              style={{
+                                fontFamily: "'JetBrains Mono', monospace",
+                                color: "#5C9A3C",
+                                fontSize: 11,
+                                textTransform: "uppercase",
+                                background: "none",
+                                border: "1px solid #C9D1AC",
+                                borderRadius: 10,
+                                padding: "2px 8px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {t.role} — tap to {t.role === "owner" ? "make member" : "make owner"}
+                            </button>
+                          ) : (
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
+                              {t.role}
+                            </span>
+                          )}
                           {profile?.role === "owner" && t.id !== user.id && (
                             <button
                               onClick={() => removeTeammate(t)}
