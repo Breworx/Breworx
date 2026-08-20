@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
-import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge, Pencil } from "lucide-react";
+import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge, Pencil, Sparkles } from "lucide-react";
 // Charts are lazy-loaded — recharts is one of the heaviest dependencies in
 // the app and most people never open a screen with a chart on it in a given
 // session, so there's no reason to make everyone download it upfront.
@@ -45,6 +45,8 @@ import {
   pestStationToRow,
   rowToExciseItemCode,
   exciseItemCodeToRow,
+  rowToAiFeedback,
+  aiFeedbackToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -1371,6 +1373,172 @@ function HelpGuideModal({ onClose }) {
             </div>
           </div>
         ))}
+      </div>
+    </Modal>
+  );
+}
+
+// A simple chat over the app's own Help Guide content — the Edge
+// Function grounds every answer in HELP_ARTICLES, so it can't confidently
+// invent a feature that doesn't exist. No conversation history is saved
+// between visits; it's meant as a quick, in-the-moment question, not a
+// running assistant.
+function AiHelperModal({ onClose, onAsk, onFlag }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [flaggedIndices, setFlaggedIndices] = useState(() => new Set());
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, sending]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    const nextMessages = [...messages, { role: "user", content: text }];
+    setMessages(nextMessages);
+    setInput("");
+    setError("");
+    setSending(true);
+    const result = await onAsk(nextMessages);
+    setSending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setMessages((prev) => [...prev, { role: "assistant", content: result.reply }]);
+  };
+
+  const flagAnswer = (index) => {
+    const question = messages[index - 1]?.content || "";
+    const answer = messages[index].content;
+    setFlaggedIndices((prev) => new Set(prev).add(index));
+    onFlag(question, answer);
+  };
+
+  return (
+    <Modal title="Ask AI" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ color: "#9BA88A", fontSize: 12, lineHeight: 1.5 }}>
+          Answers questions about how to use Brewpoint, grounded in the same Help Guide content — not general brewing advice, and it can't see your actual data.
+        </div>
+        <div ref={scrollRef} style={{ maxHeight: 340, minHeight: messages.length === 0 ? 0 : 120, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+          {messages.map((m, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
+              <div
+                style={{
+                  maxWidth: "85%",
+                  background: m.role === "user" ? "#5C9A3C" : "#F5F1E4",
+                  color: m.role === "user" ? "#16191A" : "#2A3324",
+                  border: m.role === "user" ? "none" : "1px solid #DDE0C8",
+                  borderRadius: 8,
+                  padding: "9px 12px",
+                  fontSize: 13.5,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {m.content}
+              </div>
+              {m.role === "assistant" && (
+                <button
+                  onClick={() => flagAnswer(i)}
+                  disabled={flaggedIndices.has(i)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: flaggedIndices.has(i) ? "#9BA88A" : "#B5502F",
+                    fontSize: 11,
+                    fontFamily: "'Inter', sans-serif",
+                    cursor: flaggedIndices.has(i) ? "default" : "pointer",
+                    padding: "3px 2px 0",
+                  }}
+                >
+                  {flaggedIndices.has(i) ? "Flagged for review — thanks" : "Not helpful?"}
+                </button>
+              )}
+            </div>
+          ))}
+          {sending && (
+            <div style={{ alignSelf: "flex-start", color: "#9BA88A", fontSize: 12.5, padding: "9px 12px" }}>Thinking…</div>
+          )}
+        </div>
+        {error && <div style={{ color: "#B5502F", fontSize: 12.5 }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="Ask how to do something…"
+            style={{
+              flex: 1,
+              boxSizing: "border-box",
+              background: "#F5F1E4",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "10px 12px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 14,
+            }}
+          />
+          <button
+            onClick={send}
+            disabled={sending || !input.trim()}
+            style={{
+              background: sending || !input.trim() ? "#E8E4D4" : "#5C9A3C",
+              border: "none",
+              borderRadius: 5,
+              padding: "0 16px",
+              color: sending || !input.trim() ? "#A3AC94" : "#16191A",
+              fontFamily: "'Oswald', sans-serif",
+              fontWeight: 500,
+              fontSize: 13,
+              cursor: sending || !input.trim() ? "default" : "pointer",
+            }}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Owner-only review of everything flagged as unhelpful in Ask AI — each
+// one is a real signal that the Help Guide is missing something, so this
+// is what turns the feature into something that actually improves over
+// time instead of staying frozen at whatever it launched with.
+function AiFeedbackReviewModal({ feedback, onClose, onDelete }) {
+  return (
+    <Modal title={`Flagged AI answers (${feedback.length})`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {feedback.length === 0 ? (
+          <EmptyState icon={Sparkles} title="Nothing flagged yet" subtitle="When someone marks an Ask AI answer as unhelpful, it'll show up here so you can see what's missing from the Help Guide." />
+        ) : (
+          feedback.map((f) => (
+            <div key={f.id} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px" }}>
+              <div style={{ color: "#2A3324", fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{f.question}</div>
+              <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5, marginBottom: 8, whiteSpace: "pre-wrap" }}>{f.answer}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "#9BA88A", fontSize: 11 }}>
+                  {f.userName ? `${f.userName} · ` : ""}
+                  {f.createdAt ? new Date(f.createdAt).toLocaleDateString() : ""}
+                </span>
+                <button
+                  onClick={() => onDelete(f.id)}
+                  style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 11.5, padding: 0 }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </Modal>
   );
@@ -19763,7 +19931,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-228";
+const APP_VERSION = "2026-08-03-229";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20412,6 +20580,7 @@ function TankLogApp() {
   const [mixedPackAssemblies, setMixedPackAssemblies] = useState([]);
   const [pestStations, setPestStations] = useState([]);
   const [exciseItemCodes, setExciseItemCodes] = useState([]);
+  const [aiFeedback, setAiFeedback] = useState([]);
   const [editingMixedPackType, setEditingMixedPackType] = useState(null);
   const [showNewMixedPackType, setShowNewMixedPackType] = useState(false);
   const [assemblingMixedPackType, setAssemblingMixedPackType] = useState(null);
@@ -20460,6 +20629,7 @@ function TankLogApp() {
   const [showIngredientsNeeded, setShowIngredientsNeeded] = useState(false);
   const [showQuickJump, setShowQuickJump] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
+  const [showAiHelper, setShowAiHelper] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [textScale, setTextScale] = useState(() => {
     try {
@@ -20690,7 +20860,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes, aiFeedbackRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled, excise_abv_method").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -20717,6 +20887,7 @@ function TankLogApp() {
         supabase.from("mixed_pack_assemblies").select("*").order("assembled_date", { ascending: false }),
         supabase.from("pest_stations").select("*").order("label", { ascending: true }),
         supabase.from("excise_item_codes").select("*"),
+        supabase.from("ai_helper_feedback").select("*").order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -20781,6 +20952,9 @@ function TankLogApp() {
       else setPestStations(pestStationsRes.data.map(rowToPestStation));
       if (exciseItemCodesRes.error) console.error(exciseItemCodesRes.error);
       else setExciseItemCodes(exciseItemCodesRes.data.map(rowToExciseItemCode));
+
+      if (aiFeedbackRes.error) console.error(aiFeedbackRes.error);
+      else setAiFeedback(aiFeedbackRes.data.map(rowToAiFeedback));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -21386,6 +21560,30 @@ function TankLogApp() {
       body: JSON.stringify({ fileBase64, mediaType: file.type, mode }),
     });
     return res.json();
+  };
+
+  const askAiHelper = async (messages) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/ai-helper`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+      body: JSON.stringify({ messages, helpArticles: HELP_ARTICLES }),
+    });
+    return res.json();
+  };
+
+  const saveAiFeedback = async (question, answer) => {
+    const entry = { id: uid(), userName: profile?.name || user.email, question, answer };
+    const { error } = await supabase.from("ai_helper_feedback").insert(aiFeedbackToRow(entry, user.id, profile.companyId));
+    if (error) { showToast("error", "Couldn't save that feedback — check your connection and try again."); return; }
+    setAiFeedback((prev) => [{ ...entry, createdAt: new Date().toISOString() }, ...prev]);
+  };
+
+  const deleteAiFeedback = async (id) => {
+    const { error } = await supabase.from("ai_helper_feedback").delete().eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setAiFeedback((prev) => prev.filter((f) => f.id !== id));
   };
 
   const callXeroApi = async (action, extra) => {
@@ -23446,6 +23644,27 @@ function TankLogApp() {
             <Info size={13} /> Help guide
           </button>
 
+          <button
+            onClick={() => setShowAiHelper(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "none",
+              border: "1px solid #DDE0C8",
+              borderRadius: 5,
+              padding: "8px 10px",
+              color: "#9BA88A",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 12.5,
+              cursor: "pointer",
+              textAlign: "left",
+              marginBottom: 16,
+            }}
+          >
+            <Sparkles size={13} /> Ask AI
+          </button>
+
           <div data-tour="nav-groups" style={{ display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
             {[
               { items: [["home", "Home", Home]] },
@@ -25419,6 +25638,7 @@ function TankLogApp() {
         />
       )}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
+      {showAiHelper && <AiHelperModal onClose={() => setShowAiHelper(false)} onAsk={askAiHelper} onFlag={saveAiFeedback} />}
       {showWelcomeTour && <SpotlightTour steps={TOUR_STEPS} showLogoOnFirst onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
       {pageTourKey && PAGE_TOURS[pageTourKey] && <SpotlightTour steps={PAGE_TOURS[pageTourKey]} onClose={dismissPageTour} setSidebarOpen={setSidebarOpen} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
