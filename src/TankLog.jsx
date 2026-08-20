@@ -959,7 +959,7 @@ const TOUR_STEPS = [
   },
   {
     title: "Stock & Compliance",
-    body: "Stock covers ingredients, packaging materials, and purchase orders — with low-stock warnings and reorder shortcuts. Compliance covers food safety checklists, staff training, and records.",
+    body: "Stock covers ingredients, packaging materials, and purchase orders — with low-stock warnings and reorder shortcuts. Compliance now covers a lot: checklists, mock recalls, internal audits, verifier visits, pest control, water testing, approved suppliers, and full traceability — everything an inspector would want to see.",
     target: "nav-groups",
     needsSidebar: true,
   },
@@ -1078,6 +1078,25 @@ const PAGE_TOURS = {
     {
       title: "Stay on top of compliance",
       body: "Log daily, weekly, and monthly checklists, equipment calibration, and staff training here — everything you'd need on hand for an audit.",
+      target: null,
+    },
+    {
+      title: "There's more under Other records",
+      body: "Mock recalls, internal audits, verifier visits, pest control, water testing, and customer complaints all live down there too — each one feeds the same traceability data, so a real recall would actually work if you ever needed it.",
+      target: null,
+    },
+  ],
+  traceability: [
+    {
+      title: "Trace forward or backward",
+      body: "Search a lot number, batch, or customer. Forward from an ingredient lot shows every batch it went into and every order it was sold on; backward from a customer shows everything they've ever bought. This is the same data mock recall runs on.",
+      target: null,
+    },
+  ],
+  excise: [
+    {
+      title: "Duty on your own batches",
+      body: "Classify each recipe's product type once, then this calculates duty per batch at the current NZ Customs rates and exports a CSV formatted for TSW filing. Worth having an accountant check before using it for a real return.",
       target: null,
     },
   ],
@@ -19720,7 +19739,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-226";
+const APP_VERSION = "2026-08-03-227";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
