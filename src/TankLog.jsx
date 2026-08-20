@@ -5769,8 +5769,8 @@ function AddLotModal({ itemName, onClose, onSave }) {
 // it. Each line becomes a genuine, dated, costed lot, so opening stock
 // behaves exactly like anything received going forward, not a special
 // case that skips traceability.
-function BulkOpeningStockModal({ inventory, onClose, onSave }) {
-  const [lines, setLines] = useState([{ id: uid(), name: "", category: "Grain", unit: "kg", qty: "", unitCost: "", lotNumber: "" }]);
+function BulkOpeningStockModal({ inventory, onClose, onSave, categories = CATEGORIES, unitOptions = ["kg", "g", "L", "mL", "ea"], title = "Bring in opening stock" }) {
+  const [lines, setLines] = useState([{ id: uid(), name: "", category: categories[0], unit: unitOptions[0], qty: "", unitCost: "", lotNumber: "" }]);
   const [focusedLineId, setFocusedLineId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -5781,7 +5781,7 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
     onClose();
   };
 
-  const addLine = () => setLines((prev) => [...prev, { id: uid(), name: "", category: "Grain", unit: "kg", qty: "", unitCost: "", lotNumber: "" }]);
+  const addLine = () => setLines((prev) => [...prev, { id: uid(), name: "", category: categories[0], unit: unitOptions[0], qty: "", unitCost: "", lotNumber: "" }]);
   const updateLine = (id, patch) => setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   const removeLine = (id) => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== id) : prev));
 
@@ -5805,7 +5805,7 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
 
   return (
     <>
-    <Modal title="Bring in opening stock" onClose={requestClose}>
+    <Modal title={title} onClose={requestClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           For ingredients you already had before starting to track them here. Search for an existing item, or type a new name and it'll be created. Each line becomes its own dated, costed lot.
@@ -5849,8 +5849,8 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
                 )}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={CATEGORIES} />
-                <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "mL", "ea"]} />
+                <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={categories} />
+                <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={unitOptions} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 <NumberField label="Quantity you have" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.1" suffix={line.unit} />
@@ -19626,7 +19626,7 @@ export function XeroCallback() {
   );
 }
 
-function EmptyState({ icon: Icon, title, subtitle, action }) {
+function EmptyState({ icon: Icon, title, subtitle, action, secondaryAction }) {
   return (
     <div style={{ textAlign: "center", padding: "40px 20px" }}>
       {Icon && <Icon size={26} color="#C9D1AC" style={{ marginBottom: 12 }} />}
@@ -19634,27 +19634,51 @@ function EmptyState({ icon: Icon, title, subtitle, action }) {
         {title}
       </div>
       {subtitle && <div style={{ fontSize: 12.5, color: "#9BA88A", maxWidth: 300, margin: "0 auto", lineHeight: 1.5 }}>{subtitle}</div>}
-      {action && (
-        <button
-          onClick={action.onClick}
-          style={{
-            marginTop: 16,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            background: "#5C9A3C",
-            border: "none",
-            borderRadius: 5,
-            padding: "9px 16px",
-            color: "#16191A",
-            fontFamily: "'Oswald', sans-serif",
-            fontWeight: 500,
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          <Plus size={14} /> {action.label}
-        </button>
+      {(action || secondaryAction) && (
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 16 }}>
+          {action && (
+            <button
+              onClick={action.onClick}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "#5C9A3C",
+                border: "none",
+                borderRadius: 5,
+                padding: "9px 16px",
+                color: "#16191A",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              <Plus size={14} /> {action.label}
+            </button>
+          )}
+          {secondaryAction && (
+            <button
+              onClick={secondaryAction.onClick}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "none",
+                border: "1px solid #DDE0C8",
+                borderRadius: 5,
+                padding: "9px 16px",
+                color: "#5C6B54",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {secondaryAction.label}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -19739,7 +19763,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-227";
+const APP_VERSION = "2026-08-03-228";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20403,6 +20427,7 @@ function TankLogApp() {
   const [packageTypes, setPackageTypes] = useState([]);
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [showBulkOpeningStock, setShowBulkOpeningStock] = useState(false);
+  const [showBulkOpeningStockConsumables, setShowBulkOpeningStockConsumables] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState(null);
   const [inventoryQuery, setInventoryQuery] = useState("");
   const [batchQuery, setBatchQuery] = useState("");
@@ -22188,6 +22213,32 @@ function TankLogApp() {
       successCount++;
     }
     setInventory(nextInventory);
+    showToast("success", `${successCount} item${successCount !== 1 ? "s" : ""} brought in.`);
+  };
+
+  const addBulkOpeningStockConsumables = async (lines) => {
+    let nextConsumables = [...consumables];
+    let successCount = 0;
+    for (const line of lines) {
+      let item = nextConsumables.find((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      if (!item) {
+        const newItemPayload = { id: uid(), name: line.name, category: line.category, qty: 0, unit: line.unit, threshold: 0 };
+        const { data, error } = await supabase.from("consumables").insert(consumableToRow(newItemPayload, user.id, profile.companyId)).select().single();
+        if (error) { showToast("error", `Couldn't create ${line.name} — check your connection and try again.`); continue; }
+        item = rowToConsumable(data);
+        nextConsumables = [item, ...nextConsumables];
+      }
+      const lotEntry = { id: uid(), lotNumber: line.lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: null, unitCost: line.unitCost };
+      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `Opening stock — ${line.lotNumber}` };
+      const newQty = Math.round((item.qty + line.qty) * 100) / 100;
+      const newLots = [...(item.lots || []), lotEntry];
+      const newHistory = [...(item.history || []), historyEntry];
+      const { error: updateError } = await supabase.from("consumables").update({ qty: newQty, lots: newLots, history: newHistory }).eq("id", item.id);
+      if (updateError) { showToast("error", `Couldn't save stock for ${line.name} — check your connection and try again.`); continue; }
+      nextConsumables = nextConsumables.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: newLots, history: newHistory } : it));
+      successCount++;
+    }
+    setConsumables(nextConsumables);
     showToast("success", `${successCount} item${successCount !== 1 ? "s" : ""} brought in.`);
   };
 
@@ -24060,7 +24111,13 @@ function TankLogApp() {
 
                   {filtered.length === 0 && (
                     inventory.length === 0 ? (
-                      <EmptyState icon={Package} title="No ingredients tracked yet" subtitle="Add grain, hops, or yeast to get started, or bring some in via a purchase order." action={{ label: "Add ingredient", onClick: () => setShowAddInventory(true) }} />
+                      <EmptyState
+                        icon={Package}
+                        title="No ingredients tracked yet"
+                        subtitle="Already have stock on hand from before you started using this? Bring it all in at once below. Otherwise, add a single ingredient, or receive some in via a purchase order."
+                        action={{ label: "Add ingredient", onClick: () => setShowAddInventory(true) }}
+                        secondaryAction={{ label: "Bring in opening stock", onClick: () => setShowBulkOpeningStock(true) }}
+                      />
                     ) : (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No ingredients match "{inventoryQuery}".</div>
                     )
@@ -24092,6 +24149,12 @@ function TankLogApp() {
                       </div>
                     </div>
                   )}
+                  <button
+                    onClick={() => setShowBulkOpeningStockConsumables(true)}
+                    style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 8, display: "block" }}
+                  >
+                    Bring in opening stock
+                  </button>
                   <input
                     type="text"
                     value={consumableQuery}
@@ -24190,7 +24253,13 @@ function TankLogApp() {
 
                   {filtered.length === 0 && (
                     consumables.length === 0 ? (
-                      <EmptyState icon={Box} title="No consumables tracked yet" subtitle="Add cans, lids, boxes, and labels to start tracking packaging stock." action={{ label: "Add consumable", onClick: () => setShowAddConsumable(true) }} />
+                      <EmptyState
+                        icon={Box}
+                        title="No consumables tracked yet"
+                        subtitle="Already have cans, lids, boxes, or labels on hand from before you started using this? Bring it all in at once below. Otherwise, add a single item."
+                        action={{ label: "Add consumable", onClick: () => setShowAddConsumable(true) }}
+                        secondaryAction={{ label: "Bring in opening stock", onClick: () => setShowBulkOpeningStockConsumables(true) }}
+                      />
                     ) : (
                       <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>No consumables match "{consumableQuery}".</div>
                     )
@@ -25416,6 +25485,15 @@ function TankLogApp() {
           inventory={inventory}
           onClose={() => setShowBulkOpeningStock(false)}
           onSave={addBulkOpeningStock}
+        />
+      )}
+      {showBulkOpeningStockConsumables && (
+        <BulkOpeningStockModal
+          inventory={consumables}
+          onClose={() => setShowBulkOpeningStockConsumables(false)}
+          onSave={addBulkOpeningStockConsumables}
+          categories={CONSUMABLE_CATEGORIES}
+          title="Bring in opening consumables stock"
         />
       )}
       {showAddConsumable && (
