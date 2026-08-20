@@ -673,6 +673,36 @@ const HELP_ARTICLES = [
     answer: "Open a batch that's in Primary, Cooling, Brite Tank, or Aging, and tap \"Harvest yeast from this batch.\" It logs the strain, amount, and works out the generation automatically. When starting a new batch, a \"Pitching yeast\" section lets you pick that harvest instead of fresh — check the Yeast page under Production to see everything currently available to reuse.",
   },
   {
+    category: "Production",
+    question: "How do I schedule a brew ahead of time?",
+    answer: "On the Production calendar, tap an empty slot on any tank's row for the date you want, or use \"Schedule a brew\" — just the essentials (name, style, volume, tank, date), no need for a full recipe or ingredients yet. It shows on the calendar in taupe with a dashed border so it's clearly distinct from what's actually brewing, and stays that way until the day it genuinely starts.",
+  },
+  {
+    category: "Production",
+    question: "What happens if a scheduled brew's tank isn't actually free yet?",
+    answer: "It's flagged right on the calendar in amber with a warning icon, and opening it explains exactly which batch is still occupying the tank and what to do — pick a later date, a different tank, or move the other batch along first.",
+  },
+  {
+    category: "Batches",
+    question: "Can two purchase orders that arrived in the same delivery share one freight charge?",
+    answer: "Yes — open Receiving on either order and use \"Combine with another order\" to pull the second one in. Enter one delivery cost and it splits proportionally across every line from both orders by value, and each order ends up storing its own genuine share of that shared cost.",
+  },
+  {
+    category: "Batches",
+    question: "Can I edit a purchase order after creating it?",
+    answer: "Yes, as long as it hasn't been received yet — \"Edit order\" shows on any Draft or Sent PO. Once it's Received it's moved into real inventory with real lots, so it's locked to keep that history consistent.",
+  },
+  {
+    category: "Batches",
+    question: "Can a supplier's lot number be entered before the delivery arrives?",
+    answer: "Yes — some suppliers print the lot number on the PO itself rather than the delivery docket. There's a Lot/batch # field on each line when creating the order, and it carries over automatically to Receiving so you're not retyping it.",
+  },
+  {
+    category: "Batches",
+    question: "Can I scan a photo or PDF instead of typing in a purchase order?",
+    answer: "Yes — \"Import from a photo or PDF\" on both creating and receiving a PO reads the document and fills in supplier, items, quantities, and cost automatically, including working out a true per-unit cost when it's sold by the pack (e.g. a 25kg bag priced per bag). Always worth a quick check against the real invoice before saving.",
+  },
+  {
     category: "Sales",
     question: "How do I let a customer order online?",
     answer: "Open the customer and use \"Create login\" under Online ordering — this sets them up with a real account (email and password), not just a link. They log in anytime at the shared /order page, with password reset built in if they forget it. If they never finish setting it up, \"Resend setup link\" sends a fresh one.",
@@ -703,6 +733,31 @@ const HELP_ARTICLES = [
     answer: "Inventory, Purchase Orders, and Batches each have an \"Export CSV\" link above their list, which respects whatever search filter is active.",
   },
   {
+    category: "Stock",
+    question: "How do I bring in stock I already had before using this app?",
+    answer: "Inventory → \"Bring in opening stock,\" above Export CSV. Search for an existing item or type a new name to create one, add as many items as you need in one go, and each becomes a real, dated, costed lot — it behaves exactly like anything received going forward, not a special-case shortcut.",
+  },
+  {
+    category: "Stock",
+    question: "Can I fix an ingredient's category if it was entered wrong?",
+    answer: "Yes — tap the pencil icon next to the item's name to edit both its name and category (e.g. moving something from Grain to Yeast). Doesn't touch its quantity, cost, or history.",
+  },
+  {
+    category: "Stock",
+    question: "How do I correct a stock quantity?",
+    answer: "To increase stock, use \"Add a lot\" — that's the only way in, and it keeps everything properly costed and traceable. To decrease it for something used, wasted, or lost outside a normal batch, use \"Log an adjustment.\" Both live on the item's own page; there's deliberately no quick tap-to-bump control anymore.",
+  },
+  {
+    category: "Stock",
+    question: "Can a stock adjustment be undone?",
+    answer: "Yes — any entry logged as a manual adjustment shows a Delete link in the item's history. Deleting it reverses its effect on the total quantity. It restores the overall number correctly, but doesn't attempt to put a decrease back onto the exact lot it originally came from, since that detail isn't reliably recoverable afterward.",
+  },
+  {
+    category: "Stock",
+    question: "Where can I see roughly how much my stock is worth?",
+    answer: "Inventory and Consumables both show a total value card at the top, plus a per-item value on each one — calculated from what each remaining lot actually cost, not just current quantity at the latest price. It's a rough, useful figure for day-to-day purposes, not a formal accounting valuation.",
+  },
+  {
     category: "Compliance",
     question: "How do I log a food safety checklist or staff sickness?",
     answer: "Go to Food Safety. Checklists are at the top; \"Staff training,\" \"Staff sickness,\" calibration, water tests, and mock recalls are all under Other records.",
@@ -721,6 +776,51 @@ const HELP_ARTICLES = [
     category: "Compliance",
     question: "How do I get a report to hand an inspector?",
     answer: "On Food Safety, tap \"Export audit report\" above the record history. It uses whatever date range you've filtered to, and gives you a clean print/Save-as-PDF report — summary counts, open corrective actions, and the full record log.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I run a mock recall?",
+    answer: "Food Safety → \"Run a mock recall\" under Other records. Pick a real batch and it traces every lot that went into it and every customer who received it, using your actual purchase order and sales order data — a genuine test of whether you could recall something for real, not a hypothetical.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I log an internal audit?",
+    answer: "Food Safety → \"Internal audit\" under Other records. Walks through a 9-area self-review — checklists, calibration, training, water, pest control, mock recall, traceability, corrective actions, and records. Quarterly is a sensible default cadence, not a legal requirement, and it'll flag as overdue if it's never been done.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I log a verifier visit?",
+    answer: "Food Safety → \"Log verifier visit\" under Other records. This is your actual MPI-recognised verifier's visit — separate from your own internal audit. If they raise a non-conformance, it requires a corrective action before saving, and that flows into the same open corrective actions list as everything else.",
+  },
+  {
+    category: "Compliance",
+    question: "How does pest control tracking work?",
+    answer: "Food Safety → Pest control. Set up your stations once, then log a monthly check per station — monthly is advised by a food safety inspector, not an MPI-mandated number. Contractor visits are logged separately and can carry a \"next visit due\" date that flags as overdue once it passes.",
+  },
+  {
+    category: "Compliance",
+    question: "How do water tests get tracked?",
+    answer: "Food Safety → \"Log water test\" under Other records — it's a simple dated note. Quarterly is used as the overdue cadence, a sensible default rather than a legal mandate, and it'll show under Needs attention once it's been longer than that since the last one.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I mark a supplier as approved?",
+    answer: "Open the supplier from Food Safety or Inventory and edit it — there's an Approved/Not approved toggle, with an optional note on how it was verified. Shows right on the supplier list so it's visible at a glance, not buried in an edit form.",
+  },
+  {
+    category: "Compliance",
+    question: "How do I log a customer complaint?",
+    answer: "Food Safety → \"Log complaint\" under Other records. Search for the batch it relates to if you know it — that ties the complaint into the same traceability data mock recall uses, so a pattern across complaints on one batch is easy to spot.",
+  },
+  {
+    category: "Compliance",
+    question: "How does traceability work?",
+    answer: "Go to Traceability and search a lot number, batch, or customer. It traces forward from an ingredient lot through every batch it went into and every order it was sold on, or backward from a customer to everything they've bought — the same data mock recall runs on.",
+  },
+  {
+    category: "Compliance",
+    question: "How does excise work?",
+    answer: "Go to Excise. Classify each recipe's product type once, then it calculates duty per batch using the current NZ Customs rates and exports a CSV formatted for TSW filing. Recommend having an accountant review it before using it for a real return — this handles the calculation, not the filing itself.",
   },
   {
     category: "Sales",
@@ -771,6 +871,16 @@ const HELP_ARTICLES = [
     category: "Account",
     question: "I made a mistake — can I undo a delete?",
     answer: "Almost everything you can delete (batches, recipes, tanks, suppliers, ingredients, consumables, package types, purchase orders) shows a 5-second \"Undo\" option in the confirmation toast right after you delete it.",
+  },
+  {
+    category: "Account",
+    question: "What can a staff member see and do compared to the owner?",
+    answer: "Staff can't see costs or dollar values anywhere (ingredients, recipes, batches, PO pricing), can't delete records, can't manage the Xero connection or company-wide module settings, and don't see the Excise page at all. Everything needed for day-to-day brewing, logging, and food safety is fully open to them.",
+  },
+  {
+    category: "Account",
+    question: "How do I make a teammate an owner, or make an owner a regular member?",
+    answer: "On the Team page, tap a teammate's role to toggle it — you can't change your own, as a safeguard against accidentally losing owner access with nobody else able to restore it.",
   },
   {
     category: "Finding things",
@@ -5392,23 +5502,23 @@ function StockTakeReportModal({ stockTake, onClose }) {
 }
 
 function AdjustInventoryModal({ item, onClose, onSave }) {
-  const [delta, setDelta] = useState("");
+  const [amount, setAmount] = useState("");
   const [batchRef, setBatchRef] = useState("");
 
   const submit = () => {
-    const d = Number(delta);
-    if (!d) return;
-    onSave(item.id, d, batchRef.trim());
+    const a = Number(amount);
+    if (!a || a <= 0) return;
+    onSave(item.id, -a, batchRef.trim());
     onClose();
   };
 
   return (
     <Modal title={`Log adjustment — ${item.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <NumberField label={`Change (${item.unit} — use a minus sign to subtract)`} value={delta} onChange={setDelta} step="0.01" />
+        <NumberField label={`Amount to remove (${item.unit})`} value={amount} onChange={setAmount} step="0.01" />
         <TextField label="Batch ID (optional)" value={batchRef} onChange={setBatchRef} />
         <div style={{ color: "#9BA88A", fontSize: 12 }}>
-          Add a batch number here if this adjustment relates to a specific batch — it'll show in the history entry.
+          For stock used, wasted, or lost outside a normal batch. Add a batch number here if it relates to one specifically. To increase stock, use "Add a lot" instead — that keeps it properly costed and traceable.
         </div>
         <button
           onClick={submit}
@@ -19610,7 +19720,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-225";
+const APP_VERSION = "2026-08-03-226";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -25099,7 +25209,7 @@ function TankLogApp() {
             onAddLot={addManualLot}
             categories={CATEGORIES}
             onEditDetails={updateInventoryItemDetails}
-            onDeleteHistoryEntry={deleteInventoryHistoryEntry}
+            onDeleteHistoryEntry={isOwner ? deleteInventoryHistoryEntry : undefined}
           />
         )}
 
@@ -25118,7 +25228,7 @@ function TankLogApp() {
             onRename={renameConsumable}
             categories={CONSUMABLE_CATEGORIES}
             onEditDetails={updateConsumableDetails}
-            onDeleteHistoryEntry={deleteConsumableHistoryEntry}
+            onDeleteHistoryEntry={isOwner ? deleteConsumableHistoryEntry : undefined}
           />
         )}
 
