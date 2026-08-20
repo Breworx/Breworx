@@ -2735,24 +2735,6 @@ function InventoryItemCard({ item, onAdjust, onOpen, suppliers, isOwner }) {
         >
           {formatQty(item.qty, item.unit)}
         </span>
-        <button
-          onClick={() => onAdjust(item.id, step)}
-          aria-label={`Add ${step} ${item.unit} of ${item.name}`}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 4,
-            background: "#EBE8D6",
-            border: "1px solid #C9D1AC",
-            color: "#2A3324",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Plus size={14} />
-        </button>
       </div>
     </div>
   );
@@ -5808,6 +5790,50 @@ function BulkOpeningStockModal({ inventory, onClose, onSave }) {
   );
 }
 
+// For fixing a name or category typed wrong at creation — e.g. an item
+// that was mistakenly filed as Grain when it's actually Yeast. Doesn't
+// touch quantity or cost, those have their own dedicated paths.
+function EditInventoryItemModal({ item, categories, onClose, onSave }) {
+  const [name, setName] = useState(item.name);
+  const [category, setCategory] = useState(item.category);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSave({ name: name.trim(), category });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <Modal title="Edit item" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Name" value={name} onChange={setName} />
+        <SelectField label="Category" value={category} onChange={setCategory} options={categories} />
+        <button
+          onClick={submit}
+          disabled={saving}
+          style={{
+            background: saving ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: saving ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function RenameModal({ title, currentName, onClose, onSave }) {
   const [name, setName] = useState(currentName);
 
@@ -5835,7 +5861,7 @@ function RenameModal({ title, currentName, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -5872,17 +5898,25 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           {item.name}
         </h1>
         {low && <AlertTriangle size={16} color="#5C9A3C" />}
-        {onRename && (
+        {(onRename || onEditDetails) && (
           <button
             onClick={() => setShowRename(true)}
-            aria-label="Rename"
+            aria-label="Edit"
             style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
           >
             <Pencil size={15} />
           </button>
         )}
       </div>
-      {showRename && (
+      {showRename && onEditDetails && (
+        <EditInventoryItemModal
+          item={item}
+          categories={categories}
+          onClose={() => setShowRename(false)}
+          onSave={(patch) => onEditDetails(item.id, patch)}
+        />
+      )}
+      {showRename && !onEditDetails && (
         <RenameModal
           title="Rename item"
           currentName={item.name}
@@ -5917,13 +5951,9 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           </div>
           <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 2 }}>low-stock alert at {formatQty(item.threshold, item.unit)}</div>
         </div>
-        <button
-          onClick={() => onAdjust(item.id, step)}
-          aria-label={`Add ${step} ${item.unit}`}
-          style={{ width: 36, height: 36, borderRadius: 6, background: "#EBE8D6", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <Plus size={16} />
-        </button>
+      </div>
+      <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: -14, marginBottom: 22 }}>
+        To increase stock, use "Add a lot" below — that keeps it properly costed and traceable, rather than just bumping a number.
       </div>
 
       <button
@@ -19596,7 +19626,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-222";
+const APP_VERSION = "2026-08-03-223";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22009,6 +22039,13 @@ function TankLogApp() {
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, name } : it)));
   };
 
+  const updateInventoryItemDetails = async (id, patch) => {
+    const { error } = await supabase.from("inventory_items").update({ name: patch.name, category: patch.category }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    showToast("success", "Item updated.");
+  };
+
   // Same lot shape a PO receipt creates, just entered directly — for
   // stock that came in without a formal PO, so it's still traceable.
   // One pass over several items at once — creates whichever ones don't
@@ -22175,6 +22212,13 @@ function TankLogApp() {
     const { error } = await supabase.from("consumables").update({ name }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, name } : it)));
+  };
+
+  const updateConsumableDetails = async (id, patch) => {
+    const { error } = await supabase.from("consumables").update({ name: patch.name, category: patch.category }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    showToast("success", "Item updated.");
   };
 
   const adjustConsumable = async (id, delta) => {
@@ -25042,6 +25086,8 @@ function TankLogApp() {
             onDelete={isOwner ? deleteInventoryItem : undefined}
             onRename={renameInventoryItem}
             onAddLot={addManualLot}
+            categories={CATEGORIES}
+            onEditDetails={updateInventoryItemDetails}
           />
         )}
 
@@ -25058,6 +25104,8 @@ function TankLogApp() {
             onChangeCost={updateConsumableCost}
             onDelete={isOwner ? deleteConsumable : undefined}
             onRename={renameConsumable}
+            categories={CONSUMABLE_CATEGORIES}
+            onEditDetails={updateConsumableDetails}
           />
         )}
 
