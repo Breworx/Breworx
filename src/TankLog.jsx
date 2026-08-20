@@ -19626,7 +19626,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-223";
+const APP_VERSION = "2026-08-03-224";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22058,7 +22058,7 @@ function TankLogApp() {
     for (const line of lines) {
       let item = nextInventory.find((it) => it.name.toLowerCase() === line.name.toLowerCase());
       if (!item) {
-        const newItemPayload = { name: line.name, category: line.category, qty: 0, unit: line.unit, threshold: 0 };
+        const newItemPayload = { id: uid(), name: line.name, category: line.category, qty: 0, unit: line.unit, threshold: 0 };
         const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItemPayload, user.id, profile.companyId)).select().single();
         if (error) { showToast("error", `Couldn't create ${line.name} — check your connection and try again.`); continue; }
         item = rowToInventoryItem(data);
