@@ -1383,8 +1383,7 @@ function HelpGuideModal({ onClose }) {
 // invent a feature that doesn't exist. No conversation history is saved
 // between visits; it's meant as a quick, in-the-moment question, not a
 // running assistant.
-function AiHelperModal({ onClose, onAsk, onFlag }) {
-  const [messages, setMessages] = useState([]);
+function AiHelperModal({ messages, setMessages, onClose, onAsk, onFlag }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -1422,8 +1421,18 @@ function AiHelperModal({ onClose, onAsk, onFlag }) {
   return (
     <Modal title="Ask AI" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ color: "#9BA88A", fontSize: 12, lineHeight: 1.5 }}>
-          Answers questions about how to use Brewpoint, grounded in the same Help Guide content — not general brewing advice, and it can't see your actual data.
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ color: "#9BA88A", fontSize: 12, lineHeight: 1.5 }}>
+            Answers questions about how to use Brewpoint, grounded in the same Help Guide content — not general brewing advice, and it can't see your actual data.
+          </div>
+          {messages.length > 0 && (
+            <button
+              onClick={() => setMessages([])}
+              style={{ background: "none", border: "none", color: "#5C9A3C", fontSize: 11.5, fontFamily: "'Inter', sans-serif", cursor: "pointer", padding: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+            >
+              New conversation
+            </button>
+          )}
         </div>
         <div ref={scrollRef} style={{ maxHeight: 340, minHeight: messages.length === 0 ? 0 : 120, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
           {messages.map((m, i) => (
@@ -19931,7 +19940,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-229";
+const APP_VERSION = "2026-08-03-230";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -20630,6 +20639,8 @@ function TankLogApp() {
   const [showQuickJump, setShowQuickJump] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [showAiHelper, setShowAiHelper] = useState(false);
+  const [aiChatMessages, setAiChatMessages] = useState([]);
+  const [showAiFeedbackReview, setShowAiFeedbackReview] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [textScale, setTextScale] = useState(() => {
     try {
@@ -25317,6 +25328,28 @@ function TankLogApp() {
                   </button>
                 )}
 
+                {isOwner && (
+                  <button
+                    onClick={() => setShowAiFeedbackReview(true)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 7,
+                      background: "none",
+                      border: "1px solid #DDE0C8",
+                      borderRadius: 5,
+                      padding: "12px",
+                      color: "#5C6B54",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13.5,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Sparkles size={15} /> Flagged AI answers{aiFeedback.length > 0 ? ` (${aiFeedback.length})` : ""}
+                  </button>
+                )}
+
                 <button
                   onClick={() => supabase.auth.signOut()}
                   style={{
@@ -25638,7 +25671,16 @@ function TankLogApp() {
         />
       )}
       {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
-      {showAiHelper && <AiHelperModal onClose={() => setShowAiHelper(false)} onAsk={askAiHelper} onFlag={saveAiFeedback} />}
+      {showAiHelper && (
+        <AiHelperModal
+          messages={aiChatMessages}
+          setMessages={setAiChatMessages}
+          onClose={() => setShowAiHelper(false)}
+          onAsk={askAiHelper}
+          onFlag={saveAiFeedback}
+        />
+      )}
+      {showAiFeedbackReview && <AiFeedbackReviewModal feedback={aiFeedback} onClose={() => setShowAiFeedbackReview(false)} onDelete={deleteAiFeedback} />}
       {showWelcomeTour && <SpotlightTour steps={TOUR_STEPS} showLogoOnFirst onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
       {pageTourKey && PAGE_TOURS[pageTourKey] && <SpotlightTour steps={PAGE_TOURS[pageTourKey]} onClose={dismissPageTour} setSidebarOpen={setSidebarOpen} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
