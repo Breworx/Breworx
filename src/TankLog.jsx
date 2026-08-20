@@ -1411,11 +1411,11 @@ function AiHelperModal({ messages, setMessages, onClose, onAsk, onFlag }) {
     setMessages((prev) => [...prev, { role: "assistant", content: result.reply }]);
   };
 
-  const flagAnswer = (index) => {
+  const flagAnswer = async (index) => {
     const question = messages[index - 1]?.content || "";
     const answer = messages[index].content;
-    setFlaggedIndices((prev) => new Set(prev).add(index));
-    onFlag(question, answer);
+    const succeeded = await onFlag(question, answer);
+    if (succeeded) setFlaggedIndices((prev) => new Set(prev).add(index));
   };
 
   return (
@@ -19940,7 +19940,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-231";
+const APP_VERSION = "2026-08-03-232";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21587,8 +21587,13 @@ function TankLogApp() {
   const saveAiFeedback = async (question, answer) => {
     const entry = { id: uid(), userName: profile?.name || user.email, question, answer };
     const { error } = await supabase.from("ai_helper_feedback").insert(aiFeedbackToRow(entry, user.id, profile.companyId));
-    if (error) { showToast("error", "Couldn't save that feedback — check your connection and try again."); return; }
+    if (error) {
+      console.error("ai_helper_feedback insert error:", error);
+      showToast("error", `Couldn't save that feedback — ${error.message || "check your connection and try again"}.`);
+      return false;
+    }
     setAiFeedback((prev) => [{ ...entry, createdAt: new Date().toISOString() }, ...prev]);
+    return true;
   };
 
   const deleteAiFeedback = async (id) => {
