@@ -140,6 +140,27 @@ export function inventoryItemToRow(item, userId, companyId) {
   };
 }
 
+export function rowToAiFeedback(row) {
+  return {
+    id: row.id,
+    userName: row.user_name,
+    question: row.question,
+    answer: row.answer,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function aiFeedbackToRow(feedback, userId, companyId) {
+  return {
+    id: feedback.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: feedback.userName || null,
+    question: feedback.question,
+    answer: feedback.answer,
+  };
+}
+
 export function rowToPO(row) {
   return {
     id: row.id,
