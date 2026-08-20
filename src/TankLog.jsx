@@ -19940,7 +19940,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-230";
+const APP_VERSION = "2026-08-03-231";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21579,7 +21579,7 @@ function TankLogApp() {
     const res = await fetch(`${supabaseUrl}/functions/v1/ai-helper`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-      body: JSON.stringify({ messages, helpArticles: HELP_ARTICLES }),
+      body: JSON.stringify({ messages, helpArticles: HELP_ARTICLES, companyId: profile.companyId }),
     });
     return res.json();
   };
