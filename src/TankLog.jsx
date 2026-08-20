@@ -19940,7 +19940,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-232";
+const APP_VERSION = "2026-08-03-233";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21585,14 +21585,16 @@ function TankLogApp() {
   };
 
   const saveAiFeedback = async (question, answer) => {
-    const entry = { id: uid(), userName: profile?.name || user.email, question, answer };
-    const { error } = await supabase.from("ai_helper_feedback").insert(aiFeedbackToRow(entry, user.id, profile.companyId));
+    const entry = { userName: profile?.name || user.email, question, answer };
+    const row = aiFeedbackToRow(entry, user.id, profile.companyId);
+    delete row.id; // let Postgres generate the real UUID, same fix as pest_stations/customers/sales_orders
+    const { data, error } = await supabase.from("ai_helper_feedback").insert(row).select().single();
     if (error) {
       console.error("ai_helper_feedback insert error:", error);
       showToast("error", `Couldn't save that feedback — ${error.message || "check your connection and try again"}.`);
       return false;
     }
-    setAiFeedback((prev) => [{ ...entry, createdAt: new Date().toISOString() }, ...prev]);
+    setAiFeedback((prev) => [rowToAiFeedback(data), ...prev]);
     return true;
   };
 
