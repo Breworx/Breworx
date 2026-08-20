@@ -2705,25 +2705,7 @@ function InventoryItemCard({ item, onAdjust, onOpen, suppliers, isOwner }) {
           )}
         </div>
       </button>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        <button
-          onClick={() => onAdjust(item.id, -step)}
-          aria-label={`Remove ${step} ${item.unit} of ${item.name}`}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 4,
-            background: "#EBE8D6",
-            border: "1px solid #C9D1AC",
-            color: "#2A3324",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Minus size={14} />
-        </button>
+      <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
         <span
           style={{
             fontFamily: "'JetBrains Mono', monospace",
@@ -5861,7 +5843,7 @@ function RenameModal({ title, currentName, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails, onDeleteHistoryEntry }) {
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -5937,15 +5919,8 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
         {item.category}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 14, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px", marginBottom: 22 }}>
-        <button
-          onClick={() => onAdjust(item.id, -step)}
-          aria-label={`Remove ${step} ${item.unit}`}
-          style={{ width: 36, height: 36, borderRadius: 6, background: "#EBE8D6", border: "1px solid #C9D1AC", color: "#2A3324", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <Minus size={16} />
-        </button>
-        <div style={{ flex: 1, textAlign: "center" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px", marginBottom: 22 }}>
+        <div style={{ textAlign: "center" }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, color: low ? "#5C9A3C" : "#2A3324" }}>
             {formatQty(item.qty, item.unit)}
           </div>
@@ -5953,7 +5928,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
         </div>
       </div>
       <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: -14, marginBottom: 22 }}>
-        To increase stock, use "Add a lot" below — that keeps it properly costed and traceable, rather than just bumping a number.
+        To change stock, use "Add a lot" for stock coming in, or "Log an adjustment" below for anything else — that keeps every change costed and traceable, rather than just bumping a number.
       </div>
 
       <button
@@ -5971,7 +5946,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
           marginBottom: 22,
         }}
       >
-        Log adjustment with a batch ID
+        Log an adjustment
       </button>
 
       {showCost && (
@@ -6108,6 +6083,15 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
               </div>
               <div style={{ color: "#9BA88A", fontSize: 10.5, marginTop: 2 }}>{formatHistoryStamp(h.date)}</div>
               {h.user && <div style={{ color: "#9BA88A", fontSize: 10.5, marginTop: 1 }}>{h.user}</div>}
+              {h.type === "manual" && onDeleteHistoryEntry && (
+                <button
+                  onClick={() => onDeleteHistoryEntry(item.id, h)}
+                  aria-label="Delete this adjustment"
+                  style={{ background: "none", border: "none", color: "#B5502F", cursor: "pointer", fontSize: 10.5, padding: 0, marginTop: 3 }}
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -19626,7 +19610,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-224";
+const APP_VERSION = "2026-08-03-225";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22163,6 +22147,22 @@ function TankLogApp() {
     setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
   };
 
+  // Undoes a manual adjustment by reversing its net effect on quantity and
+  // removing it from the log. Doesn't attempt to restore exactly which
+  // lots it originally deducted from — that detail isn't reliably
+  // recoverable from the history entry alone, so this corrects the total
+  // honestly rather than guessing at lot-level state.
+  const deleteInventoryHistoryEntry = async (itemId, entry) => {
+    const item = inventory.find((it) => it.id === itemId);
+    if (!item) return;
+    const newQty = Math.max(0, Math.round((item.qty - entry.delta) * 100) / 100);
+    const newHistory = (item.history || []).filter((h) => h.id !== entry.id);
+    const { error } = await supabase.from("inventory_items").update({ qty: newQty, history: newHistory }).eq("id", itemId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setInventory((prev) => prev.map((it) => (it.id === itemId ? { ...it, qty: newQty, history: newHistory } : it)));
+    showToast("success", "Adjustment deleted.");
+  };
+
   const addConsumable = async (item) => {
     const { data, error } = await supabase.from("consumables").insert(consumableToRow(item, user.id, profile.companyId)).select().single();
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -22250,6 +22250,17 @@ function TankLogApp() {
     const { error } = await supabase.from("consumables").update({ qty: newQty, history: newHistory }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, qty: newQty, history: newHistory } : it)));
+  };
+
+  const deleteConsumableHistoryEntry = async (itemId, entry) => {
+    const item = consumables.find((it) => it.id === itemId);
+    if (!item) return;
+    const newQty = Math.max(0, Math.round((item.qty - entry.delta) * 100) / 100);
+    const newHistory = (item.history || []).filter((h) => h.id !== entry.id);
+    const { error } = await supabase.from("consumables").update({ qty: newQty, history: newHistory }).eq("id", itemId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === itemId ? { ...it, qty: newQty, history: newHistory } : it)));
+    showToast("success", "Adjustment deleted.");
   };
 
   const addPackageType = async (packageType) => {
@@ -25088,6 +25099,7 @@ function TankLogApp() {
             onAddLot={addManualLot}
             categories={CATEGORIES}
             onEditDetails={updateInventoryItemDetails}
+            onDeleteHistoryEntry={deleteInventoryHistoryEntry}
           />
         )}
 
@@ -25106,6 +25118,7 @@ function TankLogApp() {
             onRename={renameConsumable}
             categories={CONSUMABLE_CATEGORIES}
             onEditDetails={updateConsumableDetails}
+            onDeleteHistoryEntry={deleteConsumableHistoryEntry}
           />
         )}
 
