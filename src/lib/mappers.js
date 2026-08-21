@@ -52,6 +52,7 @@ export function rowToBatch(row) {
     brewDaysPlanned: row.brew_days_planned || 1,
     hopDumpLog: row.hop_dump_log || [],
     yeastDumpLog: row.yeast_dump_log || [],
+    mergedIntoBatchId: row.merged_into_batch_id || null,
   };
 }
 
@@ -107,6 +108,7 @@ export function batchToRow(batch, userId, companyId) {
     brew_days_planned: batch.brewDaysPlanned || 1,
     hop_dump_log: batch.hopDumpLog || [],
     yeast_dump_log: batch.yeastDumpLog || [],
+    merged_into_batch_id: batch.mergedIntoBatchId || null,
   };
 }
 
