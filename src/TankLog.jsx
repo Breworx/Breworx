@@ -5748,7 +5748,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
 // blend as they go — stays one batch, one final beer, just built up in
 // more than one pass. Adds to the batch's running volume and ingredient
 // list rather than creating a second batch record.
-function AddBrewDayModal({ onClose, onSave }) {
+function AddBrewDayModal({ onClose, onSave, mergeableBatches, onMerge }) {
   const [date, setDate] = useState(today());
   const [volume, setVolume] = useState("");
   const [og, setOg] = useState("");
@@ -5776,6 +5776,42 @@ function AddBrewDayModal({ onClose, onSave }) {
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           For blending multiple brew days into the same tank — this adds to the batch's total volume and ingredients, it doesn't create a separate batch.
         </div>
+        {mergeableBatches && mergeableBatches.length > 0 && (
+          <div>
+            <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>
+              Already tracking this as its own batch? Pull its numbers straight in instead of retyping them:
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {mergeableBatches.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => {
+                    onMerge(b.id);
+                    onClose();
+                  }}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#EAF2E4",
+                    border: "1px solid #8FB86C",
+                    borderRadius: 6,
+                    padding: "10px 12px",
+                    color: "#3F6B32",
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span>{b.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{b.number}</span></span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5 }}>{b.volume}L</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ color: "#9BA88A", fontSize: 11.5, margin: "10px 0", textAlign: "center" }}>— or enter it manually below —</div>
+          </div>
+        )}
         <TextField label="Brew day date" type="date" value={date} onChange={setDate} />
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1 }}>
@@ -12596,6 +12632,12 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         <ChevronLeft size={16} /> All batches
       </button>
 
+      {batch.mergedIntoBatchId && (
+        <div style={{ background: "#EAF2E4", border: "1px solid #8FB86C", borderRadius: 6, padding: "10px 14px", marginBottom: 18, color: "#3F6B32", fontSize: 13 }}>
+          This batch was merged into another batch as a brew day and is no longer active on its own — its readings and history below are kept for reference.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 22 }}>
         <Tank batch={batch} vesselType={currentTank?.type} />
         <div>
@@ -18888,6 +18930,7 @@ function HomeView({
         const brewDayBatches = batches.filter((b) => {
           if (b.stage !== "Brewing") return false;
           if (b.startDate > today()) return false;
+          if (b.mergedIntoBatchId) return false;
           const t = tanks.find((tk) => tk.id === b.tankId);
           return t && (t.type === "Mash Tun" || t.type === "Kettle");
         });
@@ -19940,7 +19983,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-233";
+const APP_VERSION = "2026-08-03-234";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22333,6 +22376,53 @@ function TankLogApp() {
   // stock for each ingredient the same way the original brew day did,
   // adds to the batch's running volume and ingredient list, and keeps a
   // dated log of each pass so the blending history stays visible.
+  // Folds a second, genuinely separate batch's numbers into the target
+  // batch as a brew day — for when a second mash/boil was tracked as its
+  // own full batch (live readings, its own mash pH, etc.) rather than
+  // typed in after the fact. Never touches inventory: the source batch
+  // already deducted its own ingredients when it was created, so doing
+  // it again here would double-count them. The source batch is marked
+  // merged, not deleted, so its own history stays intact if it's ever
+  // worth looking back at.
+  const mergeBatchAsBrewDay = async (targetBatchId, sourceBatchId) => {
+    const targetBatch = batches.find((b) => b.id === targetBatchId);
+    const sourceBatch = batches.find((b) => b.id === sourceBatchId);
+    if (!targetBatch || !sourceBatch) return;
+
+    const brewDayEntry = {
+      id: uid(),
+      date: sourceBatch.startDate,
+      volume: sourceBatch.volume,
+      og: sourceBatch.og,
+      ingredients: sourceBatch.ingredients,
+      fromBatchId: sourceBatch.id,
+      fromBatchName: sourceBatch.name,
+    };
+    const newBrewDays = [...(targetBatch.brewDays || []), brewDayEntry];
+    const newVolume = Math.round((targetBatch.volume + sourceBatch.volume) * 100) / 100;
+    const newIngredients = [...targetBatch.ingredients, ...sourceBatch.ingredients.map((i) => ({ ...i, id: uid() }))];
+    const newIngredientCost = Math.round(((targetBatch.ingredientCost || 0) + (sourceBatch.ingredientCost || 0)) * 100) / 100;
+
+    const { error: targetError } = await supabase
+      .from("batches")
+      .update({ brew_days: newBrewDays, volume: newVolume, ingredients: newIngredients, ingredient_cost: newIngredientCost })
+      .eq("id", targetBatchId);
+    if (targetError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+
+    const { error: sourceError } = await supabase.from("batches").update({ merged_into_batch_id: targetBatchId }).eq("id", sourceBatchId);
+    if (sourceError) showToast("error", "The brew day was added, but couldn't mark the source batch as merged — check your connection.");
+
+    setBatches((prev) =>
+      prev.map((b) => {
+        if (b.id === targetBatchId) return { ...b, brewDays: newBrewDays, volume: newVolume, ingredients: newIngredients, ingredientCost: newIngredientCost };
+        if (b.id === sourceBatchId) return { ...b, mergedIntoBatchId: targetBatchId };
+        return b;
+      })
+    );
+    showToast("success", `${sourceBatch.name} merged in as a brew day — ${sourceBatch.volume}L.`);
+    logActivity("updated", "batch", targetBatch.name, `${sourceBatch.name} (#${sourceBatch.number}) merged into ${targetBatch.name} (#${targetBatch.number}) as a brew day`);
+  };
+
   const addBrewDay = async (batchId, entry) => {
     const batch = batches.find((b) => b.id === batchId);
     if (!batch) return;
@@ -23465,7 +23555,7 @@ function TankLogApp() {
 
   const hasBriteTanks = tanks.some((t) => t.type === "Brite Tank");
   const stages = getStages(hasBriteTanks);
-  const fermentingBatches = batches.filter((b) => ["Brewing", "Primary", "Secondary"].includes(b.stage));
+  const fermentingBatches = batches.filter((b) => ["Brewing", "Primary", "Secondary"].includes(b.stage) && !b.mergedIntoBatchId);
   const conditioningBatches = batches.filter((b) => ["Cooling", "Brite Tank", "Conditioning"].includes(b.stage));
   const inProgressBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) > 0);
   const packagedBatches = batches.filter((b) => b.stage === "Packaged" && remainingVolume(b) === 0);
@@ -25476,6 +25566,10 @@ function TankLogApp() {
           <AddBrewDayModal
             onClose={() => setShowAddBrewDay(false)}
             onSave={(entry) => addBrewDay(selected.id, entry)}
+            mergeableBatches={batches.filter(
+              (b) => b.stage === "Brewing" && b.id !== selected.id && !b.mergedIntoBatchId && b.startDate <= today()
+            )}
+            onMerge={(sourceBatchId) => mergeBatchAsBrewDay(selected.id, sourceBatchId)}
           />
         )}
         {showHarvestYeast && selected && (
