@@ -5748,7 +5748,7 @@ function AdjustInventoryModal({ item, onClose, onSave }) {
 // blend as they go — stays one batch, one final beer, just built up in
 // more than one pass. Adds to the batch's running volume and ingredient
 // list rather than creating a second batch record.
-function AddBrewDayModal({ onClose, onSave, mergeableBatches, onMerge }) {
+function AddBrewDayModal({ onClose, onSave, mergeableBatches, onMerge, targetBatch, onStartNewToMerge }) {
   const [date, setDate] = useState(today());
   const [volume, setVolume] = useState("");
   const [og, setOg] = useState("");
@@ -5776,39 +5776,66 @@ function AddBrewDayModal({ onClose, onSave, mergeableBatches, onMerge }) {
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           For blending multiple brew days into the same tank — this adds to the batch's total volume and ingredients, it doesn't create a separate batch.
         </div>
-        {mergeableBatches && mergeableBatches.length > 0 && (
+        {(mergeableBatches?.length > 0 || onStartNewToMerge) && (
           <div>
-            <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>
-              Already tracking this as its own batch? Pull its numbers straight in instead of retyping them:
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {mergeableBatches.map((b) => (
-                <button
-                  key={b.id}
-                  onClick={() => {
-                    onMerge(b.id);
-                    onClose();
-                  }}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    background: "#EAF2E4",
-                    border: "1px solid #8FB86C",
-                    borderRadius: 6,
-                    padding: "10px 12px",
-                    color: "#3F6B32",
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 13,
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  <span>{b.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{b.number}</span></span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5 }}>{b.volume}L</span>
-                </button>
-              ))}
-            </div>
+            {mergeableBatches && mergeableBatches.length > 0 && (
+              <>
+                <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 6 }}>
+                  Already tracking this as its own batch? Pull its numbers straight in instead of retyping them:
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: onStartNewToMerge ? 6 : 0 }}>
+                  {mergeableBatches.map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        onMerge(b.id);
+                        onClose();
+                      }}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background: "#EAF2E4",
+                        border: "1px solid #8FB86C",
+                        borderRadius: 6,
+                        padding: "10px 12px",
+                        color: "#3F6B32",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 13,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span>{b.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{b.number}</span></span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5 }}>{b.volume}L</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {onStartNewToMerge && (
+              <button
+                onClick={() => {
+                  onStartNewToMerge();
+                  onClose();
+                }}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  background: "none",
+                  border: "1px dashed #8FB86C",
+                  borderRadius: 6,
+                  padding: "10px 12px",
+                  color: "#3F6B32",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                + Not brewed yet — start a new batch to merge in later
+              </button>
+            )}
             <div style={{ color: "#9BA88A", fontSize: 11.5, margin: "10px 0", textAlign: "center" }}>— or enter it manually below —</div>
           </div>
         )}
@@ -10780,11 +10807,11 @@ function ConfirmDialogModal({ title = "Are you sure?", message, confirmLabel = "
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, yeastHarvests, onUseHarvest }) {
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, presetName, yeastHarvests, onUseHarvest }) {
   const mashTuns = tanks.filter((t) => t.type === "Mash Tun");
   const tankChoices = mashTuns.length > 0 ? mashTuns : tanks;
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
-  const [name, setName] = useState(presetRecipe ? presetRecipe.name : "");
+  const [name, setName] = useState(presetName || (presetRecipe ? presetRecipe.name : ""));
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
   const [productType, setProductType] = useState(presetRecipe ? presetRecipe.productType || "Beer" : "Beer");
   const [volume, setVolume] = useState(presetRecipe ? presetRecipe.volume : 20);
@@ -19983,7 +20010,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-234";
+const APP_VERSION = "2026-08-03-235";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -25570,6 +25597,13 @@ function TankLogApp() {
               (b) => b.stage === "Brewing" && b.id !== selected.id && !b.mergedIntoBatchId && b.startDate <= today()
             )}
             onMerge={(sourceBatchId) => mergeBatchAsBrewDay(selected.id, sourceBatchId)}
+            onStartNewToMerge={() => {
+              const dayNumber = (selected.brewDays || []).length + 2;
+              setBatchPreset({ name: `${selected.name} — brew day ${dayNumber}` });
+              setBrewRecipe(selected.recipeId ? recipes.find((r) => r.id === selected.recipeId) || null : null);
+              setShowAddBrewDay(false);
+              setShowAdd(true);
+            }}
           />
         )}
         {showHarvestYeast && selected && (
@@ -25731,6 +25765,7 @@ function TankLogApp() {
           onAddInventoryItem={addInventoryItem}
           presetTankId={batchPreset ? batchPreset.tankId : null}
           presetStartDate={batchPreset ? batchPreset.startDate : null}
+          presetName={batchPreset ? batchPreset.name : null}
           yeastHarvests={yeastHarvests}
           onUseHarvest={markYeastHarvestUsed}
         />
