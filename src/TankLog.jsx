@@ -2746,10 +2746,13 @@ function latestReading(batch) {
   return { gravity: batch.og ?? null, temp: null, date: batch.startDate };
 }
 
-function Tank({ batch, vesselType }) {
-  const latest = latestReading(batch);
-  const pct = attenuation(batch.og, batch.fg, latest.gravity);
+function Tank({ batch, vesselType, tankCapacity }) {
   const color = STAGE_COLOR[batch.stage] || "#5C9A3C";
+  // Same fill-level meaning as the tank wall on Home — how full the
+  // vessel physically is (volume against capacity), not fermentation
+  // progress. A batch that just started is full of liquid even at 0%
+  // attenuation, and should look full here too, not nearly empty.
+  const fillPct = tankCapacity > 0 ? Math.max(4, Math.min(100, Math.round((batch.volume / tankCapacity) * 100))) : 50;
 
   if (vesselType === "Barrel") return <BarrelVesselIcon fermenting={!!batch.stillFermenting} size={46} uid={batch.id} />;
   if (vesselType === "Aging Tank") return <AgingTankVesselIcon size={46} uid={batch.id} />;
@@ -2764,7 +2767,7 @@ function Tank({ batch, vesselType }) {
   const bodyPath = isBrite
     ? "M10 20 Q10 10 20 10 H100 Q110 10 110 20 V180 Q110 190 100 190 H20 Q10 190 10 180 Z"
     : "M10 10 H110 V140 L60 190 L10 140 Z";
-  const surfaceY = 10 + (180 - 10) * (1 - Math.max(4, pct) / 100);
+  const surfaceY = 10 + (180 - 10) * (1 - fillPct / 100);
   const fermenting = !isBrite && (batch.stage === "Brewing" || batch.stage === "Primary");
   const bubbles = fermenting ? [30, 60, 90].map((x, i) => ({ x, delay: i * 0.6, dur: 1.9 + (i % 2) * 0.4 })) : [];
 
@@ -2832,6 +2835,7 @@ function BatchCard({ batch, onOpen, tanks }) {
   const pct = attenuation(batch.og, batch.fg, latest.gravity);
   const days = daysBetween(batch.startDate, today());
   const vesselType = tanks ? tanks.find((t) => t.id === batch.tankId)?.type : null;
+  const tankCapacity = tanks ? batchTankIds(batch).reduce((sum, id) => sum + (tanks.find((t) => t.id === id)?.capacity || 0), 0) : 0;
   const isScheduled = batch.startDate > today();
   return (
     <button
@@ -2852,7 +2856,7 @@ function BatchCard({ batch, onOpen, tanks }) {
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = isScheduled ? "#9B8F6F" : "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = isScheduled ? "#B8AD8A" : "#DDE0C8")}
     >
-      <Tank batch={batch} vesselType={vesselType} />
+      <Tank batch={batch} vesselType={vesselType} tankCapacity={tankCapacity} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
@@ -12666,7 +12670,11 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       )}
 
       <div style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: 22 }}>
-        <Tank batch={batch} vesselType={currentTank?.type} />
+        <Tank
+          batch={batch}
+          vesselType={currentTank?.type}
+          tankCapacity={tanks ? batchTankIds(batch).reduce((sum, id) => sum + (tanks.find((t) => t.id === id)?.capacity || 0), 0) : 0}
+        />
         <div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 13 }}>
             Batch #{batch.number}
@@ -20010,7 +20018,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-235";
+const APP_VERSION = "2026-08-03-236";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
