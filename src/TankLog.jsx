@@ -81,6 +81,16 @@ const STAGE_COLOR = {
   Packaged: "#9BA88A",
 };
 
+// The specific sub-stage within a brew day — shared between the batch
+// detail page and the batches list, so a batch mashing or in the kettle
+// shows the same detail wherever it appears, not just a generic
+// "Brewing" pill on one screen and the real stage on another.
+const BREW_STAGE_INFO = {
+  Mashing: { label: "Mashing in", color: "#D9A441" },
+  Recirculating: { label: "Recirculating", color: "#D9A441" },
+  Kettle: { label: "In the kettle", color: "#E08A3C" },
+};
+
 // A tank's CIP cycle once it's empty — null/unset is treated as "Needs CIP"
 // by default, since assuming a tank is dirty until proven otherwise is the
 // safer default for a food-safety-adjacent status. Brite tanks branch after
@@ -2837,6 +2847,9 @@ function BatchCard({ batch, onOpen, tanks }) {
   const vesselType = tanks ? tanks.find((t) => t.id === batch.tankId)?.type : null;
   const tankCapacity = tanks ? batchTankIds(batch).reduce((sum, id) => sum + (tanks.find((t) => t.id === id)?.capacity || 0), 0) : 0;
   const isScheduled = batch.startDate > today();
+  const inMashTun = batch.stage === "Brewing" && vesselType === "Mash Tun";
+  const inKettle = batch.stage === "Brewing" && vesselType === "Kettle";
+  const brewStageInfo = (inMashTun || inKettle) && batch.brewStage && BREW_STAGE_INFO[batch.brewStage] ? BREW_STAGE_INFO[batch.brewStage] : null;
   return (
     <button
       onClick={() => onOpen(batch.id)}
@@ -2856,7 +2869,11 @@ function BatchCard({ batch, onOpen, tanks }) {
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = isScheduled ? "#9B8F6F" : "#C9D1AC")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = isScheduled ? "#B8AD8A" : "#DDE0C8")}
     >
-      <Tank batch={batch} vesselType={vesselType} tankCapacity={tankCapacity} />
+      {inMashTun || inKettle ? (
+        <BrewDayVesselIcon isKettle={inKettle} recirculating={batch.brewStage === "Recirculating"} uid={batch.id} size={46} />
+      ) : (
+        <Tank batch={batch} vesselType={vesselType} tankCapacity={tankCapacity} />
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
@@ -2898,6 +2915,22 @@ function BatchCard({ batch, onOpen, tanks }) {
               }}
             >
               Scheduled
+            </span>
+          ) : brewStageInfo ? (
+            <span
+              style={{
+                flexShrink: 0,
+                background: `${brewStageInfo.color}22`,
+                border: `1px solid ${brewStageInfo.color}`,
+                color: brewStageInfo.color,
+                borderRadius: 20,
+                padding: "2px 10px",
+                fontSize: 11,
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 500,
+              }}
+            >
+              {brewStageInfo.label}
             </span>
           ) : (
             <StagePill stage={batch.stage} />
@@ -12631,11 +12664,6 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
   const currentTank = tanks ? tanks.find((t) => t.id === batch.tankId) : null;
   const inMashTun = batch.stage === "Brewing" && currentTank?.type === "Mash Tun";
   const inKettle = batch.stage === "Brewing" && currentTank?.type === "Kettle";
-  const BREW_STAGE_INFO = {
-    Mashing: { label: "Mashing in", color: "#D9A441" },
-    Recirculating: { label: "Recirculating", color: "#D9A441" },
-    Kettle: { label: "In the kettle", color: "#E08A3C" },
-  };
   const chartData = batch.readings.map((r) => ({
     date: r.date.slice(5),
     gravity: r.gravity,
@@ -20018,7 +20046,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-236";
+const APP_VERSION = "2026-08-03-237";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
