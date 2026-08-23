@@ -430,6 +430,25 @@ function batchTankIds(batch) {
   return [];
 }
 
+// Real lead time and spend from actual received orders — not a manually
+// typed guess. Matches by supplier name, the same way every other PO
+// lookup in the app already does, since a PO stores the supplier as
+// plain text rather than a reference id.
+function supplierPerformance(supplierName, purchaseOrders) {
+  const received = (purchaseOrders || []).filter((po) => po.supplier === supplierName && po.status === "Received" && po.receivedDate);
+  if (received.length === 0) return null;
+
+  const leadTimes = received.map((po) => daysBetween(po.orderDate, po.receivedDate)).filter((d) => d >= 0);
+  const avgLeadTimeDays = leadTimes.length > 0 ? Math.round((leadTimes.reduce((sum, d) => sum + d, 0) / leadTimes.length) * 10) / 10 : null;
+  const totalSpend = received.reduce((sum, po) => {
+    const lineTotal = (po.lines || []).reduce((s, l) => s + (Number(l.costPerUnit) || 0) * (Number(l.qty) || 0), 0);
+    return sum + lineTotal + (po.deliveryCost || 0);
+  }, 0);
+  const lastOrderDate = received.reduce((latest, po) => (!latest || po.orderDate > latest ? po.orderDate : latest), null);
+
+  return { poCount: received.length, avgLeadTimeDays, totalSpend, lastOrderDate };
+}
+
 function batchTankSummary(batch) {
   if (batch.splitTanks && batch.splitTanks.length > 0) {
     return batch.splitTanks.map((t) => `${t.tankName} (${t.volume}L)`).join(" + ");
@@ -5468,7 +5487,7 @@ function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onL
   );
 }
 
-function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
+function SuppliersModal({ suppliers, purchaseOrders, onClose, onAddNew, onEdit, onDelete, isOwner }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const filtered = suppliers.filter(
@@ -5537,6 +5556,23 @@ function SuppliersModal({ suppliers, onClose, onAddNew, onEdit, onDelete }) {
                       {[s.contactName, s.phone, s.email].filter(Boolean).join(" · ")}
                     </div>
                   )}
+                  {(() => {
+                    const perf = purchaseOrders ? supplierPerformance(s.name, purchaseOrders) : null;
+                    if (!perf) return null;
+                    return (
+                      <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 4 }}>
+                        {perf.avgLeadTimeDays != null && (
+                          <>
+                            {perf.avgLeadTimeDays}d actual lead time
+                            {s.leadTimeDays ? ` (stated ${s.leadTimeDays}d)` : ""}
+                            {" · "}
+                          </>
+                        )}
+                        {perf.poCount} order{perf.poCount !== 1 ? "s" : ""} received
+                        {isOwner ? ` · $${perf.totalSpend.toFixed(2)} total` : ""}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
                   <button onClick={() => onEdit(s)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12.5, padding: 0 }}>
@@ -20300,7 +20336,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-240";
+const APP_VERSION = "2026-08-03-241";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -26371,6 +26407,8 @@ function TankLogApp() {
       {showSuppliersModal && (
         <SuppliersModal
           suppliers={suppliers}
+          purchaseOrders={purchaseOrders}
+          isOwner={isOwner}
           onClose={() => setShowSuppliersModal(false)}
           onAddNew={() => {
             setShowSuppliersModal(false);
