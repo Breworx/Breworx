@@ -47,6 +47,8 @@ import {
   exciseItemCodeToRow,
   rowToAiFeedback,
   aiFeedbackToRow,
+  rowToKeg,
+  kegToRow,
   rowToSalesOrder,
   salesOrderToRow,
   rowToSupplierDocument,
@@ -8325,6 +8327,330 @@ function SalesAnalyticsView({ salesOrders, customers, batches, isOwner }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Tracks individual, physical kegs by number — separate from the
+// existing volume-based container tracking, which stays unchanged.
+// Lost kegs cost real money, so the point here is knowing which specific
+// keg is where, not just how many litres went out in kegs overall.
+// Numbers a batch of identical kegs at once — e.g. K-001 through K-050 —
+// since that's how a brewery actually acquires and labels a keg fleet,
+// rather than typing each one in individually.
+function AddKegsModal({ onClose, onSave }) {
+  const [prefix, setPrefix] = useState("K-");
+  const [startNumber, setStartNumber] = useState("1");
+  const [count, setCount] = useState("1");
+  const [padZeros, setPadZeros] = useState(true);
+  const [sizeL, setSizeL] = useState("20");
+
+  const preview = () => {
+    const start = Number(startNumber) || 1;
+    const n = Math.min(Number(count) || 1, 500);
+    const width = padZeros ? String(start + n - 1).length : 0;
+    const nums = [];
+    for (let i = 0; i < Math.min(n, 3); i++) {
+      const num = start + i;
+      nums.push(`${prefix}${padZeros ? String(num).padStart(width, "0") : num}`);
+    }
+    return n > 3 ? `${nums.join(", ")}, … (${n} total)` : nums.join(", ");
+  };
+
+  const submit = () => {
+    const start = Number(startNumber) || 1;
+    const n = Math.min(Math.max(1, Number(count) || 1), 500);
+    const size = Number(sizeL);
+    if (!size || size <= 0) return;
+    const width = padZeros ? String(start + n - 1).length : 0;
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      const num = start + i;
+      lines.push({ kegNumber: `${prefix}${padZeros ? String(num).padStart(width, "0") : num}`, sizeL: size });
+    }
+    onSave(lines);
+    onClose();
+  };
+
+  return (
+    <Modal title="Register kegs" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>Numbers a batch of identical kegs at once — e.g. K-001 through K-050.</div>
+        <TextField label="Number prefix" value={prefix} onChange={setPrefix} />
+        <div style={{ display: "flex", gap: 10 }}>
+          <NumberField label="Starting number" value={startNumber} onChange={setStartNumber} step="1" />
+          <NumberField label="How many" value={count} onChange={setCount} step="1" />
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5C6B54" }}>
+          <input type="checkbox" checked={padZeros} onChange={(e) => setPadZeros(e.target.checked)} />
+          Pad with zeros (K-001 instead of K-1)
+        </label>
+        <NumberField label="Keg size (L)" value={sizeL} onChange={setSizeL} step="0.1" />
+        <div style={{ color: "#9BA88A", fontSize: 12, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 10px" }}>
+          Will create: {preview()}
+        </div>
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Register kegs
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, onMarkLost, onDelete }) {
+  const [showFill, setShowFill] = useState(false);
+  const [showSend, setShowSend] = useState(false);
+  const isOverdue = keg.dueBackDate && keg.dueBackDate < today();
+  const eligibleBatches = batches.filter((b) => ["Brite Tank", "Packaged"].includes(b.stage) || b.stage === "Primary").slice(0, 50);
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: 0, marginBottom: 18 }}
+      >
+        <ChevronLeft size={16} /> All kegs
+      </button>
+
+      <h1 style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, color: "#2A3324", margin: "0 0 4px" }}>{keg.kegNumber}</h1>
+      <div style={{ color: "#5C6B54", fontSize: 14, marginBottom: 20 }}>{keg.sizeL}L</div>
+
+      <div style={{ background: "#FFFFFF", border: isOverdue ? "1px solid #B5502F" : "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>Status</div>
+        <div style={{ fontSize: 15, color: isOverdue ? "#B5502F" : "#2A3324", marginBottom: keg.currentBatchName || keg.currentCustomerName ? 8 : 0 }}>
+          {keg.status}
+          {isOverdue ? " — overdue" : ""}
+        </div>
+        {keg.currentBatchName && <div style={{ color: "#5C6B54", fontSize: 13 }}>Contents: {keg.currentBatchName}</div>}
+        {keg.currentCustomerName && (
+          <div style={{ color: "#5C6B54", fontSize: 13 }}>
+            With: {keg.currentCustomerName}
+            {keg.sentDate ? ` · sent ${keg.sentDate}` : ""}
+            {keg.dueBackDate ? ` · due back ${keg.dueBackDate}` : ""}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+        {keg.status === "In brewery" && (
+          <button
+            onClick={() => setShowFill(true)}
+            style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+          >
+            {keg.currentBatchName ? "Change contents" : "Log what's filled in it"}
+          </button>
+        )}
+        {keg.status === "In brewery" && (
+          <button
+            onClick={() => setShowSend(true)}
+            style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+          >
+            Send to a customer
+          </button>
+        )}
+        {keg.status === "With customer" && (
+          <button
+            onClick={() => onReturn(keg.id)}
+            style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+          >
+            Mark returned
+          </button>
+        )}
+        {keg.status !== "Lost" && (
+          <button
+            onClick={() => onMarkLost(keg.id)}
+            style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px", color: "#B5502F", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
+          >
+            Mark as lost
+          </button>
+        )}
+      </div>
+
+      {keg.history && keg.history.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>History</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+            {[...keg.history].reverse().map((h) => (
+              <div key={h.id} style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 12px" }}>
+                <div style={{ color: "#2A3324", fontSize: 13 }}>{h.note}</div>
+                <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>{formatHistoryStamp(h.date)}{h.user ? ` · ${h.user}` : ""}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {onDelete && (
+        <button
+          onClick={() => onDelete(keg)}
+          style={{ width: "100%", background: "none", border: "1px solid #E3D3A0", borderRadius: 5, padding: "11px", color: "#5C9A3C", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" }}
+        >
+          Delete keg record
+        </button>
+      )}
+
+      {showFill && (
+        <Modal title="What's filled in this keg?" onClose={() => setShowFill(false)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {eligibleBatches.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No packaged batches available to pick from.</div>}
+            {eligibleBatches.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => {
+                  onFill(keg.id, b.id, b.name);
+                  setShowFill(false);
+                }}
+                style={{ textAlign: "left", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "10px 12px", color: "#2A3324", fontSize: 13.5, cursor: "pointer" }}
+              >
+                {b.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>#{b.number}</span>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {showSend && <SendKegModal customers={customers} onClose={() => setShowSend(false)} onSave={(customerId, customerName, dueBackDate) => { onSend(keg.id, customerId, customerName, dueBackDate); setShowSend(false); }} />}
+    </div>
+  );
+}
+
+function SendKegModal({ customers, onClose, onSave }) {
+  const [customerId, setCustomerId] = useState("");
+  const [dueBackDate, setDueBackDate] = useState("");
+
+  const submit = () => {
+    const customer = customers.find((c) => c.id === customerId);
+    if (!customer) return;
+    onSave(customerId, customer.name, dueBackDate || null);
+  };
+
+  return (
+    <Modal title="Send keg to a customer" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Customer</span>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            <option value="">Choose a customer…</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <TextField label="Expected back by (optional)" type="date" value={dueBackDate} onChange={setDueBackDate} />
+        <button
+          onClick={submit}
+          disabled={!customerId}
+          style={{ background: customerId ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "12px", color: customerId ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: customerId ? "pointer" : "default" }}
+        >
+          Send keg
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function KegsView({ kegs, onOpen, onAddNew }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const filtered = kegs.filter(
+    (k) => !q || k.kegNumber.toLowerCase().includes(q) || (k.currentCustomerName || "").toLowerCase().includes(q) || (k.currentBatchName || "").toLowerCase().includes(q)
+  );
+
+  const inBrewery = filtered.filter((k) => k.status === "In brewery");
+  const withCustomer = filtered.filter((k) => k.status === "With customer");
+  const lost = filtered.filter((k) => k.status === "Lost");
+
+  const isOverdue = (k) => k.dueBackDate && k.dueBackDate < today();
+
+  const kegRow = (k) => (
+    <div
+      key={k.id}
+      onClick={() => onOpen(k)}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "12px 14px",
+        background: "#FFFFFF",
+        border: isOverdue(k) ? "1px solid #B5502F" : "1px solid #DDE0C8",
+        borderRadius: 6,
+        cursor: "pointer",
+      }}
+    >
+      <div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", fontSize: 14 }}>
+          {k.kegNumber} <span style={{ color: "#9BA88A", fontSize: 12 }}>· {k.sizeL}L</span>
+        </div>
+        {k.currentBatchName && <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 2 }}>{k.currentBatchName}</div>}
+        {k.currentCustomerName && (
+          <div style={{ color: isOverdue(k) ? "#B5502F" : "#5C6B54", fontSize: 12.5, marginTop: 2 }}>
+            With {k.currentCustomerName}
+            {k.dueBackDate ? ` · due back ${k.dueBackDate}${isOverdue(k) ? " (overdue)" : ""}` : ""}
+          </div>
+        )}
+      </div>
+      <ChevronLeft size={16} color="#9BA88A" style={{ transform: "rotate(180deg)" }} />
+    </div>
+  );
+
+  return (
+    <div>
+      <button
+        onClick={onAddNew}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "10px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer", marginBottom: 14 }}
+      >
+        <Plus size={14} /> Register kegs
+      </button>
+      {kegs.length > 5 && (
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search kegs…"
+          style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "10px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14, marginBottom: 16 }}
+        />
+      )}
+
+      {kegs.length === 0 ? (
+        <EmptyState icon={Box} title="No kegs registered yet" subtitle="Register your keg fleet by number to start tracking which ones are out with customers." action={{ label: "Register kegs", onClick: onAddNew }} />
+      ) : (
+        <>
+          {withCustomer.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                With customers ({withCustomer.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>{withCustomer.map(kegRow)}</div>
+            </>
+          )}
+          {inBrewery.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                In brewery ({inBrewery.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>{inBrewery.map(kegRow)}</div>
+            </>
+          )}
+          {lost.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                Lost ({lost.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{lost.map(kegRow)}</div>
+            </>
+          )}
+          {filtered.length === 0 && q && <div style={{ color: "#9BA88A", fontSize: 13, textAlign: "center", padding: "24px 0" }}>No kegs match "{query}".</div>}
+        </>
+      )}
     </div>
   );
 }
@@ -20439,7 +20765,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-243";
+const APP_VERSION = "2026-08-03-244";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21089,6 +21415,7 @@ function TankLogApp() {
   const [pestStations, setPestStations] = useState([]);
   const [exciseItemCodes, setExciseItemCodes] = useState([]);
   const [aiFeedback, setAiFeedback] = useState([]);
+  const [kegs, setKegs] = useState([]);
   const [editingMixedPackType, setEditingMixedPackType] = useState(null);
   const [showNewMixedPackType, setShowNewMixedPackType] = useState(false);
   const [assemblingMixedPackType, setAssemblingMixedPackType] = useState(null);
@@ -21370,7 +21697,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes, aiFeedbackRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes, aiFeedbackRes, kegsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled, excise_abv_method").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -21398,6 +21725,7 @@ function TankLogApp() {
         supabase.from("pest_stations").select("*").order("label", { ascending: true }),
         supabase.from("excise_item_codes").select("*"),
         supabase.from("ai_helper_feedback").select("*").order("created_at", { ascending: false }),
+        supabase.from("kegs").select("*").order("keg_number", { ascending: true }),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -21465,6 +21793,9 @@ function TankLogApp() {
 
       if (aiFeedbackRes.error) console.error(aiFeedbackRes.error);
       else setAiFeedback(aiFeedbackRes.data.map(rowToAiFeedback));
+
+      if (kegsRes.error) console.error(kegsRes.error);
+      else setKegs(kegsRes.data.map(rowToKeg));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -21535,6 +21866,9 @@ function TankLogApp() {
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState(null);
   const [fulfillmentTarget, setFulfillmentTarget] = useState(null);
   const [printOrderTarget, setPrintOrderTarget] = useState(null);
+  const [selectedKegId, setSelectedKegId] = useState(null);
+  const [showAddKegs, setShowAddKegs] = useState(false);
+  const [deleteKegTarget, setDeleteKegTarget] = useState(null);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
   const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
@@ -22426,6 +22760,86 @@ function TankLogApp() {
     const { error } = await supabase.from("pest_stations").update(row).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setPestStations((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  };
+
+  // Registers a batch of physical kegs at once — e.g. numbering 50 kegs
+  // in one go rather than adding them one at a time.
+  const addKegsBulk = async (lines) => {
+    let successCount = 0;
+    const newKegs = [];
+    for (const line of lines) {
+      const row = kegToRow({ kegNumber: line.kegNumber, sizeL: line.sizeL, status: "In brewery", history: [] }, profile.companyId);
+      delete row.id;
+      const { data, error } = await supabase.from("kegs").insert(row).select().single();
+      if (error) { showToast("error", `Couldn't add keg ${line.kegNumber} — it may already exist.`); continue; }
+      newKegs.push(rowToKeg(data));
+      successCount++;
+    }
+    setKegs((prev) => [...prev, ...newKegs].sort((a, b) => a.kegNumber.localeCompare(b.kegNumber, undefined, { numeric: true })));
+    showToast("success", `${successCount} keg${successCount !== 1 ? "s" : ""} added.`);
+  };
+
+  const fillKeg = async (kegId, batchId, batchName) => {
+    const keg = kegs.find((k) => k.id === kegId);
+    if (!keg) return;
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "filled", note: `Filled with ${batchName}` };
+    const newHistory = [...(keg.history || []), historyEntry];
+    const { error } = await supabase.from("kegs").update({ current_batch_id: batchId, current_batch_name: batchName, history: newHistory }).eq("id", kegId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegs((prev) => prev.map((k) => (k.id === kegId ? { ...k, currentBatchId: batchId, currentBatchName: batchName, history: newHistory } : k)));
+  };
+
+  const sendKeg = async (kegId, customerId, customerName, dueBackDate) => {
+    const keg = kegs.find((k) => k.id === kegId);
+    if (!keg) return;
+    const sentDate = today();
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "sent", note: `Sent to ${customerName}${keg.currentBatchName ? ` — ${keg.currentBatchName}` : ""}` };
+    const newHistory = [...(keg.history || []), historyEntry];
+    const payload = { status: "With customer", current_customer_id: customerId, current_customer_name: customerName, sent_date: sentDate, due_back_date: dueBackDate || null, history: newHistory };
+    const { error } = await supabase.from("kegs").update(payload).eq("id", kegId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegs((prev) =>
+      prev.map((k) =>
+        k.id === kegId
+          ? { ...k, status: "With customer", currentCustomerId: customerId, currentCustomerName: customerName, sentDate, dueBackDate: dueBackDate || null, history: newHistory }
+          : k
+      )
+    );
+    showToast("success", `Keg ${keg.kegNumber} sent to ${customerName}.`);
+  };
+
+  const returnKeg = async (kegId) => {
+    const keg = kegs.find((k) => k.id === kegId);
+    if (!keg) return;
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "returned", note: `Returned from ${keg.currentCustomerName || "customer"}` };
+    const newHistory = [...(keg.history || []), historyEntry];
+    const payload = { status: "In brewery", current_customer_id: null, current_customer_name: null, current_batch_id: null, current_batch_name: null, sent_date: null, due_back_date: null, history: newHistory };
+    const { error } = await supabase.from("kegs").update(payload).eq("id", kegId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegs((prev) =>
+      prev.map((k) =>
+        k.id === kegId
+          ? { ...k, status: "In brewery", currentCustomerId: null, currentCustomerName: null, currentBatchId: null, currentBatchName: null, sentDate: null, dueBackDate: null, history: newHistory }
+          : k
+      )
+    );
+    showToast("success", `Keg ${keg.kegNumber} marked returned.`);
+  };
+
+  const markKegLost = async (kegId) => {
+    const keg = kegs.find((k) => k.id === kegId);
+    if (!keg) return;
+    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "lost", note: `Marked lost${keg.currentCustomerName ? ` — was with ${keg.currentCustomerName}` : ""}` };
+    const newHistory = [...(keg.history || []), historyEntry];
+    const { error } = await supabase.from("kegs").update({ status: "Lost", history: newHistory }).eq("id", kegId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegs((prev) => prev.map((k) => (k.id === kegId ? { ...k, status: "Lost", history: newHistory } : k)));
+  };
+
+  const deleteKeg = async (kegId) => {
+    const { error } = await supabase.from("kegs").delete().eq("id", kegId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegs((prev) => prev.filter((k) => k.id !== kegId));
   };
 
   const addFoodSafetyRecord = async (record) => {
@@ -24285,6 +24699,7 @@ function TankLogApp() {
                   ["customers", "Customers", Users],
                   ["salesOrders", "Orders", Truck],
                   ["salesAnalytics", "Analytics", TrendingUp],
+                  ["kegs", "Kegs", Box],
                   ["finishedGoodsStock", "Stock", Package],
                 ],
               },
@@ -24415,7 +24830,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -25101,6 +25516,24 @@ function TankLogApp() {
 
             {!loadingData && view === "salesAnalytics" && (
               <SalesAnalyticsView salesOrders={salesOrders} customers={customers} batches={batches} isOwner={isOwner} />
+            )}
+
+            {!loadingData && view === "kegs" && !selectedKegId && (
+              <KegsView kegs={kegs} onOpen={(k) => setSelectedKegId(k.id)} onAddNew={() => setShowAddKegs(true)} />
+            )}
+
+            {!loadingData && view === "kegs" && selectedKegId && kegs.find((k) => k.id === selectedKegId) && (
+              <KegDetail
+                keg={kegs.find((k) => k.id === selectedKegId)}
+                batches={batches}
+                customers={customers}
+                onBack={() => setSelectedKegId(null)}
+                onFill={fillKeg}
+                onSend={sendKeg}
+                onReturn={returnKeg}
+                onMarkLost={markKegLost}
+                onDelete={isOwner ? setDeleteKegTarget : undefined}
+              />
             )}
 
             {!loadingData && view === "finishedGoodsStock" && (
@@ -26223,6 +26656,22 @@ function TankLogApp() {
           customer={customers.find((c) => c.id === printOrderTarget.customerId) || null}
           companyName={companyName}
           onClose={() => setPrintOrderTarget(null)}
+        />
+      )}
+
+      {showAddKegs && <AddKegsModal onClose={() => setShowAddKegs(false)} onSave={addKegsBulk} />}
+
+      {deleteKegTarget && (
+        <ConfirmDialogModal
+          message={`Delete the record for keg ${deleteKegTarget.kegNumber}? This can't be undone.`}
+          confirmLabel="Delete"
+          destructive
+          onCancel={() => setDeleteKegTarget(null)}
+          onConfirm={() => {
+            deleteKeg(deleteKegTarget.id);
+            setDeleteKegTarget(null);
+            setSelectedKegId(null);
+          }}
         />
       )}
 
