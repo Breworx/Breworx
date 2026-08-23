@@ -8984,8 +8984,8 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
   );
 }
 
-function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory, onExtractDocument, editingPO }) {
-  const [supplier, setSupplier] = useState(editingPO ? editingPO.supplier : "");
+function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory, onExtractDocument, editingPO, presetItem }) {
+  const [supplier, setSupplier] = useState(editingPO ? editingPO.supplier : presetItem?.supplierId ? suppliers.find((s) => s.id === presetItem.supplierId)?.name || "" : "");
   const [supplierFocused, setSupplierFocused] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState(editingPO?.deliveryCost != null ? String(editingPO.deliveryCost) : "");
   const [lines, setLines] = useState(
@@ -9000,6 +9000,8 @@ function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory
           costInput: l.costPerUnit != null ? String(l.costPerUnit) : "",
           lotNumber: l.lotNumber || "",
         }))
+      : presetItem
+      ? [{ id: uid(), name: presetItem.name, category: presetItem.category, qty: Math.max(1, Math.ceil((presetItem.threshold || 0) * 2 - presetItem.qty)), unit: presetItem.unit, costMode: "perUnit", costInput: "", lotNumber: "" }]
       : [{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg", costMode: "perUnit", costInput: "", lotNumber: "" }]
   );
   const [focusedLineId, setFocusedLineId] = useState(null);
@@ -19456,6 +19458,7 @@ function HomeView({
   reminders,
   onAddReminder,
   onToggleReminder,
+  onReorder,
 }) {
   const [addingTodayReminder, setAddingTodayReminder] = useState(false);
   const [newTodayReminderText, setNewTodayReminderText] = useState("");
@@ -20215,9 +20218,8 @@ function HomeView({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {lowStock.map((it) => (
-              <button
+              <div
                 key={it.id}
-                onClick={() => onGoTo("inventory")}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -20227,17 +20229,27 @@ function HomeView({
                   border: "1px solid #E3D3A0",
                   borderRadius: 5,
                   fontSize: 13.5,
-                  cursor: "pointer",
-                  textAlign: "left",
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#2A3324" }}>
-                  <AlertTriangle size={13} color="#5C9A3C" /> {it.name} running low
-                </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C9A3C", fontSize: 12 }}>
-                  {item_qty(it)} {it.unit}
-                </span>
-              </button>
+                <button
+                  onClick={() => onGoTo("inventory")}
+                  style={{ display: "flex", alignItems: "center", gap: 6, color: "#2A3324", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", flex: 1, minWidth: 0 }}
+                >
+                  <AlertTriangle size={13} color="#5C9A3C" style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name} running low</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C9A3C", fontSize: 12, flexShrink: 0 }}>
+                    {item_qty(it)} {it.unit}
+                  </span>
+                </button>
+                {onReorder && (
+                  <button
+                    onClick={() => onReorder(it)}
+                    style={{ flexShrink: 0, marginLeft: 10, background: "#5C9A3C", border: "none", borderRadius: 4, padding: "5px 10px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Reorder
+                  </button>
+                )}
+              </div>
             ))}
             {openOrders.map((po) => (
               <button
@@ -20801,7 +20813,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-245";
+const APP_VERSION = "2026-08-03-246";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21905,6 +21917,7 @@ function TankLogApp() {
   const [selectedKegId, setSelectedKegId] = useState(null);
   const [showAddKegs, setShowAddKegs] = useState(false);
   const [deleteKegTarget, setDeleteKegTarget] = useState(null);
+  const [reorderItem, setReorderItem] = useState(null);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
   const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
@@ -24938,6 +24951,7 @@ function TankLogApp() {
                 reminders={reminders}
                 onAddReminder={addReminder}
                 onToggleReminder={toggleReminderDone}
+                onReorder={setReorderItem}
               />
             )}
 
@@ -27060,6 +27074,18 @@ function TankLogApp() {
         />
       )}
       {showAddPO && <AddPOModal onClose={() => setShowAddPO(false)} onAdd={addPO} onSave={updatePO} nextPONumber={nextPONumber} suppliers={suppliers} inventory={inventory} onExtractDocument={extractDocument} />}
+      {reorderItem && (
+        <AddPOModal
+          onClose={() => setReorderItem(null)}
+          onAdd={addPO}
+          onSave={updatePO}
+          nextPONumber={nextPONumber}
+          suppliers={suppliers}
+          inventory={inventory}
+          onExtractDocument={extractDocument}
+          presetItem={reorderItem}
+        />
+      )}
       {editingPO && (
         <AddPOModal
           onClose={() => setEditingPO(null)}
