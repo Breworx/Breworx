@@ -19901,7 +19901,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
   const justDraggedRef = useRef(false);
   const rowRefs = useRef({});
   const dragRowRectsRef = useRef(null);
-  const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
+  const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle" && t.type !== "Barrel");
   const daysBack = 7;
   const daysForward = 35;
   const rangeStart = addDays(today(), -daysBack);
@@ -20103,7 +20103,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                       const endIdx = Math.min(totalDays - 1, dayIndex(end));
                       const isScheduled = batch.startDate > today();
                       const blocker = isScheduled ? conflictFor(occ, { batch, start, end }) : null;
-                      const isDragging = dragState && dragState.batchId === batch.id;
+                      const isDragging = dragState && dragState.batchId === batch.id && dragState.sourceTankId === tank.id;
                       const snappedDeltaDays = isDragging ? Math.round(dragState.deltaX / dayWidth) : 0;
                       const dragOffsetPx = snappedDeltaDays * dayWidth;
 
@@ -20114,12 +20114,12 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                           const el = rowRefs.current[t.id];
                           return el ? { tankId: t.id, rect: el.getBoundingClientRect() } : null;
                         }).filter(Boolean);
-                        setDragState({ batchId: batch.id, pointerId: e.pointerId, startX: e.clientX, deltaX: 0, startY: e.clientY, deltaY: 0, hoveredTankId: tank.id, canRetank: !batch.splitTanks || batch.splitTanks.length === 0 });
+                        setDragState({ batchId: batch.id, pointerId: e.pointerId, startX: e.clientX, deltaX: 0, startY: e.clientY, deltaY: 0, hoveredTankId: tank.id, sourceTankId: tank.id });
                       };
                       const handlePointerMove = (e) => {
                         if (!dragStateRef.current || dragStateRef.current.batchId !== batch.id || dragStateRef.current.pointerId !== e.pointerId) return;
                         let hoveredTankId = dragStateRef.current.hoveredTankId;
-                        if (dragStateRef.current.canRetank && dragRowRectsRef.current) {
+                        if (dragRowRectsRef.current) {
                           for (const { tankId, rect } of dragRowRectsRef.current) {
                             if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
                               hoveredTankId = tankId;
@@ -20133,7 +20133,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                         const current = dragStateRef.current;
                         if (!current || current.batchId !== batch.id || current.pointerId !== e.pointerId) return;
                         const dayOffset = Math.round(current.deltaX / dayWidth);
-                        const newTankId = current.canRetank && current.hoveredTankId !== tank.id ? current.hoveredTankId : null;
+                        const newTankId = current.hoveredTankId !== current.sourceTankId ? current.hoveredTankId : null;
                         if (Math.abs(current.deltaX) > 5 || Math.abs(current.deltaY) > 5) justDraggedRef.current = true;
                         dragRowRectsRef.current = null;
                         setDragState(null);
@@ -20143,8 +20143,18 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                           if (newTankId) {
                             const newTank = calendarTanks.find((t) => t.id === newTankId);
                             if (newTank) {
-                              patch.tankId = newTank.id;
-                              patch.tankName = newTank.name;
+                              // A split batch renders as one bar per tank it's
+                              // split across — each bar is only that specific
+                              // portion, so retanking moves just this one
+                              // entry, not the whole batch or its other half.
+                              if (batch.splitTanks && batch.splitTanks.length > 0) {
+                                patch.splitTanks = batch.splitTanks.map((t) =>
+                                  t.tankId === current.sourceTankId ? { ...t, tankId: newTank.id, tankName: newTank.name } : t
+                                );
+                              } else {
+                                patch.tankId = newTank.id;
+                                patch.tankName = newTank.name;
+                              }
                             }
                           }
                           onReschedule(batch, patch);
@@ -20245,7 +20255,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
 // brewing yet — lets the details, tank, and timing be changed freely, or the
 // whole thing removed, since nothing real has happened to it yet.
 function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCreate, onDelete, onClose, nextNumber, presetTankId, presetStartDate }) {
-  const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
+  const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle" && t.type !== "Barrel");
   const isNew = !batch;
   const [name, setName] = useState(batch ? batch.name : "");
   const [style, setStyle] = useState(batch ? batch.style || "" : "");
@@ -22013,7 +22023,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-260";
+const APP_VERSION = "2026-08-03-261";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
