@@ -21316,7 +21316,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-252";
+const APP_VERSION = "2026-08-03-253";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23028,11 +23028,22 @@ function TankLogApp() {
     setXeroContacts(data.contacts || []);
   };
 
+  // Xero's error detail can come back in a few different shapes depending
+  // on what went wrong (auth failure vs. a rejected API call) — this
+  // tries the fields that are actually likely to contain the human-
+  // readable reason, falling back to the raw object if none match.
+  const extractXeroErrorDetail = (detail) => {
+    if (!detail) return "";
+    if (typeof detail === "string") return detail;
+    return detail.Detail || detail.Title || detail.error_description || detail.error || detail.Message || JSON.stringify(detail);
+  };
+
   const openXeroContactImport = async () => {
     setShowImportXeroContacts(true);
     const data = await callXeroApi("listContacts");
     if (data.error) {
-      showToast("error", `Couldn't load Xero contacts — ${data.error}`);
+      const extra = extractXeroErrorDetail(data.detail);
+      showToast("error", `Couldn't load Xero contacts — ${data.error}${extra ? `: ${extra}` : ""}`);
       setShowImportXeroContacts(false);
       return;
     }
@@ -23043,7 +23054,8 @@ function TankLogApp() {
     setShowXeroProductMapping(true);
     const data = await callXeroApi("listItems");
     if (data.error) {
-      showToast("error", `Couldn't load Xero items — ${data.error}`);
+      const extra = extractXeroErrorDetail(data.detail);
+      showToast("error", `Couldn't load Xero items — ${data.error}${extra ? `: ${extra}` : ""}`);
       setShowXeroProductMapping(false);
       return;
     }
