@@ -120,6 +120,12 @@ const CONTAINERS = [
   { key: "kegs50", label: "50L Keg", shortLabel: "50L Keg", volumeL: 50 },
 ];
 
+// The key a specific product (a beer in a specific container) is
+// identified by for Xero item mapping — shared globally so the mapping
+// modal (outside the main app component) computes the exact same key a
+// real packaged batch will use when it's actually sold.
+const productKeyFor = (name, containerKey) => `${name.trim().toLowerCase()}::${containerKey}`;
+
 const packagedVolume = (packaging) =>
   !packaging ? 0 : CONTAINERS.reduce((sum, c) => sum + (packaging[c.key] || 0) * c.volumeL, 0);
 
@@ -3278,6 +3284,99 @@ function TopUpModal({ onClose, onSave }) {
   );
 }
 
+const SENSORY_CATEGORIES = [
+  { key: "appearance", label: "Appearance" },
+  { key: "aroma", label: "Aroma" },
+  { key: "flavor", label: "Flavor" },
+  { key: "mouthfeel", label: "Mouthfeel" },
+  { key: "overall", label: "Overall" },
+];
+
+// A proper multi-taster scoresheet, separate from the quick tag-based
+// tasting log above — that one's for jotting down a fault or a note in
+// passing, this is for tracking quality consistency over time across
+// several people's independent scores on the same batch.
+function SensoryScoreModal({ onClose, onSave }) {
+  const [tasterName, setTasterName] = useState("");
+  const [date, setDate] = useState(today());
+  const [scores, setScores] = useState(() => {
+    const init = {};
+    SENSORY_CATEGORIES.forEach((c) => (init[c.key] = 0));
+    return init;
+  });
+  const [notes, setNotes] = useState("");
+
+  const setScore = (key, value) => setScores((prev) => ({ ...prev, [key]: value }));
+  const canSubmit = tasterName.trim() && SENSORY_CATEGORIES.every((c) => scores[c.key] > 0);
+
+  const submit = () => {
+    if (!canSubmit) return;
+    onSave({ tasterName: tasterName.trim(), date, scores, notes: notes.trim() });
+    onClose();
+  };
+
+  return (
+    <Modal title="Score this batch" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Taster name" value={tasterName} onChange={setTasterName} />
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        {SENSORY_CATEGORIES.map((c) => (
+          <div key={c.key}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>{c.label}</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setScore(c.key, n)}
+                  style={{
+                    flex: 1,
+                    padding: "10px 0",
+                    background: scores[c.key] >= n ? "#5C9A3C" : "#F5F1E4",
+                    border: `1px solid ${scores[c.key] >= n ? "#5C9A3C" : "#DDE0C8"}`,
+                    borderRadius: 5,
+                    color: scores[c.key] >= n ? "#16191A" : "#9BA88A",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Notes (optional)</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14, resize: "vertical" }}
+          />
+        </label>
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          style={{
+            background: canSubmit ? "#5C9A3C" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: canSubmit ? "#16191A" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            cursor: canSubmit ? "pointer" : "default",
+          }}
+        >
+          Save score
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function TastingLogModal({ onClose, onSave }) {
   const [date, setDate] = useState(today());
   const [tags, setTags] = useState(() => new Set());
@@ -5010,7 +5109,7 @@ function FinishedGoodsStockView({
   );
 }
 
-function CustomersView({ customers, onOpen }) {
+function CustomersView({ customers, onOpen, onImportXero }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -5019,6 +5118,14 @@ function CustomersView({ customers, onOpen }) {
 
   return (
     <div>
+      {onImportXero && (
+        <button
+          onClick={onImportXero}
+          style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 10, display: "block" }}
+        >
+          Import customers from Xero
+        </button>
+      )}
       <input
         type="text"
         value={query}
@@ -5059,6 +5166,207 @@ function CustomersView({ customers, onOpen }) {
 // Picks (or creates) the Xero contact this customer maps to. Kept
 // deliberately simple — search the list Xero already has, or push this
 // customer's details into Xero as a brand-new contact.
+// Bulk-imports selected Xero contacts as new customers, already linked —
+// for a brewery switching from Xero-only bookkeeping, so their existing
+// customer list doesn't need retyping from scratch.
+// Proactively maps recipes (by name, per container type) to Xero items —
+// pre-fills the same xero_item_mappings table the app already checks the
+// moment a batch is packaged, so a brewery bringing an existing product
+// list from Xero doesn't have to wait for the first real batch of each
+// beer to be prompted individually. Only carries through automatically
+// to a future batch whose name matches the recipe's exactly — a batch
+// named with a size or brew-day suffix still gets prompted as normal.
+function XeroProductMappingModal({ recipes, xeroItems, existingMappings, onClose, onSave }) {
+  const [selections, setSelections] = useState(() => {
+    const init = {};
+    recipes.forEach((r) => {
+      CONTAINERS.forEach((c) => {
+        const key = productKeyFor(r.name, c.key);
+        const existing = existingMappings.find((m) => m.product_key === key);
+        init[`${r.id}:${c.key}`] = { itemCode: existing ? existing.xero_item_code : "", unitCost: existing ? String(existing.unit_cost) : "" };
+      });
+    });
+    return init;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const setSelection = (recipeId, containerKey, patch) =>
+    setSelections((prev) => ({ ...prev, [`${recipeId}:${containerKey}`]: { ...prev[`${recipeId}:${containerKey}`], ...patch } }));
+
+  const submit = async () => {
+    setSaving(true);
+    const lines = [];
+    recipes.forEach((r) => {
+      CONTAINERS.forEach((c) => {
+        const sel = selections[`${r.id}:${c.key}`];
+        if (!sel.itemCode) return;
+        const item = xeroItems.find((i) => i.itemCode === sel.itemCode);
+        if (!item) return;
+        lines.push({
+          productKey: productKeyFor(r.name, c.key),
+          productLabel: `${r.name} — ${c.label}`,
+          itemCode: item.itemCode,
+          itemName: item.name,
+          unitCost: sel.unitCost === "" ? 0 : Number(sel.unitCost),
+        });
+      });
+    });
+    await onSave(lines);
+    setSaving(false);
+    onClose();
+  };
+
+  const mappedCount = Object.values(selections).filter((s) => s.itemCode).length;
+
+  return (
+    <Modal title="Map recipes to Xero items" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          For each recipe, match its packaged sizes to the matching item already set up in Xero, and give it a unit cost — this is what gets recorded as the stock value in Xero each time it's packaged. Only applies automatically to a future batch whose name matches the recipe exactly; a differently-named batch still gets asked at packaging time, same as always.
+        </div>
+        {xeroItems.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>Loading Xero items…</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, maxHeight: 420, overflowY: "auto" }}>
+            {recipes.map((r) => (
+              <div key={r.id} style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px" }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, color: "#2A3324", marginBottom: 10 }}>{r.name}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {CONTAINERS.map((c) => {
+                    const sel = selections[`${r.id}:${c.key}`];
+                    return (
+                      <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 68, flexShrink: 0, color: "#5C6B54", fontSize: 12.5 }}>{c.shortLabel}</span>
+                        <select
+                          value={sel.itemCode}
+                          onChange={(e) => setSelection(r.id, c.key, { itemCode: e.target.value })}
+                          style={{ flex: 1, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                        >
+                          <option value="">Not mapped</option>
+                          {xeroItems.map((item) => (
+                            <option key={item.itemCode} value={item.itemCode}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                        {sel.itemCode && (
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={sel.unitCost}
+                            onChange={(e) => setSelection(r.id, c.key, { unitCost: e.target.value })}
+                            placeholder="Unit cost"
+                            style={{ width: 84, flexShrink: 0, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={submit}
+          disabled={saving || xeroItems.length === 0}
+          style={{
+            background: saving || xeroItems.length === 0 ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: saving || xeroItems.length === 0 ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            cursor: saving || xeroItems.length === 0 ? "default" : "pointer",
+          }}
+        >
+          {saving ? "Saving…" : `Save ${mappedCount} mapping${mappedCount !== 1 ? "s" : ""}`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ImportXeroContactsModal({ contacts, existingCustomers, onClose, onImport }) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(() => new Set());
+  const [importing, setImporting] = useState(false);
+  const q = query.trim().toLowerCase();
+
+  const alreadyLinkedIds = new Set(existingCustomers.map((c) => c.xeroContactId).filter(Boolean));
+  const importable = contacts.filter((c) => !alreadyLinkedIds.has(c.contactId));
+  const filtered = q ? importable.filter((c) => c.name.toLowerCase().includes(q)) : importable;
+
+  const toggle = (id) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const toggleAll = () => setSelected(selected.size === filtered.length ? new Set() : new Set(filtered.map((c) => c.contactId)));
+
+  const submit = async () => {
+    setImporting(true);
+    await onImport(contacts.filter((c) => selected.has(c.contactId)));
+    setImporting(false);
+    onClose();
+  };
+
+  return (
+    <Modal title="Import customers from Xero" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          Tick the Xero contacts to bring in as customers — each one's created already linked to Xero, ready for invoicing.
+          {existingCustomers.length > 0 && alreadyLinkedIds.size > 0 && ` ${alreadyLinkedIds.size} already linked contact${alreadyLinkedIds.size !== 1 ? "s" : ""} hidden below.`}
+        </div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search Xero contacts…"
+          style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+        />
+        {filtered.length > 0 && (
+          <button onClick={toggleAll} style={{ alignSelf: "flex-start", background: "none", border: "none", color: "#5C9A3C", fontSize: 12.5, cursor: "pointer", padding: 0 }}>
+            {selected.size === filtered.length ? "Deselect all" : `Select all (${filtered.length})`}
+          </button>
+        )}
+        {contacts.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>Loading Xero contacts…</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>{q ? `No contacts match "${query}".` : "Every Xero contact is already linked."}</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
+            {filtered.map((c) => (
+              <label
+                key={c.contactId}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324", cursor: "pointer" }}
+              >
+                <input type="checkbox" checked={selected.has(c.contactId)} onChange={() => toggle(c.contactId)} style={{ flexShrink: 0, width: 17, height: 17 }} />
+                {c.name}
+              </label>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={submit}
+          disabled={selected.size === 0 || importing}
+          style={{
+            background: selected.size === 0 || importing ? "#E8E4D4" : "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: selected.size === 0 || importing ? "#A3AC94" : "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            cursor: selected.size === 0 || importing ? "default" : "pointer",
+          }}
+        >
+          {importing ? "Importing…" : `Import ${selected.size} customer${selected.size !== 1 ? "s" : ""}`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function XeroContactLinkModal({ customer, contacts, onClose, onLink, onCreate }) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -13370,7 +13678,7 @@ function TrendChart({ points, valueKey, color, formatValue }) {
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, isOwner }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -14806,6 +15114,54 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {(["Brite Tank", "Aging", "Packaged"].includes(batch.stage) || (batch.sensoryScores || []).length > 0) && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Sensory scores</div>
+            <button
+              onClick={onOpenSensoryScore}
+              style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+            >
+              + Score this batch
+            </button>
+          </div>
+          {(batch.sensoryScores || []).length === 0 ? (
+            <div style={{ color: "#9BA88A", fontSize: 13 }}>No scores yet — a few tasters scoring the same batch builds a real picture of consistency over time.</div>
+          ) : (
+            <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+                {SENSORY_CATEGORIES.map((c) => {
+                  const values = batch.sensoryScores.map((s) => s.scores?.[c.key]).filter((v) => v != null);
+                  const avg = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : null;
+                  return (
+                    <div key={c.key} style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "8px 12px", minWidth: 80 }}>
+                      <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{c.label}</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#2A3324" }}>{avg != null ? avg.toFixed(1) : "—"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[...batch.sensoryScores].reverse().map((s) => (
+                  <div key={s.id} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ color: "#2A3324", fontSize: 13, fontWeight: 600 }}>{s.tasterName}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A" }}>{s.date}</span>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, color: "#5C6B54", fontSize: 12 }}>
+                      {SENSORY_CATEGORIES.map((c) => (
+                        <span key={c.key}>{c.label}: {s.scores?.[c.key] ?? "—"}</span>
+                      ))}
+                    </div>
+                    {s.notes && <div style={{ color: "#2A3324", fontSize: 13, lineHeight: 1.4, marginTop: 6 }}>{s.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -20874,7 +21230,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-248";
+const APP_VERSION = "2026-08-03-250";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21700,6 +22056,7 @@ function TankLogApp() {
   const [showMockRecallModal, setShowMockRecallModal] = useState(false);
   const [showInternalAuditModal, setShowInternalAuditModal] = useState(false);
   const [showTastingLog, setShowTastingLog] = useState(false);
+  const [showSensoryScore, setShowSensoryScore] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [showHarvestYeast, setShowHarvestYeast] = useState(false);
   const [addingIngredientToTank, setAddingIngredientToTank] = useState(null);
@@ -21979,6 +22336,8 @@ function TankLogApp() {
   const [showAddKegs, setShowAddKegs] = useState(false);
   const [deleteKegTarget, setDeleteKegTarget] = useState(null);
   const [reorderItem, setReorderItem] = useState(null);
+  const [showImportXeroContacts, setShowImportXeroContacts] = useState(false);
+  const [showXeroProductMapping, setShowXeroProductMapping] = useState(false);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
   const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
@@ -22582,6 +22941,52 @@ function TankLogApp() {
     setXeroContacts(data.contacts || []);
   };
 
+  const openXeroContactImport = async () => {
+    setShowImportXeroContacts(true);
+    const data = await callXeroApi("listContacts");
+    if (data.error) {
+      showToast("error", "Couldn't load Xero contacts — check your Xero connection.");
+      setShowImportXeroContacts(false);
+      return;
+    }
+    setXeroContacts(data.contacts || []);
+  };
+
+  const openXeroProductMapping = async () => {
+    setShowXeroProductMapping(true);
+    const data = await callXeroApi("listItems");
+    if (data.error) {
+      showToast("error", "Couldn't load Xero items — check your Xero connection.");
+      setShowXeroProductMapping(false);
+      return;
+    }
+    setXeroItems(data.items || []);
+  };
+
+  // Creates a new customer per selected Xero contact, already linked —
+  // no separate link step needed afterward. Continues past any single
+  // failure so one bad row doesn't block the rest of the batch.
+  const importXeroContacts = async (contacts) => {
+    let successCount = 0;
+    const newCustomers = [];
+    for (const c of contacts) {
+      const payload = {
+        name: c.name,
+        email: c.email || c.emailAddress || null,
+        xeroContactId: c.contactId,
+        xeroContactName: c.name,
+      };
+      const row = customerToRow(payload, profile.companyId);
+      delete row.id;
+      const { data, error } = await supabase.from("customers").insert(row).select().single();
+      if (error) { showToast("error", `Couldn't import ${c.name}.`); continue; }
+      newCustomers.push(rowToCustomer(data));
+      successCount++;
+    }
+    setCustomers((prev) => [...prev, ...newCustomers].sort((a, b) => a.name.localeCompare(b.name)));
+    showToast("success", `${successCount} customer${successCount !== 1 ? "s" : ""} imported from Xero.`);
+  };
+
   const linkCustomerToXero = async (customerId, xeroContactId, xeroContactName) => {
     const { error } = await supabase
       .from("customers")
@@ -22673,7 +23078,9 @@ function TankLogApp() {
     setXeroSettings({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
   };
 
-  const productKeyFor = (batchName, containerKey) => `${batchName.trim().toLowerCase()}::${containerKey}`;
+  // productKeyFor moved to a global, top-level function so it can also be
+  // used by the Xero product mapping modal, which lives outside this
+  // component — see near CONTAINERS.
 
   const postPackagingLineToXero = async (batch, mapping, qty) => {
     const result = await callXeroApi("postStock", {
@@ -22743,6 +23150,29 @@ function TankLogApp() {
       if (mapping) await postPackagingLineToXero(batch, mapping, line.qty);
     }
     setXeroMappingQueue(null);
+  };
+
+  // Same upsert as confirmXeroMappings, but for the proactive recipe
+  // mapping flow — no actual packaging event happened, so there's
+  // nothing to post to Xero yet, just the mapping itself for next time.
+  const saveXeroProductMappings = async (lines) => {
+    const newMappings = [];
+    for (const line of lines) {
+      const record = {
+        id: uid(),
+        company_id: profile.companyId,
+        product_key: line.productKey,
+        product_label: line.productLabel,
+        xero_item_code: line.itemCode,
+        xero_item_name: line.itemName,
+        unit_cost: Number(line.unitCost) || 0,
+      };
+      const { error } = await supabase.from("xero_item_mappings").upsert(record, { onConflict: "company_id,product_key" });
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); continue; }
+      newMappings.push(record);
+    }
+    setXeroItemMappings((prev) => [...prev.filter((m) => !newMappings.some((n) => n.product_key === m.product_key)), ...newMappings]);
+    showToast("success", `${newMappings.length} mapping${newMappings.length !== 1 ? "s" : ""} saved.`);
   };
 
   const completeStockTake = async (lines) => {
@@ -24370,6 +24800,17 @@ function TankLogApp() {
     showToast("success", "Tasting note saved.");
   };
 
+  const addSensoryScore = async (id, entry) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const newEntry = { id: uid(), ...entry };
+    const sensoryScores = [...(batch.sensoryScores || []), newEntry];
+    const { error } = await supabase.from("batches").update({ sensory_scores: sensoryScores }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, sensoryScores } : b)));
+    showToast("success", "Score saved.");
+  };
+
   const addVolumeTopup = async (id, entry) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
@@ -25618,7 +26059,7 @@ function TankLogApp() {
             )}
 
             {!loadingData && view === "customers" && !selectedCustomerId && (
-              <CustomersView customers={customers} onOpen={setSelectedCustomerId} />
+              <CustomersView customers={customers} onOpen={setSelectedCustomerId} onImportXero={xeroConnection ? openXeroContactImport : undefined} />
             )}
 
             {!loadingData && view === "salesOrders" && !selectedSalesOrderId && (
@@ -25791,6 +26232,14 @@ function TankLogApp() {
               );
               return (
                 <>
+                  {xeroConnection && (
+                    <button
+                      onClick={openXeroProductMapping}
+                      style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: 10, display: "block" }}
+                    >
+                      Map recipes to Xero items
+                    </button>
+                  )}
                   <input
                     data-tour="page-recipes-search"
                     type="text"
@@ -26570,6 +27019,7 @@ function TankLogApp() {
             onAddNote={addBatchNote}
             onDeleteNote={deleteBatchNote}
             onOpenTastingLog={() => setShowTastingLog(true)}
+            onOpenSensoryScore={() => setShowSensoryScore(true)}
             onSetStillFermenting={setStillFermenting}
             onUpdateTankSettings={updateTankSettings}
             onLogDump={logDump}
@@ -26586,6 +27036,12 @@ function TankLogApp() {
           <TastingLogModal
             onClose={() => setShowTastingLog(false)}
             onSave={(entry) => addTastingNote(selected.id, entry)}
+          />
+        )}
+        {showSensoryScore && selected && (
+          <SensoryScoreModal
+            onClose={() => setShowSensoryScore(false)}
+            onSave={(entry) => addSensoryScore(selected.id, entry)}
           />
         )}
         {showTopUp && selected && (
@@ -26976,6 +27432,23 @@ function TankLogApp() {
           onClose={() => setXeroContactLinkTarget(null)}
           onLink={linkCustomerToXero}
           onCreate={createXeroContactForCustomer}
+        />
+      )}
+      {showImportXeroContacts && (
+        <ImportXeroContactsModal
+          contacts={xeroContacts}
+          existingCustomers={customers}
+          onClose={() => setShowImportXeroContacts(false)}
+          onImport={importXeroContacts}
+        />
+      )}
+      {showXeroProductMapping && (
+        <XeroProductMappingModal
+          recipes={activeRecipesByFamily(recipes)}
+          xeroItems={xeroItems}
+          existingMappings={xeroItemMappings}
+          onClose={() => setShowXeroProductMapping(false)}
+          onSave={saveXeroProductMappings}
         />
       )}
       {showStockTake && (
