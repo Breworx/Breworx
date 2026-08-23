@@ -19431,6 +19431,41 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
   );
 }
 
+// Lets Home show only what's actually useful day to day — hides the
+// informational sections, never the time-sensitive ones (today's tasks,
+// reminders, the tank wall itself stay put regardless), so there's no
+// way to accidentally hide something that actually needs seeing.
+function CustomizeHomeModal({ hiddenSections, onToggle, onClose }) {
+  const sections = [
+    { key: "upcomingBrews", label: "Upcoming brews", description: "The strip showing scheduled brews ahead of time" },
+    { key: "recentlyViewed", label: "Recently viewed", description: "Batches you've opened recently" },
+    { key: "recentActivity", label: "Recent activity", description: "A log of what's changed lately" },
+    { key: "needsAttention", label: "Needs attention", description: "Low stock and purchase orders awaiting delivery" },
+  ];
+
+  return (
+    <Modal title="Customize Home" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          Choose which sections show on Home. This is saved on this device only, so it won't affect anyone else who logs in here.
+        </div>
+        {sections.map((s) => {
+          const hidden = hiddenSections.includes(s.key);
+          return (
+            <label key={s.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer" }}>
+              <div>
+                <div style={{ color: "#2A3324", fontSize: 14 }}>{s.label}</div>
+                <div style={{ color: "#9BA88A", fontSize: 12 }}>{s.description}</div>
+              </div>
+              <input type="checkbox" checked={!hidden} onChange={() => onToggle(s.key)} style={{ flexShrink: 0, width: 18, height: 18 }} />
+            </label>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
 function HomeView({
   companyName,
   companyLogo,
@@ -19517,6 +19552,23 @@ function HomeView({
       return false;
     }
   });
+  const [hiddenHomeSections, setHiddenHomeSections] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("brewpoint-hidden-home-sections") || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [showCustomizeHome, setShowCustomizeHome] = useState(false);
+  const toggleHomeSection = (key) => {
+    setHiddenHomeSections((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      try {
+        localStorage.setItem("brewpoint-hidden-home-sections", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
   const dismissSetup = () => {
     setSetupDismissed(true);
     try {
@@ -19533,6 +19585,12 @@ function HomeView({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <button
+        onClick={() => setShowCustomizeHome(true)}
+        style={{ alignSelf: "flex-end", background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0, marginBottom: -14 }}
+      >
+        Customize
+      </button>
       <FirstVisitTip tipKey="home">
         Welcome to Brewpoint. This Home screen is your at-a-glance view — your tanks and what's in them, tasks that need doing, and anything running low. Use the checklist below to get set up, and check out Production in the menu when you're ready to schedule brews ahead of time.
       </FirstVisitTip>
@@ -19567,7 +19625,7 @@ function HomeView({
         )}
       </div>
 
-      {upcomingScheduled.length > 0 && (
+      {upcomingScheduled.length > 0 && !hiddenHomeSections.includes("upcomingBrews") && (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
             <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Upcoming brews</span>
@@ -19894,7 +19952,7 @@ function HomeView({
         </>
       )}
 
-      {recentBatches.length > 0 && (
+      {recentBatches.length > 0 && !hiddenHomeSections.includes("recentlyViewed") && (
         <div>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Recently viewed
@@ -19983,7 +20041,7 @@ function HomeView({
         </div>
       )}
 
-      {activityLog.length > 0 && (
+      {activityLog.length > 0 && !hiddenHomeSections.includes("recentActivity") && (
         <div>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Recent activity
@@ -20211,7 +20269,7 @@ function HomeView({
         </div>
       )}
 
-      {(lowStock.length > 0 || openOrders.length > 0) && (
+      {(lowStock.length > 0 || openOrders.length > 0) && !hiddenHomeSections.includes("needsAttention") && (
         <div>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
             Needs attention
@@ -20280,6 +20338,9 @@ function HomeView({
         <div style={{ color: "#9BA88A", fontSize: 13.5, padding: "20px 4px" }}>
           Nothing brewing yet — head to Batches to start your first batch.
         </div>
+      )}
+      {showCustomizeHome && (
+        <CustomizeHomeModal hiddenSections={hiddenHomeSections} onToggle={toggleHomeSection} onClose={() => setShowCustomizeHome(false)} />
       )}
     </div>
   );
@@ -20813,7 +20874,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-246";
+const APP_VERSION = "2026-08-03-247";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
