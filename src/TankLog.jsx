@@ -20336,7 +20336,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-241";
+const APP_VERSION = "2026-08-03-242";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24311,7 +24311,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
