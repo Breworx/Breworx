@@ -4082,6 +4082,60 @@ function CalibrationModal({ onClose, onSave }) {
   );
 }
 
+// General preventive maintenance — pump servicing, boiler checks, that
+// kind of thing. Deliberately separate from calibration above, which is
+// a food-safety accuracy requirement, not equipment upkeep — same
+// underlying record type, different purpose.
+function MaintenanceModal({ onClose, onSave }) {
+  const [equipmentName, setEquipmentName] = useState("");
+  const [date, setDate] = useState(today());
+  const [workDone, setWorkDone] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [completedBy, setCompletedBy] = useState("");
+
+  const submit = () => {
+    if (!equipmentName.trim() || !completedBy.trim()) return;
+    onSave({
+      category: "maintenance",
+      date,
+      equipmentName: equipmentName.trim(),
+      result: workDone.trim(),
+      dueDate: dueDate || null,
+      completedBy: completedBy.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log equipment maintenance" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <TextField label="Equipment (e.g. mash pump, glycol chiller, boiler)" value={equipmentName} onChange={setEquipmentName} />
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <TextField label="Work done (e.g. serviced, seals replaced)" value={workDone} onChange={setWorkDone} />
+        <TextField label="Next service due (optional)" type="date" value={dueDate} onChange={setDueDate} />
+        <TextField label="Completed by (required)" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
+        <button
+          onClick={submit}
+          style={{
+            background: "#5C9A3C",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: "#16191A",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            letterSpacing: "0.03em",
+            cursor: "pointer",
+          }}
+        >
+          Save maintenance record
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function TrainingModal({ onClose, onSave, existingRecords }) {
   const [staffName, setStaffName] = useState("");
   const [staffFocused, setStaffFocused] = useState(false);
@@ -15760,6 +15814,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   const categoryLabel = {
     checklist: "Checklist",
     calibration: "Calibration",
+    maintenance: "Equipment maintenance",
     training: "Training",
     water: "Water test",
     recall: "Mock recall",
@@ -15871,7 +15926,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit, onLogVerifierVisit, onLogComplaint }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartMaintenance, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit, onLogVerifierVisit, onLogComplaint }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -15879,6 +15934,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
   const categoryLabel = {
     checklist: "Checklist",
     calibration: "Calibration",
+    maintenance: "Equipment maintenance",
     training: "Training",
     water: "Water test",
     recall: "Mock recall",
@@ -15950,6 +16006,15 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
     });
   const overdueCalibrations = Object.values(latestCalibrationByEquipment).filter((r) => r.dueDate && r.dueDate < today());
 
+  const latestMaintenanceByEquipment = {};
+  records
+    .filter((r) => r.category === "maintenance" && r.equipmentName)
+    .forEach((r) => {
+      const existing = latestMaintenanceByEquipment[r.equipmentName];
+      if (!existing || r.date > existing.date) latestMaintenanceByEquipment[r.equipmentName] = r;
+    });
+  const overdueMaintenance = Object.values(latestMaintenanceByEquipment).filter((r) => r.dueDate && r.dueDate < today());
+
   const latestContractorVisit = records
     .filter((r) => r.category === "Pest control — contractor visit")
     .sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -16001,7 +16066,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
   const latestWaterTest = records.filter((r) => r.category === "water").sort((a, b) => b.date.localeCompare(a.date))[0];
   const waterTestOverdue = !latestWaterTest || daysBetween(latestWaterTest.date, today()) > 91;
 
-  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0) + overduePestStations.length + staffDueForRefresher.length + (waterTestOverdue ? 1 : 0) + (verifierVisitOverdue ? 1 : 0);
+  const totalOpenItems = overdueChecklists.length + openCorrectiveActions.length + overdueCalibrations.length + overdueMaintenance.length + (contractorVisitOverdue ? 1 : 0) + (mockRecallOverdue ? 1 : 0) + (internalAuditOverdue ? 1 : 0) + overduePestStations.length + staffDueForRefresher.length + (waterTestOverdue ? 1 : 0) + (verifierVisitOverdue ? 1 : 0);
 
   return (
     <>
@@ -16036,6 +16101,16 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
               >
                 <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{r.equipmentName} calibration overdue</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {r.dueDate}</span>
+              </button>
+            ))}
+            {overdueMaintenance.map((r) => (
+              <button
+                key={r.equipmentName}
+                onClick={() => onStartMaintenance()}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{r.equipmentName} maintenance overdue</span>
                 <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>was due {r.dueDate}</span>
               </button>
             ))}
@@ -16232,6 +16307,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 22 }}>
         <button onClick={onStartCalibration} style={secondaryBtnStyle}>Log calibration</button>
+        <button onClick={onStartMaintenance} style={secondaryBtnStyle}>Log equipment maintenance</button>
         <button onClick={onStartTraining} style={secondaryBtnStyle}>Staff training</button>
         <button onClick={() => onStartNote("water", "Log water test")} style={secondaryBtnStyle}>Water test</button>
         <button onClick={onStartMockRecall} style={secondaryBtnStyle}>Mock recall</button>
@@ -19882,11 +19958,21 @@ function HomeView({
     });
   const overdueCalibrations = Object.values(calibrationByEquipment).filter((r) => r.dueDate && r.dueDate < today());
 
+  const maintenanceByEquipment = {};
+  foodSafetyRecords
+    .filter((r) => r.category === "maintenance" && r.equipmentName)
+    .forEach((r) => {
+      const existing = maintenanceByEquipment[r.equipmentName];
+      if (!existing || r.date > existing.date) maintenanceByEquipment[r.equipmentName] = r;
+    });
+  const overdueMaintenance = Object.values(maintenanceByEquipment).filter((r) => r.dueDate && r.dueDate < today());
+
   const foodSafetyTasks = [
     ...(!dailyDone ? [{ label: "Daily food safety checklist not done today" }] : []),
     ...(!weeklyDone ? [{ label: "Weekly food safety checklist not done in the last 7 days" }] : []),
     ...(!monthlyDone ? [{ label: "Monthly food safety checklist not done in the last month" }] : []),
     ...overdueCalibrations.map((r) => ({ label: `${r.equipmentName} calibration overdue (was due ${r.dueDate})` })),
+    ...overdueMaintenance.map((r) => ({ label: `${r.equipmentName} maintenance overdue (was due ${r.dueDate})` })),
   ];
 
   const totalTasks = brewTasks.length + foodSafetyTasks.length;
@@ -21230,7 +21316,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-250";
+const APP_VERSION = "2026-08-03-251";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22048,6 +22134,7 @@ function TankLogApp() {
   const [foodSafetyRecords, setFoodSafetyRecords] = useState([]);
   const [activeChecklistTemplate, setActiveChecklistTemplate] = useState(null);
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [showPestStationsModal, setShowPestStationsModal] = useState(false);
   const [showLogPestCheckModal, setShowLogPestCheckModal] = useState(false);
   const [showContractorVisitModal, setShowContractorVisitModal] = useState(false);
@@ -25473,6 +25560,7 @@ function TankLogApp() {
                   records={foodSafetyRecords}
                   onStartChecklist={setActiveChecklistTemplate}
                   onStartCalibration={() => setShowCalibrationModal(true)}
+                  onStartMaintenance={() => setShowMaintenanceModal(true)}
                   onStartTraining={() => setShowTrainingModal(true)}
                   onStartIllness={() => setShowIllnessModal(true)}
                   onStartNote={(category, title) => setActiveNoteModal({ category, title })}
@@ -27515,6 +27603,9 @@ function TankLogApp() {
       )}
       {showCalibrationModal && (
         <CalibrationModal onClose={() => setShowCalibrationModal(false)} onSave={addFoodSafetyRecord} />
+      )}
+      {showMaintenanceModal && (
+        <MaintenanceModal onClose={() => setShowMaintenanceModal(false)} onSave={addFoodSafetyRecord} />
       )}
       {showTrainingModal && (
         <TrainingModal onClose={() => setShowTrainingModal(false)} onSave={addFoodSafetyRecord} existingRecords={foodSafetyRecords} />
