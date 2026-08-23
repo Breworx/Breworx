@@ -18795,7 +18795,11 @@ function IngredientsNeededModal({ batches, recipes, inventory, onClose, onOpenPO
   );
 }
 
-function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled, reminders, onOpenDay, recipes, inventory, onCheckIngredients }) {
+function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled, reminders, onOpenDay, recipes, inventory, onCheckIngredients, onReschedule }) {
+  const [dragState, setDragState] = useState(null); // { batchId, pointerId, startX, deltaX }
+  const dragStateRef = useRef(null);
+  dragStateRef.current = dragState;
+  const justDraggedRef = useRef(false);
   const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
   const daysBack = 7;
   const daysForward = 35;
@@ -18988,14 +18992,43 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                       const endIdx = Math.min(totalDays - 1, dayIndex(end));
                       const isScheduled = batch.startDate > today();
                       const blocker = isScheduled ? conflictFor(occ, { batch, start, end }) : null;
+                      const isDragging = dragState && dragState.batchId === batch.id;
+                      const snappedDeltaDays = isDragging ? Math.round(dragState.deltaX / dayWidth) : 0;
+                      const dragOffsetPx = snappedDeltaDays * dayWidth;
+
+                      const handlePointerDown = (e) => {
+                        if (!isScheduled) return;
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        setDragState({ batchId: batch.id, pointerId: e.pointerId, startX: e.clientX, deltaX: 0 });
+                      };
+                      const handlePointerMove = (e) => {
+                        if (!dragStateRef.current || dragStateRef.current.batchId !== batch.id || dragStateRef.current.pointerId !== e.pointerId) return;
+                        setDragState((prev) => (prev ? { ...prev, deltaX: e.clientX - prev.startX } : prev));
+                      };
+                      const handlePointerUp = (e) => {
+                        const current = dragStateRef.current;
+                        if (!current || current.batchId !== batch.id || current.pointerId !== e.pointerId) return;
+                        const dayOffset = Math.round(current.deltaX / dayWidth);
+                        if (Math.abs(current.deltaX) > 5) justDraggedRef.current = true;
+                        setDragState(null);
+                        if (dayOffset !== 0) onReschedule(batch, addDays(batch.startDate, dayOffset));
+                      };
+
                       return (
                         <button
                           key={batch.id}
-                          onClick={() => (isScheduled ? onEditScheduled(batch.id) : onOpenBatch(batch.id))}
-                          title={blocker ? `Can't start until ${blocker.name} is out of this tank` : undefined}
+                          onClick={() => {
+                            if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+                            isScheduled ? onEditScheduled(batch.id) : onOpenBatch(batch.id);
+                          }}
+                          onPointerDown={handlePointerDown}
+                          onPointerMove={handlePointerMove}
+                          onPointerUp={handlePointerUp}
+                          onPointerCancel={handlePointerUp}
+                          title={blocker ? `Can't start until ${blocker.name} is out of this tank` : isScheduled ? "Drag to reschedule" : undefined}
                           style={{
                             position: "absolute",
-                            left: startIdx * dayWidth + 2,
+                            left: startIdx * dayWidth + 2 + dragOffsetPx,
                             width: (endIdx - startIdx + 1) * dayWidth - 4,
                             top: 7 + lane * 40,
                             height: 34,
@@ -19003,11 +19036,14 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                             opacity: isEstimate ? 0.6 : 1,
                             border: blocker ? "1px solid #B5502F" : isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
                             borderRadius: 5,
-                            cursor: "pointer",
+                            cursor: isScheduled ? "grab" : "pointer",
                             display: "flex",
                             alignItems: "center",
                             padding: "0 8px",
                             overflow: "hidden",
+                            touchAction: isScheduled ? "none" : "auto",
+                            zIndex: isDragging ? 5 : 1,
+                            boxShadow: isDragging ? "0 4px 10px rgba(0,0,0,0.25)" : "none",
                           }}
                         >
                           {blocker && <AlertTriangle size={11} color="#7A3E1D" style={{ flexShrink: 0, marginRight: 4 }} />}
@@ -20765,7 +20801,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-244";
+const APP_VERSION = "2026-08-03-245";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -25844,6 +25880,7 @@ function TankLogApp() {
                   recipes={recipes}
                   inventory={inventory}
                   onCheckIngredients={() => setShowIngredientsNeeded(true)}
+                  onReschedule={(batch, newStartDate) => updateScheduledBatch(batch.id, { ...batch, startDate: newStartDate })}
                 />
               </>
             )}
