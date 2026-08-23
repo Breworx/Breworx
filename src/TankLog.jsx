@@ -6477,6 +6477,65 @@ function AddBrewDayModal({ onClose, onSave, mergeableBatches, onMerge, targetBat
   );
 }
 
+// A searchable recipe picker — type to filter, tap to select. Used
+// anywhere a plain dropdown of recipes would otherwise force scrolling
+// through the full list to find one.
+function RecipeSearchField({ recipes, value, onSelect, label = "Recipe (optional)" }) {
+  const current = recipes.find((r) => r.id === value);
+  const [query, setQuery] = useState(current ? `${current.name} (${current.style})` : "");
+  const [focused, setFocused] = useState(false);
+  const matches = query.trim().length === 0 ? recipes : recipes.filter((r) => r.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5, position: "relative" }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>{label}</span>
+      <div style={{ position: "relative" }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (value) onSelect("");
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder="Search recipes…"
+          style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", paddingRight: value ? 32 : 10, color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+        />
+        {value && (
+          <button
+            onMouseDown={() => {
+              onSelect("");
+              setQuery("");
+            }}
+            style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4 }}
+            aria-label="Clear recipe"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {focused && matches.length > 0 && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 220, overflowY: "auto" }}>
+          {matches.map((r) => (
+            <button
+              key={r.id}
+              onMouseDown={() => {
+                onSelect(r.id);
+                setQuery(`${r.name} (${r.style})`);
+                setFocused(false);
+              }}
+              style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "8px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+            >
+              {r.name} <span style={{ color: "#9BA88A" }}>({r.style})</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
 function AddSplitTankIngredientModal({ tankName, inventory, onClose, onSave }) {
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
@@ -19836,10 +19895,12 @@ function IngredientsNeededModal({ batches, recipes, inventory, onClose, onOpenPO
 }
 
 function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, onEditScheduled, reminders, onOpenDay, recipes, inventory, onCheckIngredients, onReschedule }) {
-  const [dragState, setDragState] = useState(null); // { batchId, pointerId, startX, deltaX }
+  const [dragState, setDragState] = useState(null); // { batchId, pointerId, startX, deltaX, startY, deltaY, hoveredTankId }
   const dragStateRef = useRef(null);
   dragStateRef.current = dragState;
   const justDraggedRef = useRef(false);
+  const rowRefs = useRef({});
+  const dragRowRectsRef = useRef(null);
   const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
   const daysBack = 7;
   const daysForward = 35;
@@ -19851,7 +19912,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
 
   const occupancyForTank = (tankId) =>
     batches
-      .filter((b) => batchTankIds(b).includes(tankId))
+      .filter((b) => batchTankIds(b).includes(tankId) && b.stage !== "Aging")
       .map((b) => {
         const events = packagingEvents(b);
         const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
@@ -19915,7 +19976,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
         <div style={{ overflowX: "auto", paddingBottom: 8 }}>
           <div style={{ minWidth: totalDays * dayWidth + 120, width: "fit-content" }}>
             <div style={{ display: "flex" }}>
-              <div style={{ width: 120, flexShrink: 0 }} />
+              <div style={{ width: 120, flexShrink: 0, position: "sticky", left: 0, zIndex: 3, background: "#F5F1E4" }} />
               {dayList.map((d) => {
                 const isToday = d === today();
                 const dt = new Date(d + "T00:00:00");
@@ -19933,7 +19994,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                     }}
                   >
                     <div style={{ fontSize: 8.5, color: isToday ? "#FFFFFF" : "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>
-                      {dt.toLocaleDateString(undefined, { month: "short" }).toUpperCase()}
+                      {dt.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase()}
                     </div>
                     <div style={{ fontSize: 12, color: isToday ? "#FFFFFF" : "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>
                       {dt.getDate()}
@@ -19944,7 +20005,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
             </div>
 
             <div style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", borderBottom: "2px solid #DDE0C8", minHeight: 40 }}>
-              <div style={{ width: 120, flexShrink: 0, paddingRight: 10 }}>
+              <div style={{ width: 120, flexShrink: 0, paddingRight: 10, position: "sticky", left: 0, zIndex: 3, background: "#F5F1E4" }}>
                 <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#5C6B54" }}>Reminders</div>
               </div>
               <div style={{ display: "flex" }}>
@@ -19992,8 +20053,18 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
               const laneCount = occ.length > 0 ? Math.max(...occ.map((o) => o.lane)) + 1 : 1;
               const rowHeight = Math.max(48, laneCount * 40 + 8);
               return (
-                <div key={tank.id} style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", minHeight: rowHeight }}>
-                  <div style={{ width: 120, flexShrink: 0, paddingRight: 10 }}>
+                <div
+                  key={tank.id}
+                  ref={(el) => (rowRefs.current[tank.id] = el)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    borderTop: "1px solid #EBE8D6",
+                    minHeight: rowHeight,
+                    background: dragState && dragState.canRetank && dragState.hoveredTankId === tank.id ? "rgba(92, 154, 60, 0.1)" : "transparent",
+                  }}
+                >
+                  <div style={{ width: 120, flexShrink: 0, paddingRight: 10, position: "sticky", left: 0, zIndex: 3, background: "#F5F1E4" }}>
                     <div
                       style={{
                         fontFamily: "'Oswald', sans-serif",
@@ -20039,19 +20110,45 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                       const handlePointerDown = (e) => {
                         if (!isScheduled) return;
                         e.currentTarget.setPointerCapture(e.pointerId);
-                        setDragState({ batchId: batch.id, pointerId: e.pointerId, startX: e.clientX, deltaX: 0 });
+                        dragRowRectsRef.current = calendarTanks.map((t) => {
+                          const el = rowRefs.current[t.id];
+                          return el ? { tankId: t.id, rect: el.getBoundingClientRect() } : null;
+                        }).filter(Boolean);
+                        setDragState({ batchId: batch.id, pointerId: e.pointerId, startX: e.clientX, deltaX: 0, startY: e.clientY, deltaY: 0, hoveredTankId: tank.id, canRetank: !batch.splitTanks || batch.splitTanks.length === 0 });
                       };
                       const handlePointerMove = (e) => {
                         if (!dragStateRef.current || dragStateRef.current.batchId !== batch.id || dragStateRef.current.pointerId !== e.pointerId) return;
-                        setDragState((prev) => (prev ? { ...prev, deltaX: e.clientX - prev.startX } : prev));
+                        let hoveredTankId = dragStateRef.current.hoveredTankId;
+                        if (dragStateRef.current.canRetank && dragRowRectsRef.current) {
+                          for (const { tankId, rect } of dragRowRectsRef.current) {
+                            if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                              hoveredTankId = tankId;
+                              break;
+                            }
+                          }
+                        }
+                        setDragState((prev) => (prev ? { ...prev, deltaX: e.clientX - prev.startX, deltaY: e.clientY - prev.startY, hoveredTankId } : prev));
                       };
                       const handlePointerUp = (e) => {
                         const current = dragStateRef.current;
                         if (!current || current.batchId !== batch.id || current.pointerId !== e.pointerId) return;
                         const dayOffset = Math.round(current.deltaX / dayWidth);
-                        if (Math.abs(current.deltaX) > 5) justDraggedRef.current = true;
+                        const newTankId = current.canRetank && current.hoveredTankId !== tank.id ? current.hoveredTankId : null;
+                        if (Math.abs(current.deltaX) > 5 || Math.abs(current.deltaY) > 5) justDraggedRef.current = true;
+                        dragRowRectsRef.current = null;
                         setDragState(null);
-                        if (dayOffset !== 0) onReschedule(batch, addDays(batch.startDate, dayOffset));
+                        if (dayOffset !== 0 || newTankId) {
+                          const patch = {};
+                          if (dayOffset !== 0) patch.startDate = addDays(batch.startDate, dayOffset);
+                          if (newTankId) {
+                            const newTank = calendarTanks.find((t) => t.id === newTankId);
+                            if (newTank) {
+                              patch.tankId = newTank.id;
+                              patch.tankName = newTank.name;
+                            }
+                          }
+                          onReschedule(batch, patch);
+                        }
                       };
 
                       return (
@@ -20065,13 +20162,14 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                           onPointerMove={handlePointerMove}
                           onPointerUp={handlePointerUp}
                           onPointerCancel={handlePointerUp}
-                          title={blocker ? `Can't start until ${blocker.name} is out of this tank` : isScheduled ? "Drag to reschedule" : undefined}
+                          title={blocker ? `Can't start until ${blocker.name} is out of this tank` : isScheduled ? "Drag to reschedule — drag up or down to move to a different tank" : undefined}
                           style={{
                             position: "absolute",
                             left: startIdx * dayWidth + 2 + dragOffsetPx,
                             width: (endIdx - startIdx + 1) * dayWidth - 4,
                             top: 7 + lane * 40,
                             height: 34,
+                            transform: isDragging ? `translateY(${dragState.deltaY}px)` : undefined,
                             background: blocker ? "#E3B37A" : isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
                             opacity: isEstimate ? 0.6 : 1,
                             border: blocker ? "1px solid #B5502F" : isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
@@ -20280,21 +20378,7 @@ function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave, onCre
           </div>
         )}
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Recipe (optional)</span>
-          <select
-            value={recipeId}
-            onChange={(e) => applyRecipe(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
-          >
-            <option value="">No recipe</option>
-            {searchableRecipes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.style})
-              </option>
-            ))}
-          </select>
-        </label>
+        <RecipeSearchField recipes={searchableRecipes} value={recipeId} onSelect={applyRecipe} />
 
         <TextField label="Name" value={name} onChange={setName} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -21929,7 +22013,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-259";
+const APP_VERSION = "2026-08-03-260";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -27210,7 +27294,7 @@ function TankLogApp() {
                   recipes={recipes}
                   inventory={inventory}
                   onCheckIngredients={() => setShowIngredientsNeeded(true)}
-                  onReschedule={(batch, newStartDate) => updateScheduledBatch(batch.id, { ...batch, startDate: newStartDate })}
+                  onReschedule={(batch, patch) => updateScheduledBatch(batch.id, { ...batch, ...patch })}
                 />
               </>
             )}
