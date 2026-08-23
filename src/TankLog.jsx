@@ -19034,7 +19034,7 @@ function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleTank, on
                             width: (endIdx - startIdx + 1) * dayWidth - 4,
                             top: 7 + lane * 40,
                             height: 34,
-                            background: blocker ? "#E3A87A" : isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
+                            background: blocker ? "#E3B37A" : isScheduled ? "#C9BD98" : STAGE_COLOR[batch.stage] || "#5C9A3C",
                             opacity: isEstimate ? 0.6 : 1,
                             border: blocker ? "1px solid #B5502F" : isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
                             borderRadius: 5,
@@ -20874,7 +20874,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-247";
+const APP_VERSION = "2026-08-03-248";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
