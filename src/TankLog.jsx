@@ -1932,6 +1932,38 @@ function calcABV(og, fg) {
   return (og - fg) * 131.25;
 }
 
+// Checks a batch's actual measured OG/FG (from its own readings) against
+// its recipe's target range — the automatic half of quality control,
+// catching a batch that's drifted from spec even if nobody happened to
+// notice while logging the reading. OG is checked once fermentation has
+// genuinely started; FG only once it's likely finished (past Primary),
+// since a single early reading isn't a real final gravity yet.
+function batchSpecDeviations(batch, recipe) {
+  if (!recipe || !batch.readings || batch.readings.length === 0) return [];
+  const deviations = [];
+
+  const measuredOg = batch.readings[0]?.gravity;
+  if (measuredOg != null && recipe.og != null) {
+    const tolerance = recipe.ogTolerance ?? 0.003;
+    if (Math.abs(measuredOg - recipe.og) > tolerance) {
+      deviations.push({ metric: "OG", target: recipe.og, tolerance, actual: measuredOg, direction: measuredOg > recipe.og ? "high" : "low" });
+    }
+  }
+
+  const fermentationLikelyDone = ["Brite Tank", "Aging", "Packaged"].includes(batch.stage) || batch.readings.length >= 2;
+  if (fermentationLikelyDone) {
+    const measuredFg = batch.readings[batch.readings.length - 1]?.gravity;
+    if (measuredFg != null && recipe.fg != null) {
+      const tolerance = recipe.fgTolerance ?? 0.003;
+      if (Math.abs(measuredFg - recipe.fg) > tolerance) {
+        deviations.push({ metric: "FG", target: recipe.fg, tolerance, actual: measuredFg, direction: measuredFg > recipe.fg ? "high" : "low" });
+      }
+    }
+  }
+
+  return deviations;
+}
+
 // --- Water chemistry ---------------------------------------------------
 // ppm contributed per gram of salt dissolved per litre of water, derived
 // from each salt's molecular weight and ion content.
@@ -3395,6 +3427,73 @@ function SensoryScoreModal({ onClose, onSave }) {
           }}
         >
           Save score
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Objective, instrument-measured data — pH, dissolved oxygen, CO2
+// volumes — tracked alongside the sensory score above, not replacing
+// it. Any field can be left blank if that particular instrument wasn't
+// used for this reading.
+function LabMeasurementModal({ onClose, onSave }) {
+  const [date, setDate] = useState(today());
+  const [measuredBy, setMeasuredBy] = useState("");
+  const [ph, setPh] = useState("");
+  const [dissolvedOxygen, setDissolvedOxygen] = useState("");
+  const [co2Volumes, setCo2Volumes] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const canSubmit = measuredBy.trim() && (ph !== "" || dissolvedOxygen !== "" || co2Volumes !== "");
+
+  const submit = () => {
+    if (!canSubmit) return;
+    onSave({
+      date,
+      measuredBy: measuredBy.trim(),
+      ph: ph === "" ? null : Number(ph),
+      dissolvedOxygen: dissolvedOxygen === "" ? null : Number(dissolvedOxygen),
+      co2Volumes: co2Volumes === "" ? null : Number(co2Volumes),
+      notes: notes.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal title="Log lab measurement" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>Instrument readings — leave anything not measured blank.</div>
+        <TextField label="Date" type="date" value={date} onChange={setDate} />
+        <TextField label="Measured by (required)" value={measuredBy} onChange={setMeasuredBy} placeholder="Your name" />
+        <NumberField label="pH" value={ph} onChange={setPh} step="0.01" />
+        <NumberField label="Dissolved oxygen (ppb)" value={dissolvedOxygen} onChange={setDissolvedOxygen} step="1" />
+        <NumberField label="CO2 (volumes)" value={co2Volumes} onChange={setCo2Volumes} step="0.1" />
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Notes (optional)</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14, resize: "vertical" }}
+          />
+        </label>
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          style={{
+            background: canSubmit ? "#5C9A3C" : "#E8E4D4",
+            border: "none",
+            borderRadius: 5,
+            padding: "12px",
+            color: canSubmit ? "#16191A" : "#A3AC94",
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 500,
+            fontSize: 15,
+            cursor: canSubmit ? "pointer" : "default",
+          }}
+        >
+          Save measurement
         </button>
       </div>
     </Modal>
@@ -10286,6 +10385,8 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
   const [volume, setVolume] = useState(editingRecipe ? editingRecipe.volume : 20);
   const [og, setOg] = useState(editingRecipe ? editingRecipe.og : 1.05);
   const [fg, setFg] = useState(editingRecipe ? editingRecipe.fg : 1.01);
+  const [ogTolerance, setOgTolerance] = useState(editingRecipe?.ogTolerance ?? 0.003);
+  const [fgTolerance, setFgTolerance] = useState(editingRecipe?.fgTolerance ?? 0.003);
   const [ingredients, setIngredients] = useState(
     editingRecipe ? editingRecipe.ingredients.map((i) => ({ ...i })) : [{ id: uid(), name: "", category: "Grain", qty: 1, unit: "kg" }]
   );
@@ -10400,6 +10501,8 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
       volume: Number(volume) || 0,
       og: Number(og),
       fg: Number(fg),
+      ogTolerance: Number(ogTolerance) || 0.003,
+      fgTolerance: Number(fgTolerance) || 0.003,
       ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
       schedule: cleanSchedule,
       familyId: editingRecipe ? editingRecipe.familyId : null,
@@ -10541,8 +10644,13 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
           <NumberField label="Batch volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
           <NumberField label="Target OG" value={og} onChange={setOg} step="0.001" />
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
+          <NumberField label="OG tolerance (±)" value={ogTolerance} onChange={setOgTolerance} step="0.001" />
+          <NumberField label="FG tolerance (±)" value={fgTolerance} onChange={setFgTolerance} step="0.001" />
           <NumberField label="Boil time" value={boilTime} onChange={setBoilTime} step="5" suffix="min" />
           <NumberField label="Mash efficiency" value={efficiency} onChange={setEfficiency} step="1" suffix="%" />
+        </div>
+        <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: -8 }}>
+          A batch whose measured OG or FG falls outside this range shows up as a spec deviation in Quality Control.
         </div>
 
         <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px" }}>
@@ -11133,6 +11241,8 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                 volume: Number(volume) || 0,
                 og: Number(og),
                 fg: Number(fg),
+                ogTolerance: Number(ogTolerance) || 0.003,
+                fgTolerance: Number(fgTolerance) || 0.003,
                 ingredients: clean.map((l) => ({ ...l, name: l.name.trim(), qty: Number(l.qty) || 0 })),
                 schedule: cleanSchedule,
                 familyId: editingRecipe ? editingRecipe.familyId : null,
@@ -13991,8 +14101,41 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
 
   const approvedBatches = batches.filter((b) => b.qcApproval).sort((a, b) => (b.qcApproval.date || "").localeCompare(a.qcApproval.date || ""));
 
+  // Only recent, non-cancelled batches — an old batch from before a
+  // recipe's tolerance was even set shouldn't show up as a stale flag
+  // forever.
+  const specDeviations = batches
+    .filter((b) => b.stage !== "Cancelled")
+    .map((b) => {
+      const recipe = recipes.find((r) => r.id === b.recipeId);
+      const deviations = batchSpecDeviations(b, recipe);
+      return deviations.length > 0 ? { batch: b, deviations } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.batch.startDate || "").localeCompare(a.batch.startDate || ""));
+
   return (
     <div>
+      {specDeviations.length > 0 && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>Spec deviations</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {specDeviations.map(({ batch, deviations }) => (
+              <button
+                key={batch.id}
+                onClick={() => onOpenBatch(batch.id)}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+              >
+                <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{batch.name}</span>
+                <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {deviations.map((d) => `${d.metric} ${d.direction} (${d.actual.toFixed(3)} vs ${d.target.toFixed(3)}±${d.tolerance})`).join(", ")}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Consistency by recipe</div>
       </div>
@@ -14114,7 +14257,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, isOwner }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -15601,6 +15744,38 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           )}
         </div>
       )}
+
+      <div style={{ marginBottom: 26 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Lab measurements</div>
+          <button
+            onClick={onOpenLabMeasurement}
+            style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+          >
+            + Log a measurement
+          </button>
+        </div>
+        {(batch.labMeasurements || []).length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No lab measurements yet — pH, dissolved oxygen, or CO2 volumes, tracked separately from sensory scores.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[...batch.labMeasurements].reverse().map((m) => (
+              <div key={m.id} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: "#2A3324", fontSize: 13, fontWeight: 600 }}>{m.measuredBy}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A" }}>{m.date}</span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, color: "#5C6B54", fontSize: 12 }}>
+                  {m.ph != null && <span>pH: {m.ph}</span>}
+                  {m.dissolvedOxygen != null && <span>DO: {m.dissolvedOxygen} ppb</span>}
+                  {m.co2Volumes != null && <span>CO2: {m.co2Volumes} vol</span>}
+                </div>
+                {m.notes && <div style={{ color: "#2A3324", fontSize: 13, lineHeight: 1.4, marginTop: 6 }}>{m.notes}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {(["Brite Tank", "Aging", "Packaged"].includes(batch.stage) || batch.qcApproval) && (
         <div style={{ marginBottom: 26 }}>
@@ -21725,7 +21900,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-257";
+const APP_VERSION = "2026-08-03-258";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -22379,6 +22554,7 @@ function TankLogApp() {
   const [triangleTests, setTriangleTests] = useState([]);
   const [editingTriangleTest, setEditingTriangleTest] = useState(null);
   const [showQcApproval, setShowQcApproval] = useState(false);
+  const [showLabMeasurement, setShowLabMeasurement] = useState(false);
   const [editingMixedPackType, setEditingMixedPackType] = useState(null);
   const [showNewMixedPackType, setShowNewMixedPackType] = useState(false);
   const [assemblingMixedPackType, setAssemblingMixedPackType] = useState(null);
@@ -25352,6 +25528,17 @@ function TankLogApp() {
     showToast("success", "Score saved.");
   };
 
+  const addLabMeasurement = async (id, entry) => {
+    const batch = batches.find((b) => b.id === id);
+    if (!batch) return;
+    const newEntry = { id: uid(), ...entry };
+    const labMeasurements = [...(batch.labMeasurements || []), newEntry];
+    const { error } = await supabase.from("batches").update({ lab_measurements: labMeasurements }).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, labMeasurements } : b)));
+    showToast("success", "Measurement saved.");
+  };
+
   const saveQcApproval = async (id, approval) => {
     const { error } = await supabase.from("batches").update({ qc_approval: approval }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -27611,6 +27798,7 @@ function TankLogApp() {
             onOpenTastingLog={() => setShowTastingLog(true)}
             onOpenSensoryScore={() => setShowSensoryScore(true)}
             onOpenQcApproval={() => setShowQcApproval(true)}
+            onOpenLabMeasurement={() => setShowLabMeasurement(true)}
             onSetStillFermenting={setStillFermenting}
             onUpdateTankSettings={updateTankSettings}
             onLogDump={logDump}
@@ -27639,6 +27827,12 @@ function TankLogApp() {
           <QcApprovalModal
             onClose={() => setShowQcApproval(false)}
             onSave={(approval) => saveQcApproval(selected.id, approval)}
+          />
+        )}
+        {showLabMeasurement && selected && (
+          <LabMeasurementModal
+            onClose={() => setShowLabMeasurement(false)}
+            onSave={(entry) => addLabMeasurement(selected.id, entry)}
           />
         )}
         {showTopUp && selected && (
