@@ -8455,7 +8455,102 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
   );
 }
 
-function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogglePaid, onDelete, onRecordFulfillment }) {
+// A clean, professional document for a sales order — titled "Quote" while
+// still a Draft (nothing's been committed to yet), "Order Confirmation"
+// once it's Confirmed or further along. Gives wholesale accounts that
+// negotiate before committing something real to send, without needing a
+// separate quoting system — the same order just gets confirmed once
+// they agree, no re-entry.
+function PrintableOrderModal({ order, customer, companyName, onClose }) {
+  const total = salesOrderTotal(order);
+  const isQuote = order.status === "Draft";
+
+  return (
+    <div id="order-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto" }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #order-print, #order-print * { visibility: visible; }
+          #order-print { position: absolute; top: 0; left: 0; width: 100%; background: #FFFFFF; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
+        <button
+          onClick={onClose}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5 }}
+        >
+          <X size={16} /> Close
+        </button>
+        <button
+          onClick={() => window.print()}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+        >
+          Print / Save as PDF
+        </button>
+      </div>
+
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "36px 28px 60px", color: "#1A1F16" }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5C6B54" }}>
+          {companyName || "Brewery"}
+        </div>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 500, margin: "4px 0 6px" }}>
+          {isQuote ? "Quote" : "Order Confirmation"}
+        </h1>
+        <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 6 }}>
+          {order.orderNumber} · {order.orderDate}
+        </div>
+        {isQuote && (
+          <div style={{ fontSize: 12.5, color: "#9BA88A", marginBottom: 22 }}>
+            This is a quote, not a tax invoice — pricing may change if it isn't confirmed promptly.
+          </div>
+        )}
+        {!isQuote && <div style={{ marginBottom: 22 }} />}
+
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Billed to</div>
+          <div style={{ fontSize: 14 }}>{customer?.name || "—"}</div>
+          {customer?.email && <div style={{ fontSize: 13, color: "#5C6B54" }}>{customer.email}</div>}
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, marginBottom: 20 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #DDE0C8", textAlign: "left" }}>
+              <th style={{ padding: "6px 4px", fontWeight: 500, color: "#5C6B54" }}>Item</th>
+              <th style={{ padding: "6px 4px", fontWeight: 500, color: "#5C6B54", textAlign: "right" }}>Qty</th>
+              <th style={{ padding: "6px 4px", fontWeight: 500, color: "#5C6B54", textAlign: "right" }}>Price</th>
+              <th style={{ padding: "6px 4px", fontWeight: 500, color: "#5C6B54", textAlign: "right" }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(order.lines || []).map((l) => (
+              <tr key={l.id} style={{ borderBottom: "1px solid #EBE8D6" }}>
+                <td style={{ padding: "8px 4px" }}>{l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}</td>
+                <td style={{ padding: "8px 4px", textAlign: "right" }}>{l.qty}</td>
+                <td style={{ padding: "8px 4px", textAlign: "right" }}>${Number(l.unitPrice).toFixed(2)}</td>
+                <td style={{ padding: "8px 4px", textAlign: "right" }}>${(l.qty * l.unitPrice).toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+          <div style={{ fontSize: 16, fontFamily: "'JetBrains Mono', monospace" }}>Total: ${total.toFixed(2)}</div>
+        </div>
+
+        {order.notes && (
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Notes</div>
+            <div style={{ fontSize: 13, color: "#5C6B54" }}>{order.notes}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogglePaid, onDelete, onRecordFulfillment, onPrint }) {
   const total = salesOrderTotal(order);
   const nextStatus = order.status === "Draft" ? "Confirmed" : null;
   const canFulfill = order.status === "Confirmed" || order.status === "Partially fulfilled";
@@ -8533,6 +8628,14 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
           </button>
         </div>
       )}
+      <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+        <button
+          onClick={() => onPrint(order)}
+          style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" }}
+        >
+          <FileText size={14} /> {order.status === "Draft" ? "Print quote" : "Print / Save as PDF"}
+        </button>
+      </div>
       <div style={{ display: "flex", gap: 10 }}>
         {order.status !== "Cancelled" && order.status !== "Fulfilled" && (
           <button
@@ -20336,7 +20439,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-242";
+const APP_VERSION = "2026-08-03-243";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21431,6 +21534,7 @@ function TankLogApp() {
   }, [salesOrders]);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState(null);
   const [fulfillmentTarget, setFulfillmentTarget] = useState(null);
+  const [printOrderTarget, setPrintOrderTarget] = useState(null);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
   const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
@@ -26100,6 +26204,7 @@ function TankLogApp() {
             onTogglePaid={toggleSalesOrderPaid}
             onDelete={isOwner ? deleteSalesOrder : undefined}
             onRecordFulfillment={setFulfillmentTarget}
+            onPrint={setPrintOrderTarget}
           />
         )}
         </div>
@@ -26109,6 +26214,15 @@ function TankLogApp() {
           order={fulfillmentTarget}
           onClose={() => setFulfillmentTarget(null)}
           onSave={(fulfillingNowLines) => recordFulfillment(fulfillmentTarget.id, fulfillingNowLines)}
+        />
+      )}
+
+      {printOrderTarget && (
+        <PrintableOrderModal
+          order={printOrderTarget}
+          customer={customers.find((c) => c.id === printOrderTarget.customerId) || null}
+          companyName={companyName}
+          onClose={() => setPrintOrderTarget(null)}
         />
       )}
 
