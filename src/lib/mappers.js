@@ -44,6 +44,7 @@ export function rowToBatch(row) {
     plannedDays: row.planned_days ?? null,
     tastingLog: row.tasting_log || [],
     sensoryScores: row.sensory_scores || [],
+    qcApproval: row.qc_approval || null,
     volumeTopups: row.volume_topups || [],
     stillFermenting: !!row.still_fermenting,
     tankSettingsLog: row.tank_settings_log || [],
@@ -101,6 +102,7 @@ export function batchToRow(batch, userId, companyId) {
     planned_days: batch.plannedDays ?? null,
     tasting_log: batch.tastingLog || [],
     sensory_scores: batch.sensoryScores || [],
+    qc_approval: batch.qcApproval || null,
     volume_topups: batch.volumeTopups || [],
     still_fermenting: !!batch.stillFermenting,
     tank_settings_log: batch.tankSettingsLog || [],
@@ -365,6 +367,33 @@ export function exciseItemCodeToRow(e, companyId) {
     company_id: companyId,
     product_type: e.productType,
     item_number: e.itemNumber || null,
+  };
+}
+
+export function rowToTriangleTest(row) {
+  return {
+    id: row.id,
+    testDate: row.test_date,
+    batchAId: row.batch_a_id,
+    batchAName: row.batch_a_name,
+    batchBId: row.batch_b_id,
+    batchBName: row.batch_b_name,
+    purpose: row.purpose,
+    responses: row.responses || [],
+    createdAt: row.created_at || null,
+  };
+}
+export function triangleTestToRow(test, companyId) {
+  return {
+    id: test.id,
+    company_id: companyId,
+    test_date: test.testDate,
+    batch_a_id: test.batchAId || null,
+    batch_a_name: test.batchAName,
+    batch_b_id: test.batchBId || null,
+    batch_b_name: test.batchBName,
+    purpose: test.purpose || null,
+    responses: test.responses || [],
   };
 }
 
