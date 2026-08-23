@@ -21316,7 +21316,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-253";
+const APP_VERSION = "2026-08-03-254";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23038,12 +23038,24 @@ function TankLogApp() {
     return detail.Detail || detail.Title || detail.error_description || detail.error || detail.Message || JSON.stringify(detail);
   };
 
+  // Builds the full user-facing message for a failed Xero call. Xero's
+  // own "AuthenticationUnsuccessful" (and similar) means the connection
+  // itself has gone stale — a raw error code doesn't tell anyone what to
+  // do about it, so this recognizes it specifically and points at the
+  // actual fix (reconnect in Settings) instead.
+  const xeroErrorMessage = (action, data) => {
+    const extra = extractXeroErrorDetail(data.detail);
+    if (/authenticationunsuccessful|unauthorized|invalid_grant|invalid_token/i.test(extra) || /authenticationunsuccessful|unauthorized/i.test(data.error || "")) {
+      return `Couldn't ${action} — the Xero connection has gone stale. Go to Settings → Xero, disconnect, then reconnect.`;
+    }
+    return `Couldn't ${action} — ${data.error}${extra ? `: ${extra}` : ""}`;
+  };
+
   const openXeroContactImport = async () => {
     setShowImportXeroContacts(true);
     const data = await callXeroApi("listContacts");
     if (data.error) {
-      const extra = extractXeroErrorDetail(data.detail);
-      showToast("error", `Couldn't load Xero contacts — ${data.error}${extra ? `: ${extra}` : ""}`);
+      showToast("error", xeroErrorMessage("load Xero contacts", data));
       setShowImportXeroContacts(false);
       return;
     }
@@ -23054,8 +23066,7 @@ function TankLogApp() {
     setShowXeroProductMapping(true);
     const data = await callXeroApi("listItems");
     if (data.error) {
-      const extra = extractXeroErrorDetail(data.detail);
-      showToast("error", `Couldn't load Xero items — ${data.error}${extra ? `: ${extra}` : ""}`);
+      showToast("error", xeroErrorMessage("load Xero items", data));
       setShowXeroProductMapping(false);
       return;
     }
