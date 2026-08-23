@@ -21446,11 +21446,18 @@ export function XeroCallback() {
 
     (async () => {
       let userName = null;
+      let token = null;
       try {
         const { data } = await supabase.auth.getSession();
         userName = data.session?.user?.user_metadata?.name || null;
+        token = data.session?.access_token || null;
       } catch {
         // ignore — connected_by is just informational
+      }
+      if (!token) {
+        setStatus("error");
+        setMessage("You need to be signed in to finish connecting Xero — try connecting again.");
+        return;
       }
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -21461,7 +21468,7 @@ export function XeroCallback() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${anonKey}`,
+            Authorization: `Bearer ${token}`,
             apikey: anonKey,
           },
           body: JSON.stringify({ code, companyId, userName }),
@@ -21673,7 +21680,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-255";
+const APP_VERSION = "2026-08-03-256";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23311,9 +23318,22 @@ function TankLogApp() {
   // browser, it only ever lives in the Edge Function. mode is "order" (a
   // supplier invoice/PO) or "receiving" (a delivery docket, which may
   // have lot numbers printed on it that an order-stage document wouldn't).
+  // Every Edge Function call below used to authenticate with the shared,
+  // public anon key and just tell the function which company it was for
+  // in the request body — meaning the function had no real way to know
+  // who was actually asking, and had to trust whatever company was
+  // claimed. This gets the caller's own genuine session token instead,
+  // so the Edge Function can verify identity itself rather than trust
+  // the client's word for it.
+  const getAuthToken = async () => {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+  };
+
   const extractDocument = async (file, mode) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const token = await getAuthToken();
     const fileBase64 = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result.split(",")[1]);
@@ -23322,7 +23342,7 @@ function TankLogApp() {
     });
     const res = await fetch(`${supabaseUrl}/functions/v1/extract-document`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: anonKey },
       body: JSON.stringify({ fileBase64, mediaType: file.type, mode }),
     });
     return res.json();
@@ -23331,10 +23351,11 @@ function TankLogApp() {
   const askAiHelper = async (messages) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const token = await getAuthToken();
     const res = await fetch(`${supabaseUrl}/functions/v1/ai-helper`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-      body: JSON.stringify({ messages, helpArticles: HELP_ARTICLES, companyId: profile.companyId }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: anonKey },
+      body: JSON.stringify({ messages, helpArticles: HELP_ARTICLES }),
     });
     return res.json();
   };
@@ -23362,10 +23383,11 @@ function TankLogApp() {
   const callXeroApi = async (action, extra) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const token = await getAuthToken();
     const res = await fetch(`${supabaseUrl}/functions/v1/xero-api`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${anonKey}`, apikey: anonKey },
-      body: JSON.stringify({ action, companyId: profile.companyId, ...extra }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: anonKey },
+      body: JSON.stringify({ action, ...extra }),
     });
     return res.json();
   };
