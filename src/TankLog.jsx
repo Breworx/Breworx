@@ -14257,7 +14257,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, isOwner }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -15395,6 +15395,35 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           )}
         </div>
       )}
+
+      {(() => {
+        const recipe = (recipes || []).find((r) => r.id === batch.recipeId);
+        if (!recipe || !recipe.schedule || recipe.schedule.length === 0 || !recipe.volume) return null;
+        const ratio = batch.volume / recipe.volume;
+        const scaledItems = [...recipe.schedule].sort(compareScheduleItems).map((s) => ({
+          ...s,
+          scaledAmount: Math.round((Number(s.amount) || 0) * ratio * 1000) / 1000,
+        }));
+        return (
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
+              Recipe schedule — scaled for this batch's {batch.volume}L
+            </div>
+            {Math.abs(ratio - 1) > 0.01 && (
+              <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 10 }}>
+                The recipe's base amounts are for {recipe.volume}L — these are scaled up to match this batch's actual volume, including any merged brew days.
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+              {scaledItems.map((s) => (
+                <div key={s.id} style={{ padding: "9px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13, color: "#2A3324" }}>
+                  {s.label} <span style={{ color: "#5C6B54", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.scaledAmount} {s.unit})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {batch.splitTanks && batch.splitTanks.length > 0 ? (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
@@ -21900,7 +21929,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-258";
+const APP_VERSION = "2026-08-03-259";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -27764,6 +27793,7 @@ function TankLogApp() {
         {selected && (
           <BatchDetail
             batch={selected}
+            recipes={recipes}
             isOwner={isOwner}
             onBack={() => setSelectedId(null)}
             onAdvance={advance}
