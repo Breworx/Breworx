@@ -366,6 +366,38 @@ export function exciseItemCodeToRow(e, companyId) {
   };
 }
 
+export function rowToKeg(row) {
+  return {
+    id: row.id,
+    kegNumber: row.keg_number,
+    sizeL: row.size_l,
+    status: row.status || "In brewery",
+    currentBatchId: row.current_batch_id || null,
+    currentBatchName: row.current_batch_name || null,
+    currentCustomerId: row.current_customer_id || null,
+    currentCustomerName: row.current_customer_name || null,
+    sentDate: row.sent_date || null,
+    dueBackDate: row.due_back_date || null,
+    history: row.history || [],
+  };
+}
+export function kegToRow(keg, companyId) {
+  return {
+    id: keg.id,
+    company_id: companyId,
+    keg_number: keg.kegNumber,
+    size_l: keg.sizeL,
+    status: keg.status || "In brewery",
+    current_batch_id: keg.currentBatchId || null,
+    current_batch_name: keg.currentBatchName || null,
+    current_customer_id: keg.currentCustomerId || null,
+    current_customer_name: keg.currentCustomerName || null,
+    sent_date: keg.sentDate || null,
+    due_back_date: keg.dueBackDate || null,
+    history: keg.history || [],
+  };
+}
+
 export function rowToPestStation(row) {
   return {
     id: row.id,
