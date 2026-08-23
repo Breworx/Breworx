@@ -151,6 +151,22 @@ function packagedTotalsByContainer(batch) {
   return totals;
 }
 
+// Same cost-per-container math already shown on a batch's own packaging
+// section — spreads the batch's total ingredient cost across every litre
+// actually packaged, then prices a specific container by its volume
+// share. Pulled out here so sales analytics can use the identical, real
+// cost basis rather than a separate approximation.
+function batchCostPerContainer(batch, containerKey) {
+  if (!batch.ingredientCost || batch.ingredientCost <= 0) return null;
+  const totals = packagedTotalsByContainer(batch);
+  const totalVolumePackaged = CONTAINERS.reduce((sum, c) => sum + (totals[c.key] || 0) * c.volumeL, 0);
+  if (totalVolumePackaged <= 0) return null;
+  const costPerLitre = batch.ingredientCost / totalVolumePackaged;
+  const container = CONTAINERS.find((c) => c.key === containerKey);
+  if (!container) return null;
+  return costPerLitre * container.volumeL;
+}
+
 // Sums how much of a batch's stock is already spoken for by sales orders —
 // Draft and Cancelled orders don't reserve anything, everything else does.
 function soldTotalsByContainer(batchId, salesOrders) {
@@ -7135,6 +7151,9 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
   return (
     <Modal title={`Transfer to fermenter — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 12px", lineHeight: 1.5 }}>
+          Filling a tank that already has another batch in it, as a second brew day for the same beer? Don't transfer here — go to that batch instead and use "+ Add another brew day," which pulls this one's numbers in without needing the tank freed up first.
+        </div>
         {fermenters.length === 0 ? (
           <div style={{ color: "#9BA88A", fontSize: 13 }}>No fermenters set up yet — add one in Brewery first.</div>
         ) : (
@@ -8057,7 +8076,16 @@ function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, mixedPa
 }
 
 function SalesOrderStatusPill({ status }) {
-  const color = status === "Fulfilled" ? "#5C9A3C" : status === "Confirmed" ? "#D9A441" : status === "Cancelled" ? "#B5502F" : "#5C6B54";
+  const color =
+    status === "Fulfilled"
+      ? "#5C9A3C"
+      : status === "Partially fulfilled"
+      ? "#4AA8C9"
+      : status === "Confirmed"
+      ? "#D9A441"
+      : status === "Cancelled"
+      ? "#B5502F"
+      : "#5C6B54";
   return (
     <span
       style={{
@@ -8120,6 +8148,151 @@ function SalesOrderCard({ order, customerName, onOpen }) {
   );
 }
 
+// Real sales performance, not just an order log — best-selling products,
+// top customers, and genuine margin using the same cost-per-container
+// math already shown on a batch's own packaging section. Counts only
+// what's actually been fulfilled (using fulfilledQty where it's been
+// recorded, falling back to the full line for orders marked Fulfilled
+// before that field existed) — a Confirmed-but-not-yet-shipped order
+// isn't a realized sale yet, so it's deliberately excluded.
+function SalesAnalyticsView({ salesOrders, customers, batches, isOwner }) {
+  const relevantOrders = (salesOrders || []).filter((o) => o.status !== "Draft" && o.status !== "Cancelled");
+
+  const effectiveQty = (line, order) => {
+    if (line.fulfilledQty != null) return line.fulfilledQty;
+    return order.status === "Fulfilled" ? line.qty || 0 : 0;
+  };
+
+  const productMap = {};
+  const customerMap = {};
+  const monthMap = {};
+
+  relevantOrders.forEach((o) => {
+    const month = (o.orderDate || "").slice(0, 7);
+    let orderRevenue = 0;
+
+    (o.lines || []).forEach((l) => {
+      const qty = effectiveQty(l, o);
+      if (qty <= 0) return;
+      const revenue = qty * (Number(l.unitPrice) || 0);
+      orderRevenue += revenue;
+
+      const key = l.mixedPackTypeId ? `mp:${l.mixedPackTypeId}` : `${l.batchId}:${l.containerKey}`;
+      const label = l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`;
+      if (!productMap[key]) productMap[key] = { label, qty: 0, revenue: 0, cogs: 0, hasCost: true };
+      productMap[key].qty += qty;
+      productMap[key].revenue += revenue;
+      if (!l.mixedPackTypeId) {
+        const batch = batches.find((b) => b.id === l.batchId);
+        const costEach = batch ? batchCostPerContainer(batch, l.containerKey) : null;
+        if (costEach != null) productMap[key].cogs += costEach * qty;
+        else productMap[key].hasCost = false;
+      } else {
+        productMap[key].hasCost = false; // a mixed pack draws from several beers — no single cost basis to show here
+      }
+    });
+
+    if (orderRevenue > 0) {
+      if (!customerMap[o.customerId]) customerMap[o.customerId] = { revenue: 0, orders: 0 };
+      customerMap[o.customerId].revenue += orderRevenue;
+      customerMap[o.customerId].orders += 1;
+      if (month) monthMap[month] = (monthMap[month] || 0) + orderRevenue;
+    }
+  });
+
+  const products = Object.values(productMap).sort((a, b) => b.revenue - a.revenue);
+  const topCustomers = Object.entries(customerMap)
+    .map(([id, v]) => ({ id, name: customers.find((c) => c.id === id)?.name || "Unknown customer", ...v }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const monthlyTrend = Object.entries(monthMap)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, revenue]) => ({ month, revenue: Math.round(revenue * 100) / 100 }));
+
+  const totalRevenue = products.reduce((sum, p) => sum + p.revenue, 0);
+  const totalCogs = products.reduce((sum, p) => sum + (p.hasCost ? p.cogs : 0), 0);
+  const totalVolume = products.reduce((sum, p) => sum + p.qty, 0);
+  const totalOrders = relevantOrders.filter((o) => (o.lines || []).some((l) => effectiveQty(l, o) > 0)).length;
+
+  if (totalVolume === 0) {
+    return (
+      <div>
+        <EmptyState icon={Truck} title="No fulfilled sales yet" subtitle="This fills in once orders start being marked fulfilled — draft and unfulfilled orders aren't counted, since nothing's actually gone out the door yet." />
+      </div>
+    );
+  }
+
+  const summaryCard = (label, value) => (
+    <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", flex: 1, minWidth: 120 }}>
+      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: "#2A3324" }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
+        {summaryCard("Volume sold", `${totalVolume} units`)}
+        {summaryCard("Orders", totalOrders)}
+        {isOwner && summaryCard("Revenue", `$${totalRevenue.toFixed(2)}`)}
+        {isOwner && summaryCard("Gross margin", totalCogs > 0 ? `$${(totalRevenue - totalCogs).toFixed(2)}` : "—")}
+      </div>
+
+      {isOwner && monthlyTrend.length > 1 && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 6px", marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6, marginLeft: 8 }}>
+            Revenue by month
+          </div>
+          <Suspense fallback={<div style={{ height: 160 }} />}>
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={monthlyTrend} margin={{ top: 5, right: 14, left: -14, bottom: 0 }}>
+                <CartesianGrid stroke="#DDE0C8" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" stroke="#9BA88A" fontSize={11} />
+                <YAxis stroke="#9BA88A" fontSize={11} />
+                <Tooltip contentStyle={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "#5C6B54" }} />
+                <Line type="monotone" dataKey="revenue" stroke="#5C9A3C" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Suspense>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+        Best-selling products
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 22 }}>
+        {products.map((p) => (
+          <div key={p.label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span style={{ color: "#2A3324", fontSize: 13.5 }}>{p.label}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12.5 }}>{p.qty} units</span>
+            </div>
+            {isOwner && (
+              <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 3 }}>
+                ${p.revenue.toFixed(2)} revenue
+                {p.hasCost ? ` · $${(p.revenue - p.cogs).toFixed(2)} margin (${((1 - p.cogs / p.revenue) * 100).toFixed(0)}%)` : " · margin unavailable"}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+        Top customers
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {topCustomers.map((c) => (
+          <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 14px" }}>
+            <span style={{ color: "#2A3324", fontSize: 13.5 }}>{c.name}</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", fontSize: 12.5 }}>
+              {isOwner ? `$${c.revenue.toFixed(2)} · ` : ""}{c.orders} order{c.orders !== 1 ? "s" : ""}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SalesOrdersView({ salesOrders, customers, onOpen }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -8128,6 +8301,7 @@ function SalesOrdersView({ salesOrders, customers, onOpen }) {
 
   const draft = salesOrders.filter((o) => o.status === "Draft" && matches(o));
   const confirmed = salesOrders.filter((o) => o.status === "Confirmed" && matches(o));
+  const partiallyFulfilled = salesOrders.filter((o) => o.status === "Partially fulfilled" && matches(o));
   const fulfilled = salesOrders.filter((o) => o.status === "Fulfilled" && matches(o));
   const cancelled = salesOrders.filter((o) => o.status === "Cancelled" && matches(o));
 
@@ -8169,21 +8343,86 @@ function SalesOrdersView({ salesOrders, customers, onOpen }) {
       )}
       {section("Draft", draft)}
       {section("Confirmed", confirmed)}
+      {section("Partially fulfilled", partiallyFulfilled)}
       {section("Fulfilled", fulfilled)}
       {section("Cancelled", cancelled)}
       {salesOrders.length === 0 && (
         <EmptyState icon={Truck} title="No orders yet" subtitle="Create an order against a customer once you've got stock packaged and ready to sell." />
       )}
-      {salesOrders.length > 0 && draft.length === 0 && confirmed.length === 0 && fulfilled.length === 0 && cancelled.length === 0 && (
+      {salesOrders.length > 0 && draft.length === 0 && confirmed.length === 0 && partiallyFulfilled.length === 0 && fulfilled.length === 0 && cancelled.length === 0 && (
         <div style={{ color: "#9BA88A", fontSize: 13, textAlign: "center", padding: "24px 0" }}>No orders match "{query}".</div>
       )}
     </div>
   );
 }
 
-function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogglePaid, onDelete }) {
+// Lets each line be fulfilled by whatever amount is actually shipping
+// right now — not all-or-nothing. Leftover on any line stays open as a
+// genuine backorder rather than forcing the whole order to wait until
+// every line is ready at once.
+function RecordFulfillmentModal({ order, onClose, onSave }) {
+  const [amounts, setAmounts] = useState(() => {
+    const init = {};
+    (order.lines || []).forEach((l) => {
+      const remaining = (l.qty || 0) - (l.fulfilledQty || 0);
+      init[l.id] = remaining > 0 ? String(remaining) : "0";
+    });
+    return init;
+  });
+
+  const submit = () => {
+    const fulfillingNow = (order.lines || [])
+      .map((l) => {
+        const remaining = (l.qty || 0) - (l.fulfilledQty || 0);
+        const fulfillNow = Math.max(0, Math.min(Number(amounts[l.id]) || 0, remaining));
+        return { ...l, fulfillNow };
+      })
+      .filter((l) => l.fulfillNow > 0);
+    if (fulfillingNow.length === 0) return;
+    onSave(fulfillingNow);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Record fulfillment — ${order.orderNumber}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 13 }}>
+          Enter how much of each line is going out right now — leave the rest for later if it's a partial delivery.
+        </div>
+        {(order.lines || []).map((l) => {
+          const remaining = (l.qty || 0) - (l.fulfilledQty || 0);
+          return (
+            <div key={l.id} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px" }}>
+              <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 4 }}>
+                {l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}
+              </div>
+              <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8 }}>
+                Ordered {l.qty}
+                {(l.fulfilledQty || 0) > 0 ? ` · ${l.fulfilledQty} already fulfilled · ${remaining} remaining` : ""}
+              </div>
+              {remaining > 0 ? (
+                <NumberField label="Fulfill now" value={amounts[l.id]} onChange={(v) => setAmounts((prev) => ({ ...prev, [l.id]: v }))} step="1" />
+              ) : (
+                <div style={{ color: "#5C9A3C", fontSize: 12.5 }}>Fully fulfilled already</div>
+              )}
+            </div>
+          );
+        })}
+        <button
+          onClick={submit}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
+        >
+          Save fulfillment
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogglePaid, onDelete, onRecordFulfillment }) {
   const total = salesOrderTotal(order);
-  const nextStatus = order.status === "Draft" ? "Confirmed" : order.status === "Confirmed" ? "Fulfilled" : null;
+  const nextStatus = order.status === "Draft" ? "Confirmed" : null;
+  const canFulfill = order.status === "Confirmed" || order.status === "Partially fulfilled";
 
   return (
     <div>
@@ -8206,11 +8445,18 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
         {(order.lines || []).map((l) => (
-          <div key={l.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
-            <span>{l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>
-              {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
-            </span>
+          <div key={l.id} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>
+                {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
+              </span>
+            </div>
+            {(l.fulfilledQty || 0) > 0 && (l.fulfilledQty || 0) < l.qty && (
+              <div style={{ color: "#4AA8C9", fontSize: 11.5, marginTop: 3 }}>
+                {l.fulfilledQty} of {l.qty} fulfilled — {l.qty - l.fulfilledQty} still owed
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -8232,7 +8478,15 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
               onClick={() => onAdvance(order.id, nextStatus)}
               style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
             >
-              {nextStatus === "Confirmed" ? "Confirm order" : "Mark fulfilled"}
+              Confirm order
+            </button>
+          )}
+          {canFulfill && (
+            <button
+              onClick={() => onRecordFulfillment(order)}
+              style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
+            >
+              Record fulfillment
             </button>
           )}
           <button
@@ -20046,7 +20300,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-237";
+const APP_VERSION = "2026-08-03-240";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -21140,6 +21394,7 @@ function TankLogApp() {
     return `SO-${Math.max(100, ...nums) + 1}`;
   }, [salesOrders]);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState(null);
+  const [fulfillmentTarget, setFulfillmentTarget] = useState(null);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
   const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
@@ -22202,11 +22457,35 @@ function TankLogApp() {
     const { error } = await supabase.from("sales_orders").update({ status }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setSalesOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
-    showToast("success", status === "Fulfilled" ? "Order marked fulfilled — stock updated." : `Order ${status.toLowerCase()}.`);
-    if (status === "Fulfilled") {
-      const order = salesOrders.find((o) => o.id === id);
-      if (order) syncOrderToXero({ ...order, status });
-    }
+    showToast("success", `Order ${status.toLowerCase()}.`);
+  };
+
+  // Records however much of each line is genuinely shipping right now —
+  // never all-or-nothing. Whatever's left on a line stays open as a real,
+  // tracked backorder rather than blocking the whole order. Only the
+  // portion fulfilled in this pass gets synced to Xero, as its own
+  // partial invoice, not the full order total.
+  const recordFulfillment = async (orderId, fulfillingNowLines) => {
+    const order = salesOrders.find((o) => o.id === orderId);
+    if (!order) return;
+
+    const fulfillMap = {};
+    fulfillingNowLines.forEach((l) => (fulfillMap[l.id] = l.fulfillNow));
+
+    const newLines = (order.lines || []).map((l) => ({
+      ...l,
+      fulfilledQty: (l.fulfilledQty || 0) + (fulfillMap[l.id] || 0),
+    }));
+    const allFulfilled = newLines.every((l) => (l.fulfilledQty || 0) >= l.qty);
+    const newStatus = allFulfilled ? "Fulfilled" : "Partially fulfilled";
+
+    const { error } = await supabase.from("sales_orders").update({ lines: newLines, status: newStatus }).eq("id", orderId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setSalesOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, lines: newLines, status: newStatus } : o)));
+    showToast("success", allFulfilled ? "Order fully fulfilled." : "Partial fulfillment recorded — the rest stays open.");
+
+    const partialOrderForXero = { ...order, lines: fulfillingNowLines.map((l) => ({ ...l, qty: l.fulfillNow })) };
+    syncOrderToXero(partialOrderForXero);
   };
 
   const cancelSalesOrder = (id) => {
@@ -23865,6 +24144,7 @@ function TankLogApp() {
                 items: [
                   ["customers", "Customers", Users],
                   ["salesOrders", "Orders", Truck],
+                  ["salesAnalytics", "Analytics", TrendingUp],
                   ["finishedGoodsStock", "Stock", Package],
                 ],
               },
@@ -24677,6 +24957,10 @@ function TankLogApp() {
 
             {!loadingData && view === "salesOrders" && !selectedSalesOrderId && (
               <SalesOrdersView salesOrders={salesOrders} customers={customers} onOpen={setSelectedSalesOrderId} />
+            )}
+
+            {!loadingData && view === "salesAnalytics" && (
+              <SalesAnalyticsView salesOrders={salesOrders} customers={customers} batches={batches} isOwner={isOwner} />
             )}
 
             {!loadingData && view === "finishedGoodsStock" && (
@@ -25779,10 +26063,18 @@ function TankLogApp() {
             onCancel={cancelSalesOrder}
             onTogglePaid={toggleSalesOrderPaid}
             onDelete={isOwner ? deleteSalesOrder : undefined}
+            onRecordFulfillment={setFulfillmentTarget}
           />
         )}
         </div>
       </div>
+      {fulfillmentTarget && (
+        <RecordFulfillmentModal
+          order={fulfillmentTarget}
+          onClose={() => setFulfillmentTarget(null)}
+          onSave={(fulfillingNowLines) => recordFulfillment(fulfillmentTarget.id, fulfillingNowLines)}
+        />
+      )}
 
       {showAdd && (
         <AddBatchModal
