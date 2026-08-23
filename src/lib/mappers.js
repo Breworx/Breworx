@@ -45,6 +45,7 @@ export function rowToBatch(row) {
     tastingLog: row.tasting_log || [],
     sensoryScores: row.sensory_scores || [],
     qcApproval: row.qc_approval || null,
+    labMeasurements: row.lab_measurements || [],
     volumeTopups: row.volume_topups || [],
     stillFermenting: !!row.still_fermenting,
     tankSettingsLog: row.tank_settings_log || [],
@@ -103,6 +104,7 @@ export function batchToRow(batch, userId, companyId) {
     tasting_log: batch.tastingLog || [],
     sensory_scores: batch.sensoryScores || [],
     qc_approval: batch.qcApproval || null,
+    lab_measurements: batch.labMeasurements || [],
     volume_topups: batch.volumeTopups || [],
     still_fermenting: !!batch.stillFermenting,
     tank_settings_log: batch.tankSettingsLog || [],
@@ -213,6 +215,8 @@ export function rowToRecipe(row) {
     boilTime: row.boil_time ?? 60,
     waterChemistry: row.water_chemistry || null,
     productType: row.product_type || "Beer",
+    ogTolerance: row.og_tolerance,
+    fgTolerance: row.fg_tolerance,
   };
 }
 
@@ -235,6 +239,8 @@ export function recipeToRow(recipe, userId, companyId) {
     boil_time: recipe.boilTime ?? 60,
     water_chemistry: recipe.waterChemistry || null,
     product_type: recipe.productType || "Beer",
+    og_tolerance: recipe.ogTolerance ?? null,
+    fg_tolerance: recipe.fgTolerance ?? null,
   };
 }
 
