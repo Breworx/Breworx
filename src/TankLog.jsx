@@ -21316,7 +21316,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-251";
+const APP_VERSION = "2026-08-03-252";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23032,7 +23032,7 @@ function TankLogApp() {
     setShowImportXeroContacts(true);
     const data = await callXeroApi("listContacts");
     if (data.error) {
-      showToast("error", "Couldn't load Xero contacts — check your Xero connection.");
+      showToast("error", `Couldn't load Xero contacts — ${data.error}`);
       setShowImportXeroContacts(false);
       return;
     }
@@ -23043,7 +23043,7 @@ function TankLogApp() {
     setShowXeroProductMapping(true);
     const data = await callXeroApi("listItems");
     if (data.error) {
-      showToast("error", "Couldn't load Xero items — check your Xero connection.");
+      showToast("error", `Couldn't load Xero items — ${data.error}`);
       setShowXeroProductMapping(false);
       return;
     }
