@@ -128,6 +128,28 @@ const CONTAINERS = [
 // real packaged batch will use when it's actually sold.
 const productKeyFor = (name, containerKey) => `${name.trim().toLowerCase()}::${containerKey}`;
 
+// The actual point of a triangle test — a raw "8/12 correct" tells a
+// brewer nothing on its own, since even random guessing gets roughly a
+// third right by chance. This computes the real, one-tailed binomial
+// significance (exact, not approximated) at the standard 5% threshold,
+// matching how the method is actually used in sensory science — see
+// ISO 4120 / ASTM E1885.
+function binomialCoeff(n, k) {
+  if (k < 0 || k > n) return 0;
+  let result = 1;
+  for (let i = 0; i < k; i++) result = (result * (n - i)) / (i + 1);
+  return result;
+}
+function triangleTestSignificance(correct, total) {
+  if (total === 0) return { pValue: 1, significant: false };
+  const p = 1 / 3;
+  let pValue = 0;
+  for (let i = correct; i <= total; i++) {
+    pValue += binomialCoeff(total, i) * Math.pow(p, i) * Math.pow(1 - p, total - i);
+  }
+  return { pValue, significant: pValue <= 0.05 };
+}
+
 const packagedVolume = (packaging) =>
   !packaging ? 0 : CONTAINERS.reduce((sum, c) => sum + (packaging[c.key] || 0) * c.volumeL, 0);
 
@@ -13913,6 +13935,22 @@ function TriangleTestModal({ batches, existingTest, onClose, onSave }) {
           + Add another taster
         </button>
 
+        {(() => {
+          const validResponses = responses.filter((r) => r.tasterName.trim());
+          const total = validResponses.length;
+          const correct = validResponses.filter((r) => r.correct).length;
+          if (total === 0) return null;
+          const { significant } = triangleTestSignificance(correct, total);
+          return (
+            <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px", fontSize: 12.5 }}>
+              <div style={{ color: "#2A3324" }}>
+                {correct}/{total} correct — <span style={{ color: significant ? "#B5502F" : "#5C9A3C" }}>{significant ? "statistically distinguishable" : "not statistically distinguishable"}</span>
+              </div>
+              {total < 18 && <div style={{ color: "#9BA88A", marginTop: 2 }}>Fewer than 18 tasters — below the usual minimum for a reliable result.</div>}
+            </div>
+          );
+        })()}
+
         <button
           onClick={submit}
           disabled={!canSubmit}
@@ -14031,6 +14069,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
           {[...triangleTests].reverse().map((t) => {
             const total = t.responses.length;
             const correct = t.responses.filter((r) => r.correct).length;
+            const { significant } = triangleTestSignificance(correct, total);
             return (
               <button
                 key={t.id}
@@ -14040,8 +14079,14 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
                 <div>
                   <div style={{ color: "#2A3324", fontSize: 13.5 }}>{t.batchAName} vs {t.batchBName}</div>
                   {t.purpose && <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 2 }}>{t.purpose}</div>}
+                  {total < 18 && <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 2 }}>Fewer than 18 tasters — below the usual minimum for a reliable result</div>}
                 </div>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#5C6B54" }}>{correct}/{total} correct</span>
+                <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 10 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#5C6B54" }}>{correct}/{total} correct</div>
+                  <div style={{ fontSize: 11, color: significant ? "#B5502F" : "#5C9A3C", marginTop: 2 }}>
+                    {significant ? "Distinguishable" : "Not distinguishable"}
+                  </div>
+                </div>
               </button>
             );
           })}
@@ -21680,7 +21725,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-256";
+const APP_VERSION = "2026-08-03-257";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
