@@ -14504,7 +14504,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, isOwner }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -15713,6 +15713,20 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </div>
         );
       })()}
+
+      {batch.splitTanks && batch.splitTanks.length > 0 && isOwner && (
+        <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ color: "#7A3E1D", fontSize: 12.5, marginBottom: 8 }}>
+            This is an older-style split — each tank still shares one record. Converting makes each tank its own fully independent batch, carrying forward everything already logged for it. This can't be undone.
+          </div>
+          <button
+            onClick={() => onConvertSplitTanks(batch)}
+            style={{ background: "#B5502F", border: "none", borderRadius: 5, padding: "9px 14px", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+          >
+            Convert to separate batches
+          </button>
+        </div>
+      )}
 
       {batch.splitTanks && batch.splitTanks.length > 0 ? (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
@@ -22276,7 +22290,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-265";
+const APP_VERSION = "2026-08-03-266";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23134,6 +23148,7 @@ function TankLogApp() {
   const [assignTankTarget, setAssignTankTarget] = useState(null);
   const [vesselTransferTarget, setVesselTransferTarget] = useState(null);
   const [editSplitTanksTarget, setEditSplitTanksTarget] = useState(null);
+  const [convertSplitTarget, setConvertSplitTarget] = useState(null);
   const [fermenterTransferTarget, setFermenterTransferTarget] = useState(null);
   const [startPackagingTarget, setStartPackagingTarget] = useState(null);
   const [confirmTarget, setConfirmTarget] = useState(null);
@@ -24901,6 +24916,55 @@ function TankLogApp() {
     showToast("success", `Split into ${newBatches.length} separate batches.`);
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) split into ${summary}`);
     tanksChosen.forEach((t, i) => resetTankClean(t.tankId, newBatches[i]));
+  };
+
+  // One-time conversion for a batch still in the old shape — a single
+  // record with a splitTanks list — into the new shape: genuinely
+  // separate batches, one per tank, linked by splitGroupId. Unlike a
+  // fresh split, each side here may already have its own readings,
+  // notes, faults, and additions logged against it from before this
+  // fix existed — those get merged in, not discarded, so nothing from
+  // that history is lost in the conversion.
+  const convertSplitTanksToBatches = async (batchId) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch || !batch.splitTanks || batch.splitTanks.length === 0) return;
+
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const totalSplitVolume = batch.splitTanks.reduce((sum, t) => sum + (Number(t.volume) || 0), 0);
+    const splitGroupId = uid();
+    const newBatches = batch.splitTanks.map((t, i) => {
+      const suffix = letters[i] || String(i + 1);
+      const share = totalSplitVolume > 0 ? t.volume / totalSplitVolume : 0;
+      return {
+        ...batch,
+        id: uid(),
+        number: `${batch.number}${suffix}`,
+        name: `${batch.name} — ${suffix}`,
+        volume: t.volume,
+        tankId: t.tankId,
+        tankName: t.tankName,
+        splitTanks: [],
+        splitGroupId,
+        readings: [...(batch.readings || []), ...(t.readings || [])],
+        notes: [...(batch.notes || []), ...(t.notes || [])],
+        faults: [...(batch.faults || []), ...(t.faults || [])],
+        batchAdditions: [...(batch.batchAdditions || []), ...(t.additions || [])],
+        ingredientCost: batch.ingredientCost != null ? Math.round(batch.ingredientCost * share * 100) / 100 : null,
+      };
+    });
+
+    for (const nb of newBatches) {
+      const { error } = await supabase.from("batches").insert(batchToRow(nb, user.id, profile.companyId));
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    }
+    const { error: deleteError } = await supabase.from("batches").delete().eq("id", batchId);
+    if (deleteError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+
+    setBatches((prev) => [...newBatches, ...prev.filter((b) => b.id !== batchId)]);
+    setSelectedId(newBatches[0].id);
+    const summary2 = newBatches.map((b) => `${b.name} (${b.tankName})`).join(" + ");
+    showToast("success", `Converted into ${newBatches.length} separate batches.`);
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) converted into ${summary2}`);
   };
 
   // Logs a hop, fruit, or other addition made to just one side of a split
@@ -28239,6 +28303,7 @@ function TankLogApp() {
             recipes={recipes}
             allBatches={batches}
             onOpenBatch={setSelectedId}
+            onConvertSplitTanks={setConvertSplitTarget}
             isOwner={isOwner}
             onBack={() => setSelectedId(null)}
             onAdvance={advance}
@@ -28967,6 +29032,19 @@ function TankLogApp() {
           batches={batches}
           onClose={() => setEditSplitTanksTarget(null)}
           onSave={splitBatchIntoTanks}
+        />
+      )}
+      {convertSplitTarget && (
+        <ConfirmDialogModal
+          title="Convert to separate batches?"
+          message={`Each tank in ${convertSplitTarget.name} becomes its own fully independent batch, carrying forward everything already logged for it. This can't be undone.`}
+          confirmLabel="Convert"
+          destructive
+          onCancel={() => setConvertSplitTarget(null)}
+          onConfirm={() => {
+            convertSplitTanksToBatches(convertSplitTarget.id);
+            setConvertSplitTarget(null);
+          }}
         />
       )}
       {fermenterTransferTarget && (
