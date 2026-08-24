@@ -20989,7 +20989,7 @@ function HomeView({
     ["Fermenting", fermentingBatches.filter((b) => b.startDate <= today()).length, STAGE_COLOR.Primary, "batches"],
     ["Conditioning", conditioningBatches.length, STAGE_COLOR.Conditioning, "batches"],
     ["Packaging", inProgressBatches.length, "#D4A24C", "batches"],
-    ["Finished Stock", packagedBatches.length, "#9BA88A", "batches"],
+    ["Packaged Batches", packagedBatches.length, "#9BA88A", "batches"],
   ];
 
   return (
@@ -26521,7 +26521,7 @@ function TankLogApp() {
                 label: "Production",
                 items: [
                   ["batches", "Batches", Droplet],
-                  ["packaged", "Finished Stock", Package],
+                  ["packaged", "Packaged Batches", Package],
                   ["production", "Production", Calendar],
                   barrelAgingModuleEnabled && ["aging", "Aging", Warehouse],
                   ["yeast", "Yeast", FlaskConical],
