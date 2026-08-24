@@ -456,6 +456,17 @@ function currentFaults(batch) {
   return Object.values(byName);
 }
 
+// Same logic as currentFaults above, but for a plain faults array rather
+// than a whole batch — used for one split-tank side's own faults list,
+// where there's no batch-shaped object to pass in.
+function currentFaultsList(faultsList) {
+  const byName = {};
+  (faultsList || []).forEach((f) => {
+    if (!byName[f.fault] || f.date > byName[f.fault].date) byName[f.fault] = f;
+  });
+  return Object.values(byName);
+}
+
 function batchTankIds(batch) {
   if (batch.splitTanks && batch.splitTanks.length > 0) return batch.splitTanks.map((t) => t.tankId);
   if (batch.tankId) return [batch.tankId];
@@ -13034,6 +13045,117 @@ function DiacetylTestModal({ batch, onClose, onLog }) {
 // diverge between tanks even though they started from the same wort,
 // so each side gets its own independent chart and log, not a single
 // shared one that would silently mix two different fermentations.
+// Same "quality checklist" pattern as the shared one below, scoped to
+// one tank side's own faults — one side developing diacetyl doesn't
+// mean the other has, even from the same wort.
+function SplitTankFaultsSection({ tank, batch, onToggleFault }) {
+  const faults = tank.faults || [];
+  const active = currentFaultsList(faults);
+  const history = [...faults].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const hasHistory = new Set(history.map((f) => f.fault)).size < history.length;
+
+  return (
+    <div style={{ border: "1px solid #EBE8D6", borderRadius: 5, padding: "12px 14px", background: "#F8F5EA", marginBottom: 12 }}>
+      <div style={{ color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif", fontWeight: 600, marginBottom: 10 }}>{tank.tankName} ({tank.volume}L)</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {COMMON_FAULTS.map((fault) => {
+          const existing = active.find((f) => f.fault === fault);
+          const severity = existing ? existing.severity : null;
+          const isToday = existing && existing.date === today();
+          const color = severity ? FAULT_SEVERITY_COLOR[severity] : "#9BA88A";
+          return (
+            <button
+              key={fault}
+              onClick={() => onToggleFault(batch.id, fault, tank.tankId)}
+              title={existing && !isToday ? `Last noted ${formatHistoryStamp(existing.date)} — tap to reassess today` : undefined}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: severity ? `${color}22` : "#FFFFFF",
+                border: `1px solid ${severity ? color : "#DDE0C8"}`,
+                borderRadius: 20,
+                padding: "5px 10px",
+                cursor: "pointer",
+                fontSize: 11.5,
+                color: severity ? color : "#5C6B54",
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              {fault}
+              {severity && (
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, fontWeight: 700, letterSpacing: "0.03em" }}>
+                  {severity.toUpperCase()}
+                  {!isToday ? "*" : ""}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {hasHistory && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 11.5, fontFamily: "'Inter', sans-serif" }}>View full fault history</summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+            {history.map((f) => (
+              <div key={f.id || `${f.fault}-${f.date}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, padding: "4px 8px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4 }}>
+                <span style={{ color: "#2A3324" }}>{f.fault}</span>
+                <span style={{ color: FAULT_SEVERITY_COLOR[f.severity], fontFamily: "'JetBrains Mono', monospace" }}>{f.severity}</span>
+                <span style={{ color: "#9BA88A" }}>{formatHistoryStamp(f.date)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// Same idea as the faults section above — one tank's own note log,
+// since an observation about one side of a split isn't necessarily
+// true of the other.
+function SplitTankNotesSection({ tank, batch, onAddNote, onDeleteNote }) {
+  const [text, setText] = useState("");
+  const notes = tank.notes || [];
+
+  const submit = () => {
+    if (!text.trim()) return;
+    onAddNote(batch.id, text.trim(), tank.tankId);
+    setText("");
+  };
+
+  return (
+    <div style={{ border: "1px solid #EBE8D6", borderRadius: 5, padding: "12px 14px", background: "#F8F5EA", marginBottom: 12 }}>
+      <div style={{ color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif", fontWeight: 600, marginBottom: 10 }}>{tank.tankName} ({tank.volume}L)</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: notes.length > 0 ? 10 : 0 }}>
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Add a note…"
+          style={{ flex: 1, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13 }}
+        />
+        <button onClick={submit} style={{ background: "#5C9A3C", border: "none", borderRadius: 4, padding: "8px 14px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}>
+          Add
+        </button>
+      </div>
+      {notes.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {[...notes].reverse().map((n) => (
+            <div key={n.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 10px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4, fontSize: 12.5 }}>
+              <span style={{ color: "#2A3324", flex: 1 }}>{n.text}</span>
+              <span style={{ color: "#9BA88A", fontSize: 11, flexShrink: 0 }}>{formatHistoryStamp(n.date)}</span>
+              <button onClick={() => onDeleteNote(batch.id, n.id, tank.tankId)} aria-label="Delete note" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 2, flexShrink: 0 }}>
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SplitTankReadingsSection({ tank, batch, onLogReading, onDeleteReading }) {
   const readings = tank.readings || [];
   const chartData = readings.map((r) => ({ date: r.date.slice(5), gravity: r.gravity, temp: r.temp }));
@@ -15281,7 +15403,22 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </div>
       )}
 
-      {(["Brewing", "Primary", "Cooling"].includes(batch.stage) || (batch.faults && batch.faults.length > 0)) && (() => {
+      {batch.splitTanks && batch.splitTanks.length > 0 ? (
+        (["Brewing", "Primary", "Cooling"].includes(batch.stage) || batch.splitTanks.some((t) => (t.faults || []).length > 0)) && (
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+              Quality checklist — common faults
+            </div>
+            <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 10 }}>
+              Tap a fault to cycle Low → Medium → High → off, per tank — one side developing a fault doesn't mean the other has too.
+            </div>
+            {batch.splitTanks.map((t) => (
+              <SplitTankFaultsSection key={t.tankId} tank={t} batch={batch} onToggleFault={onToggleFault} />
+            ))}
+          </div>
+        )
+      ) : (
+        (["Brewing", "Primary", "Cooling"].includes(batch.stage) || (batch.faults && batch.faults.length > 0)) && (() => {
         const active = currentFaults(batch);
         const history = [...(batch.faults || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
         const hasHistory = new Set(history.map((f) => f.fault)).size < history.length; // more entries than unique faults = reassessed at least once
@@ -15352,7 +15489,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             )}
           </div>
         );
-      })()}
+      })())}
 
       <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: latestTankSettings || showTankSettingsForm ? 12 : 0 }}>
@@ -15703,84 +15840,94 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginTop: 26, marginBottom: 10 }}>
         Notes
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <input
-          type="text"
-          value={noteText}
-          onChange={(e) => setNoteText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && noteText.trim()) {
-              onAddNote(batch.id, noteText.trim());
-              setNoteText("");
-            }
-          }}
-          placeholder="Jot something down — brew day, fermentation, packaging, anything"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            boxSizing: "border-box",
-            background: "#F5F1E4",
-            border: "1px solid #DDE0C8",
-            borderRadius: 4,
-            padding: "9px 10px",
-            color: "#2A3324",
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 13.5,
-          }}
-        />
-        <button
-          onClick={() => {
-            if (!noteText.trim()) return;
-            onAddNote(batch.id, noteText.trim());
-            setNoteText("");
-          }}
-          disabled={!noteText.trim()}
-          style={{
-            background: noteText.trim() ? "#5C9A3C" : "#E8E4D4",
-            border: "none",
-            borderRadius: 5,
-            padding: "0 16px",
-            color: noteText.trim() ? "#16191A" : "#A3AC94",
-            fontFamily: "'Oswald', sans-serif",
-            fontWeight: 500,
-            fontSize: 13,
-            cursor: noteText.trim() ? "pointer" : "default",
-            flexShrink: 0,
-          }}
-        >
-          Add
-        </button>
-      </div>
-      {(batch.notes || []).length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 26 }}>
-          {[...batch.notes].reverse().map((n) => (
-            <div
-              key={n.id}
-              style={{
-                display: "flex",
-                gap: 12,
-                alignItems: "flex-start",
-                padding: "9px 12px",
-                background: "#F8F5EA",
-                border: "1px solid #EBE8D6",
-                borderRadius: 5,
-                fontSize: 13,
-              }}
-            >
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, flexShrink: 0, marginTop: 2 }}>
-                {formatHistoryStamp(n.date)}
-              </span>
-              <span style={{ flex: 1, color: "#2A3324", lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "break-word" }}>{n.text}</span>
-              <button
-                onClick={() => onDeleteNote(batch.id, n.id)}
-                aria-label="Delete note"
-                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4, flexShrink: 0 }}
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
+      {batch.splitTanks && batch.splitTanks.length > 0 ? (
+        <div style={{ marginBottom: 26 }}>
+          {batch.splitTanks.map((t) => (
+            <SplitTankNotesSection key={t.tankId} tank={t} batch={batch} onAddNote={onAddNote} onDeleteNote={onDeleteNote} />
           ))}
         </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <input
+              type="text"
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && noteText.trim()) {
+                  onAddNote(batch.id, noteText.trim());
+                  setNoteText("");
+                }
+              }}
+              placeholder="Jot something down — brew day, fermentation, packaging, anything"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                boxSizing: "border-box",
+                background: "#F5F1E4",
+                border: "1px solid #DDE0C8",
+                borderRadius: 4,
+                padding: "9px 10px",
+                color: "#2A3324",
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13.5,
+              }}
+            />
+            <button
+              onClick={() => {
+                if (!noteText.trim()) return;
+                onAddNote(batch.id, noteText.trim());
+                setNoteText("");
+              }}
+              disabled={!noteText.trim()}
+              style={{
+                background: noteText.trim() ? "#5C9A3C" : "#E8E4D4",
+                border: "none",
+                borderRadius: 5,
+                padding: "0 16px",
+                color: noteText.trim() ? "#16191A" : "#A3AC94",
+                fontFamily: "'Oswald', sans-serif",
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: noteText.trim() ? "pointer" : "default",
+                flexShrink: 0,
+              }}
+            >
+              Add
+            </button>
+          </div>
+          {(batch.notes || []).length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 26 }}>
+              {[...batch.notes].reverse().map((n) => (
+                <div
+                  key={n.id}
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
+                    padding: "9px 12px",
+                    background: "#F8F5EA",
+                    border: "1px solid #EBE8D6",
+                    borderRadius: 5,
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, flexShrink: 0, marginTop: 2 }}>
+                    {formatHistoryStamp(n.date)}
+                  </span>
+                  <span style={{ flex: 1, color: "#2A3324", lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "break-word" }}>{n.text}</span>
+                  <button
+                    onClick={() => onDeleteNote(batch.id, n.id)}
+                    aria-label="Delete note"
+                    style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4, flexShrink: 0 }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {batch.stage === "Aging" && currentTank?.type === "Barrel" && (
@@ -22101,7 +22248,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-262";
+const APP_VERSION = "2026-08-03-263";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -25483,24 +25630,34 @@ function TankLogApp() {
     showToast("success", `Diacetyl test logged: ${test.result}.`);
   };
 
-  const toggleBatchFault = async (id, faultName) => {
+  const toggleBatchFault = async (id, faultName, tankId) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const allEntries = batch.faults || [];
-    const todayStr = today();
-    const todaysEntry = allEntries.find((f) => f.fault === faultName && f.date === todayStr);
-    let faults;
-    if (todaysEntry) {
-      // Same-day taps cycle through Low → Medium → High → off, same as before.
-      const nextSeverity = FAULT_SEVERITY_NEXT[todaysEntry.severity];
-      faults = nextSeverity === null
-        ? allEntries.filter((f) => !(f.fault === faultName && f.date === todayStr))
-        : allEntries.map((f) => (f.fault === faultName && f.date === todayStr ? { ...f, severity: nextSeverity } : f));
-    } else {
+
+    const buildNextFaults = (allEntries) => {
+      const todayStr = today();
+      const todaysEntry = allEntries.find((f) => f.fault === faultName && f.date === todayStr);
+      if (todaysEntry) {
+        // Same-day taps cycle through Low → Medium → High → off, same as before.
+        const nextSeverity = FAULT_SEVERITY_NEXT[todaysEntry.severity];
+        return nextSeverity === null
+          ? allEntries.filter((f) => !(f.fault === faultName && f.date === todayStr))
+          : allEntries.map((f) => (f.fault === faultName && f.date === todayStr ? { ...f, severity: nextSeverity } : f));
+      }
       // First tap on a new day starts a fresh assessment at Low, regardless
       // of what an earlier day recorded — that entry stays put as history.
-      faults = [...allEntries, { id: uid(), fault: faultName, severity: "Low", date: todayStr }];
+      return [...allEntries, { id: uid(), fault: faultName, severity: "Low", date: todayStr }];
+    };
+
+    if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, faults: buildNextFaults(t.faults || []) } : t));
+      const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, splitTanks } : b)));
+      return;
     }
+
+    const faults = buildNextFaults(batch.faults || []);
     const { error } = await supabase.from("batches").update({ faults }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, faults } : b)));
@@ -25705,19 +25862,33 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: log } : b)));
   };
 
-  const addBatchNote = async (id, text) => {
+  const addBatchNote = async (id, text, tankId) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     const newNote = { id: uid(), date: new Date().toISOString(), text };
+    if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, notes: [...(t.notes || []), newNote] } : t));
+      const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, splitTanks } : b)));
+      return;
+    }
     const notes = [...(batch.notes || []), newNote];
     const { error } = await supabase.from("batches").update({ notes }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, notes } : b)));
   };
 
-  const deleteBatchNote = async (id, noteId) => {
+  const deleteBatchNote = async (id, noteId, tankId) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
+    if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, notes: (t.notes || []).filter((n) => n.id !== noteId) } : t));
+      const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, splitTanks } : b)));
+      return;
+    }
     const notes = (batch.notes || []).filter((n) => n.id !== noteId);
     const { error } = await supabase.from("batches").update({ notes }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
