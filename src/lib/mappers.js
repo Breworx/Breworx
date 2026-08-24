@@ -46,6 +46,7 @@ export function rowToBatch(row) {
     sensoryScores: row.sensory_scores || [],
     qcApproval: row.qc_approval || null,
     labMeasurements: row.lab_measurements || [],
+    splitGroupId: row.split_group_id || null,
     volumeTopups: row.volume_topups || [],
     stillFermenting: !!row.still_fermenting,
     tankSettingsLog: row.tank_settings_log || [],
@@ -105,6 +106,7 @@ export function batchToRow(batch, userId, companyId) {
     sensory_scores: batch.sensoryScores || [],
     qc_approval: batch.qcApproval || null,
     lab_measurements: batch.labMeasurements || [],
+    split_group_id: batch.splitGroupId || null,
     volume_topups: batch.volumeTopups || [],
     still_fermenting: !!batch.stillFermenting,
     tank_settings_log: batch.tankSettingsLog || [],
@@ -616,6 +618,7 @@ export function rowToSalesOrder(row) {
     notes: row.notes,
     paid: !!row.paid,
     createdAt: row.created_at || null,
+    proofsOfDelivery: row.proofs_of_delivery || [],
   };
 }
 export function salesOrderToRow(order, companyId) {
@@ -629,6 +632,7 @@ export function salesOrderToRow(order, companyId) {
     lines: order.lines || [],
     notes: order.notes || null,
     paid: !!order.paid,
+    proofs_of_delivery: order.proofsOfDelivery || [],
   };
 }
 
