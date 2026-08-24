@@ -7591,7 +7591,7 @@ function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
 // changing which tanks (and volumes) it's actually sitting in.
 function EditSplitTanksModal({ batch, tanks, batches, onClose, onSave }) {
   const [rows, setRows] = useState(
-    (batch.splitTanks || []).map((t) => ({ id: uid(), tankId: t.tankId, volume: t.volume }))
+    batch.tankId ? [{ id: uid(), tankId: batch.tankId, volume: batch.volume }] : [{ id: uid(), tankId: "", volume: batch.volume }]
   );
 
   const addRow = () => setRows((prev) => [...prev, { id: uid(), tankId: "", volume: "" }]);
@@ -7610,8 +7610,11 @@ function EditSplitTanksModal({ batch, tanks, batches, onClose, onSave }) {
   };
 
   return (
-    <Modal title={`Change tanks — ${batch.name}`} onClose={onClose}>
+    <Modal title={`Split into tanks — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5 }}>
+          Add a second tank to split this batch — each one becomes its own fully independent batch from this point on, sharing today's brew-day history but nothing after.
+        </div>
         {rows.map((row) => (
           <div key={row.id} style={{ display: "flex", gap: 6 }}>
             <select
@@ -14501,7 +14504,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, isOwner }) {
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
@@ -15680,6 +15683,31 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                 <div key={s.id} style={{ padding: "9px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13, color: "#2A3324" }}>
                   {s.label} <span style={{ color: "#5C6B54", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>({s.scaledAmount} {s.unit})</span>
                 </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {(() => {
+        if (!batch.splitGroupId) return null;
+        const siblings = (allBatches || []).filter((b) => b.id !== batch.id && b.splitGroupId === batch.splitGroupId);
+        if (siblings.length === 0) return null;
+        return (
+          <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+              Brewed with — same brew day, split into separate tanks
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {siblings.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => onOpenBatch(s.id)}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, cursor: "pointer", textAlign: "left", width: "100%", boxSizing: "border-box" }}
+                >
+                  <span style={{ color: "#2A3324", fontSize: 13 }}>{s.name}</span>
+                  <span style={{ color: "#9BA88A", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>{s.tankName} · {s.stage}</span>
+                </button>
               ))}
             </div>
           </div>
@@ -22248,7 +22276,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-263";
+const APP_VERSION = "2026-08-03-265";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24814,12 +24842,65 @@ function TankLogApp() {
     if (tank) resetTankClean(tank.id, batch);
   };
 
-  const updateBatchSplitTanks = async (batchId, splitTanks) => {
+  // Splitting a batch that's already fermenting into multiple tanks — same
+  // reasoning as the kettle-stage split in transferToFermenter: from this
+  // point on each tank needs to be its own real, independent batch, not a
+  // shared record. The difference here is this batch may already be days
+  // into fermentation, so everything accumulated so far (readings, notes,
+  // faults, diacetyl tests) needs to carry forward to every sibling, not
+  // just the original brew-day data.
+  const splitBatchIntoTanks = async (batchId, tanksChosen) => {
     const batch = batches.find((b) => b.id === batchId);
-    const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", batchId);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, splitTanks } : b)));
-    splitTanks.forEach((t) => resetTankClean(t.tankId, batch));
+    if (!batch) return;
+
+    if (tanksChosen.length === 1) {
+      const tank = tanksChosen[0];
+      const target = tanks.find((t) => t.id === tank.tankId);
+      const patch = { tank_id: tank.tankId, tank_name: tank.tankName };
+      const { error } = await supabase.from("batches").update(patch).eq("id", batchId);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, tankId: tank.tankId, tankName: tank.tankName } : b)));
+      if (target) resetTankClean(target.id, batch);
+      return;
+    }
+
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const totalSplitVolume = tanksChosen.reduce((sum, t) => sum + (Number(t.volume) || 0), 0);
+    // Always a fresh id for this specific split — if the source batch was
+    // itself already a sibling of an earlier split, it would already carry
+    // its own splitGroupId, and blindly reusing that would incorrectly
+    // merge two unrelated brew days into one group.
+    const splitGroupId = uid();
+    const newBatches = tanksChosen.map((t, i) => {
+      const suffix = letters[i] || String(i + 1);
+      const share = totalSplitVolume > 0 ? t.volume / totalSplitVolume : 0;
+      return {
+        ...batch,
+        id: uid(),
+        number: `${batch.number}${suffix}`,
+        name: `${batch.name} — ${suffix}`,
+        volume: t.volume,
+        tankId: t.tankId,
+        tankName: t.tankName,
+        splitTanks: [],
+        splitGroupId,
+        ingredientCost: batch.ingredientCost != null ? Math.round(batch.ingredientCost * share * 100) / 100 : null,
+      };
+    });
+
+    for (const nb of newBatches) {
+      const { error } = await supabase.from("batches").insert(batchToRow(nb, user.id, profile.companyId));
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    }
+    const { error: deleteError } = await supabase.from("batches").delete().eq("id", batchId);
+    if (deleteError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+
+    setBatches((prev) => [...newBatches, ...prev.filter((b) => b.id !== batchId)]);
+    setSelectedId(newBatches[0].id);
+    const summary = newBatches.map((b) => `${b.name} (${b.tankName})`).join(" + ");
+    showToast("success", `Split into ${newBatches.length} separate batches.`);
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) split into ${summary}`);
+    tanksChosen.forEach((t, i) => resetTankClean(t.tankId, newBatches[i]));
   };
 
   // Logs a hop, fruit, or other addition made to just one side of a split
@@ -25587,6 +25668,7 @@ function TankLogApp() {
     // history up to now) and retires the original kettle-stage record.
     const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const totalSplitVolume = tanksChosen.reduce((sum, t) => sum + (Number(t.volume) || 0), 0);
+    const splitGroupId = uid();
     const newBatches = tanksChosen.map((t, i) => {
       const suffix = letters[i] || String(i + 1);
       const share = totalSplitVolume > 0 ? t.volume / totalSplitVolume : 0;
@@ -25599,6 +25681,7 @@ function TankLogApp() {
         tankId: t.tankId,
         tankName: t.tankName,
         splitTanks: [],
+        splitGroupId,
         brewStage: null,
         stage: "Primary",
         ingredientCost: batch.ingredientCost != null ? Math.round(batch.ingredientCost * share * 100) / 100 : null,
@@ -28154,6 +28237,8 @@ function TankLogApp() {
           <BatchDetail
             batch={selected}
             recipes={recipes}
+            allBatches={batches}
+            onOpenBatch={setSelectedId}
             isOwner={isOwner}
             onBack={() => setSelectedId(null)}
             onAdvance={advance}
@@ -28881,7 +28966,7 @@ function TankLogApp() {
           tanks={tanks}
           batches={batches}
           onClose={() => setEditSplitTanksTarget(null)}
-          onSave={updateBatchSplitTanks}
+          onSave={splitBatchIntoTanks}
         />
       )}
       {fermenterTransferTarget && (
