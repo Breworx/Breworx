@@ -271,6 +271,49 @@ function mixedPackStockList(mixedPackTypes, mixedPackAssemblies, salesOrders) {
   });
 }
 
+// Sales-driven production forecast — different from ingredientsNeededForScheduled
+// above, which only forecasts raw material needs for brews already
+// scheduled. This looks the other way: at current sales velocity, is a
+// recipe going to run out of packaged stock before a fresh batch could
+// realistically be brewed and ready? Only flags recipes that are
+// actually selling (avoids nonsense suggestions for anything dormant),
+// and never flags one that already has a batch in the pipeline.
+function recipeDemandForecast(recipes, batches, salesOrders, windowDays = 60, leadTimeDays = 21) {
+  const stockList = availableStockList(batches, salesOrders, []);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - windowDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  return activeRecipesByFamily(recipes)
+    .map((recipe) => {
+      const recipeBatchIds = new Set(batches.filter((b) => b.recipeId === recipe.id).map((b) => b.id));
+      if (recipeBatchIds.size === 0) return null;
+
+      const currentStock = stockList
+        .filter((s) => recipeBatchIds.has(s.batchId))
+        .reduce((sum, s) => sum + Math.max(0, s.available), 0);
+
+      let unitsSoldRecently = 0;
+      (salesOrders || []).forEach((o) => {
+        if (o.status === "Draft" || o.status === "Cancelled") return;
+        if (!o.orderDate || o.orderDate < cutoffStr) return;
+        (o.lines || []).forEach((l) => {
+          if (recipeBatchIds.has(l.batchId)) unitsSoldRecently += l.fulfilledQty || 0;
+        });
+      });
+      const dailyVelocity = unitsSoldRecently / windowDays;
+      if (dailyVelocity <= 0) return null;
+
+      const hasUpcomingBatch = batches.some((b) => b.recipeId === recipe.id && b.stage !== "Packaged");
+      const daysOfStockRemaining = currentStock / dailyVelocity;
+      const needsAttention = daysOfStockRemaining < leadTimeDays && !hasUpcomingBatch;
+
+      return { recipe, currentStock, dailyVelocity, daysOfStockRemaining, hasUpcomingBatch, needsAttention };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.daysOfStockRemaining - b.daysOfStockRemaining);
+}
+
 // Deterministic per-user color for the reminders calendar — same person
 // always gets the same color, without needing to store one anywhere.
 const USER_COLORS = ["#5C9A3C", "#D9A441", "#4AA8C9", "#B5502F", "#8E6FB5", "#5C6B54"];
@@ -9290,6 +9333,74 @@ function SalesOrdersView({ salesOrders, customers, onOpen }) {
 // right now — not all-or-nothing. Leftover on any line stays open as a
 // genuine backorder rather than forcing the whole order to wait until
 // every line is ready at once.
+// A simple, touch-first signature pad. Uses pointer events specifically
+// rather than mouse events — the standard mouse/touch drag approach
+// doesn't reliably fire from a genuine finger touch on iPad, only from
+// an actual mouse or trackpad, which would make this silently useless
+// for how this app is actually used day to day.
+function SignatureCanvas({ onChange }) {
+  const canvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastPointRef = useRef(null);
+  const [hasDrawn, setHasDrawn] = useState(false);
+
+  const getPos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const handlePointerDown = (e) => {
+    canvasRef.current.setPointerCapture(e.pointerId);
+    isDrawingRef.current = true;
+    lastPointRef.current = getPos(e);
+  };
+  const handlePointerMove = (e) => {
+    if (!isDrawingRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.strokeStyle = "#2A3324";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    lastPointRef.current = pos;
+    if (!hasDrawn) setHasDrawn(true);
+  };
+  const handlePointerUp = () => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    onChange(canvasRef.current.toDataURL("image/png"));
+  };
+  const clear = () => {
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    setHasDrawn(false);
+    onChange(null);
+  };
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        width={400}
+        height={150}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        style={{ touchAction: "none", border: "1px solid #DDE0C8", borderRadius: 5, background: "#FFFFFF", width: "100%", height: 150, cursor: "crosshair" }}
+      />
+      {hasDrawn && (
+        <button onClick={clear} style={{ background: "none", border: "none", color: "#9BA88A", fontSize: 11.5, cursor: "pointer", padding: "6px 0 0" }}>
+          Clear and redo
+        </button>
+      )}
+    </div>
+  );
+}
+
 function RecordFulfillmentModal({ order, onClose, onSave }) {
   const [amounts, setAmounts] = useState(() => {
     const init = {};
@@ -9299,6 +9410,8 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
     });
     return init;
   });
+  const [receivedBy, setReceivedBy] = useState("");
+  const [signature, setSignature] = useState(null);
 
   const submit = () => {
     const fulfillingNow = (order.lines || [])
@@ -9309,7 +9422,8 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
       })
       .filter((l) => l.fulfillNow > 0);
     if (fulfillingNow.length === 0) return;
-    onSave(fulfillingNow);
+    const pod = receivedBy.trim() || signature ? { receivedBy: receivedBy.trim() || null, signature: signature || null, date: today() } : null;
+    onSave(fulfillingNow, pod);
     onClose();
   };
 
@@ -9338,6 +9452,18 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
             </div>
           );
         })}
+
+        <div style={{ borderTop: "1px solid #DDE0C8", paddingTop: 14 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Proof of delivery (optional)
+          </div>
+          <TextField label="Received by" value={receivedBy} onChange={setReceivedBy} placeholder="Name of whoever accepted the delivery" />
+          <div style={{ marginTop: 10 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", display: "block", marginBottom: 5 }}>Signature</span>
+            <SignatureCanvas onChange={setSignature} />
+          </div>
+        </div>
+
         <button
           onClick={submit}
           style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: "0.03em", cursor: "pointer" }}
@@ -9522,6 +9648,28 @@ function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogg
           </button>
         </div>
       )}
+
+      {(order.proofsOfDelivery || []).length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Proof of delivery
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[...order.proofsOfDelivery].reverse().map((p) => (
+              <div key={p.id} style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: p.signature ? 8 : 0 }}>
+                  <span style={{ color: "#2A3324", fontSize: 13 }}>{p.receivedBy || "Received"}</span>
+                  <span style={{ color: "#9BA88A", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>{p.date}</span>
+                </div>
+                {p.signature && (
+                  <img src={p.signature} alt="Delivery signature" style={{ width: "100%", maxWidth: 300, height: "auto", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4 }} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
         <button
           onClick={() => onPrint(order)}
@@ -19149,7 +19297,7 @@ function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, onCycle
 // any version of it side by side — target vs actual OG/FG, attenuation,
 // ABV, days in tank, and cost — so drift or consistency across brews of
 // the same beer is visible at a glance instead of buried per-batch.
-function RecipeAnalyticsView({ recipes, batches, onOpenBatch, isOwner }) {
+function RecipeAnalyticsView({ recipes, batches, salesOrders, onOpenBatch, isOwner }) {
   const [query, setQuery] = useState("");
   const [selectedFamilyId, setSelectedFamilyId] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
@@ -19294,6 +19442,32 @@ function RecipeAnalyticsView({ recipes, batches, onOpenBatch, isOwner }) {
   if (!selectedFamilyId) {
     return (
       <div>
+        {(() => {
+          const forecast = recipeDemandForecast(recipes, batches, salesOrders || []);
+          const flagged = forecast.filter((f) => f.needsAttention);
+          if (flagged.length === 0) return null;
+          return (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
+                Running low, nothing brewing
+              </div>
+              <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 10 }}>
+                Based on recent sales pace, these will likely run out before a fresh batch could be brewed and ready.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {flagged.map((f) => (
+                  <div key={f.recipe.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6 }}>
+                    <span style={{ color: "#7A3E1D", fontSize: 13.5 }}>{f.recipe.name}</span>
+                    <span style={{ color: "#7A3E1D", fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                      ~{Math.max(0, Math.round(f.daysOfStockRemaining))} days of stock left
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         <button
           data-tour="page-recipeAnalytics-faultmode"
           onClick={() => setFaultMode(true)}
@@ -22290,7 +22464,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-266";
+const APP_VERSION = "2026-08-03-268";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24667,7 +24841,7 @@ function TankLogApp() {
   // tracked backorder rather than blocking the whole order. Only the
   // portion fulfilled in this pass gets synced to Xero, as its own
   // partial invoice, not the full order total.
-  const recordFulfillment = async (orderId, fulfillingNowLines) => {
+  const recordFulfillment = async (orderId, fulfillingNowLines, pod) => {
     const order = salesOrders.find((o) => o.id === orderId);
     if (!order) return;
 
@@ -24680,10 +24854,11 @@ function TankLogApp() {
     }));
     const allFulfilled = newLines.every((l) => (l.fulfilledQty || 0) >= l.qty);
     const newStatus = allFulfilled ? "Fulfilled" : "Partially fulfilled";
+    const proofsOfDelivery = pod ? [...(order.proofsOfDelivery || []), { id: uid(), ...pod }] : order.proofsOfDelivery || [];
 
-    const { error } = await supabase.from("sales_orders").update({ lines: newLines, status: newStatus }).eq("id", orderId);
+    const { error } = await supabase.from("sales_orders").update({ lines: newLines, status: newStatus, proofs_of_delivery: proofsOfDelivery }).eq("id", orderId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setSalesOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, lines: newLines, status: newStatus } : o)));
+    setSalesOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, lines: newLines, status: newStatus, proofsOfDelivery } : o)));
     showToast("success", allFulfilled ? "Order fully fulfilled." : "Partial fulfillment recorded — the rest stays open.");
 
     const partialOrderForXero = { ...order, lines: fulfillingNowLines.map((l) => ({ ...l, qty: l.fulfillNow })) };
@@ -27590,6 +27765,7 @@ function TankLogApp() {
                 <RecipeAnalyticsView
                   recipes={recipes}
                   batches={batches}
+                  salesOrders={salesOrders}
                   onOpenBatch={(id) => {
                     setSelectedId(id);
                     setView("batches");
@@ -28545,7 +28721,7 @@ function TankLogApp() {
         <RecordFulfillmentModal
           order={fulfillmentTarget}
           onClose={() => setFulfillmentTarget(null)}
-          onSave={(fulfillingNowLines) => recordFulfillment(fulfillmentTarget.id, fulfillingNowLines)}
+          onSave={(fulfillingNowLines, pod) => recordFulfillment(fulfillmentTarget.id, fulfillingNowLines, pod)}
         />
       )}
 
