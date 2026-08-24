@@ -2850,7 +2850,17 @@ function findMissingIngredients(ingredientLines, inventory) {
 // flow) has genuinely no readings yet, until brewing actually starts —
 // this must never return undefined, or anything that does latest.gravity
 // crashes outright rather than just showing an empty/neutral state.
-function latestReading(batch) {
+function latestReading(batch, tankId) {
+  if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
+    const side = batch.splitTanks.find((t) => t.tankId === tankId);
+    if (side && side.readings && side.readings.length > 0) return side.readings[side.readings.length - 1];
+    // A split side with no readings of its own yet still starts from
+    // wherever the shared, pre-split history left off — not from
+    // scratch — since both sides came from the same wort right up
+    // until the split happened.
+    if (batch.readings && batch.readings.length > 0) return batch.readings[batch.readings.length - 1];
+    return { gravity: batch.og ?? null, temp: null, date: batch.startDate };
+  }
   if (batch.readings && batch.readings.length > 0) return batch.readings[batch.readings.length - 1];
   return { gravity: batch.og ?? null, temp: null, date: batch.startDate };
 }
@@ -13020,19 +13030,72 @@ function DiacetylTestModal({ batch, onClose, onLog }) {
   );
 }
 
-function LogReadingModal({ batch, onClose, onLog }) {
-  const [gravity, setGravity] = useState(latestReading(batch).gravity);
-  const [temp, setTemp] = useState(latestReading(batch).temp);
-  const [ph, setPh] = useState(latestReading(batch).ph ?? "");
+// One tank side's own gravity/temp history — split batches genuinely
+// diverge between tanks even though they started from the same wort,
+// so each side gets its own independent chart and log, not a single
+// shared one that would silently mix two different fermentations.
+function SplitTankReadingsSection({ tank, batch, onLogReading, onDeleteReading }) {
+  const readings = tank.readings || [];
+  const chartData = readings.map((r) => ({ date: r.date.slice(5), gravity: r.gravity, temp: r.temp }));
+
+  return (
+    <div style={{ border: "1px solid #EBE8D6", borderRadius: 5, padding: "12px 14px", background: "#F8F5EA", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>{tank.tankName} ({tank.volume}L)</span>
+        <button
+          onClick={() => onLogReading(batch, tank.tankId, tank.tankName)}
+          style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
+        >
+          + Log reading
+        </button>
+      </div>
+
+      {chartData.length > 1 && (
+        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 10px 8px", marginBottom: 10 }}>
+          <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8, marginLeft: 6 }}>Gravity trend</div>
+          <TrendChart points={chartData} valueKey="gravity" color="#5C9A3C" formatValue={(v) => v.toFixed(3)} />
+        </div>
+      )}
+
+      {readings.length === 0 ? (
+        <div style={{ color: "#9BA88A", fontSize: 12.5 }}>No readings yet for this tank.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {[...readings].reverse().map((r) => (
+            <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "7px 10px", background: "#FFFFFF", border: "1px solid #EBE8D6", borderRadius: 4, fontSize: 12 }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 52, flexShrink: 0 }}>{r.date.slice(5)}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 52, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 38, flexShrink: 0 }}>{r.temp}°C</span>
+              {r.ph != null && <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", flexShrink: 0 }}>pH {r.ph.toFixed(2)}</span>}
+              {r.note && <span style={{ flex: 1, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
+              <button
+                onClick={() => onDeleteReading(batch.id, r.id, tank.tankId)}
+                aria-label="Delete reading"
+                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 4, marginLeft: "auto", flexShrink: 0 }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LogReadingModal({ batch, tankId, tankName, onClose, onLog }) {
+  const [gravity, setGravity] = useState(latestReading(batch, tankId).gravity);
+  const [temp, setTemp] = useState(latestReading(batch, tankId).temp);
+  const [ph, setPh] = useState(latestReading(batch, tankId).ph ?? "");
   const [note, setNote] = useState("");
 
   const submit = () => {
-    onLog(batch.id, { id: uid(), date: today(), gravity: Number(gravity), temp: Number(temp), ph: ph === "" ? null : Number(ph), note: note.trim() });
+    onLog(batch.id, { id: uid(), date: today(), gravity: Number(gravity), temp: Number(temp), ph: ph === "" ? null : Number(ph), note: note.trim() }, tankId);
     onClose();
   };
 
   return (
-    <Modal title={`Log reading — ${batch.name}`} onClose={onClose}>
+    <Modal title={tankId ? `Log reading — ${batch.name} (${tankName})` : `Log reading — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Gravity" value={gravity} onChange={setGravity} step="0.001" />
@@ -15021,26 +15084,28 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       })()}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-        <button
-          onClick={() => onLogReading(batch)}
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 7,
-            background: "#EBE8D6",
-            border: "1px solid #C9D1AC",
-            borderRadius: 5,
-            padding: "11px",
-            color: "#2A3324",
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 13.5,
-            cursor: "pointer",
-          }}
-        >
-          <Droplet size={15} /> Log reading
-        </button>
+        {(!batch.splitTanks || batch.splitTanks.length === 0) && (
+          <button
+            onClick={() => onLogReading(batch)}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              background: "#EBE8D6",
+              border: "1px solid #C9D1AC",
+              borderRadius: 5,
+              padding: "11px",
+              color: "#2A3324",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 13.5,
+              cursor: "pointer",
+            }}
+          >
+            <Droplet size={15} /> Log reading
+          </button>
+        )}
         {!inMashTun && !inKettle && stageIdx < stages.length - 1 && (() => {
           const nextStage = stages[stageIdx + 1];
           const needsDiacetylPass = batch.stage === "Primary" && nextStage === "Cooling";
@@ -15566,61 +15631,74 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </div>
       )}
 
-      {chartData.length > 1 && (
-        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
-            <TrendingDown size={13} /> Gravity trend
+      {batch.splitTanks && batch.splitTanks.length > 0 ? (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Readings — each tank ferments on its own, so tracked separately
           </div>
-          <TrendChart points={chartData} valueKey="gravity" color="#5C9A3C" formatValue={(v) => v.toFixed(3)} />
+          {batch.splitTanks.map((t) => (
+            <SplitTankReadingsSection key={t.tankId} tank={t} batch={batch} onLogReading={(b, tId, tName) => onLogReading(b, tId, tName)} onDeleteReading={onDeleteReading} />
+          ))}
         </div>
-      )}
+      ) : (
+        <>
+          {chartData.length > 1 && (
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <TrendingDown size={13} /> Gravity trend
+              </div>
+              <TrendChart points={chartData} valueKey="gravity" color="#5C9A3C" formatValue={(v) => v.toFixed(3)} />
+            </div>
+          )}
 
-      {chartData.filter((d) => d.temp != null).length > 1 && (
-        <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
-            <Thermometer size={13} /> Temperature trend
+          {chartData.filter((d) => d.temp != null).length > 1 && (
+            <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "16px 12px 10px", marginBottom: 22 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10, marginLeft: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <Thermometer size={13} /> Temperature trend
+              </div>
+              <TrendChart points={chartData} valueKey="temp" color="#4AA8C9" formatValue={(v) => `${v.toFixed(1)}°`} />
+            </div>
+          )}
+
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
+            Reading log
           </div>
-          <TrendChart points={chartData} valueKey="temp" color="#4AA8C9" formatValue={(v) => `${v.toFixed(1)}°`} />
-        </div>
-      )}
-
-      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-        Reading log
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {[...batch.readings].reverse().map((r) => (
-          <div
-            key={r.id}
-            style={{
-              display: "flex",
-              gap: 14,
-              alignItems: "baseline",
-              padding: "9px 12px",
-              background: "#F8F5EA",
-              border: "1px solid #EBE8D6",
-              borderRadius: 5,
-              fontSize: 13,
-            }}
-          >
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
-            {r.ph != null && (
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 48, flexShrink: 0 }}>pH {r.ph.toFixed(2)}</span>
-            )}
-            {r.note && <span style={{ flex: 1, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
-            {batch.readings.length > 1 && (
-              <button
-                onClick={() => onDeleteReading(batch.id, r.id)}
-                aria-label="Delete reading"
-                style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 6, marginLeft: "auto", flexShrink: 0 }}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[...batch.readings].reverse().map((r) => (
+              <div
+                key={r.id}
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  alignItems: "baseline",
+                  padding: "9px 12px",
+                  background: "#F8F5EA",
+                  border: "1px solid #EBE8D6",
+                  borderRadius: 5,
+                  fontSize: 13,
+                }}
               >
-                <Trash2 size={13} />
-              </button>
-            )}
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", width: 62, flexShrink: 0 }}>{r.date.slice(5)}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", width: 60, flexShrink: 0 }}>{r.gravity.toFixed(3)}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 42, flexShrink: 0 }}>{r.temp}°C</span>
+                {r.ph != null && (
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54", width: 48, flexShrink: 0 }}>pH {r.ph.toFixed(2)}</span>
+                )}
+                {r.note && <span style={{ flex: 1, color: "#5C6B54", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}</span>}
+                {batch.readings.length > 1 && (
+                  <button
+                    onClick={() => onDeleteReading(batch.id, r.id)}
+                    aria-label="Delete reading"
+                    style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 6, marginLeft: "auto", flexShrink: 0 }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginTop: 26, marginBottom: 10 }}>
         Notes
@@ -22023,7 +22101,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-261";
+const APP_VERSION = "2026-08-03-262";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -25428,18 +25506,35 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, faults } : b)));
   };
 
-  const logReading = async (id, reading) => {
+  const logReading = async (id, reading, tankId) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
+    if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, readings: [...(t.readings || []), reading] } : t));
+      const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, splitTanks } : b)));
+      return;
+    }
     const readings = [...batch.readings, reading];
     const { error } = await supabase.from("batches").update({ readings }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, readings } : b)));
   };
 
-  const deleteReading = async (batchId, readingId) => {
+  const deleteReading = async (batchId, readingId, tankId) => {
     const batch = batches.find((b) => b.id === batchId);
-    if (!batch || batch.readings.length <= 1) return;
+    if (!batch) return;
+    if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
+      const side = batch.splitTanks.find((t) => t.tankId === tankId);
+      if (!side || !side.readings || side.readings.length === 0) return;
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, readings: t.readings.filter((r) => r.id !== readingId) } : t));
+      const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", batchId);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, splitTanks } : b)));
+      return;
+    }
+    if (batch.readings.length <= 1) return;
     const readings = batch.readings.filter((r) => r.id !== readingId);
     const { error } = await supabase.from("batches").update({ readings }).eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -27892,7 +27987,7 @@ function TankLogApp() {
             onBack={() => setSelectedId(null)}
             onAdvance={advance}
             onMoveBack={moveStageBack}
-            onLogReading={setLogTarget}
+            onLogReading={(batch, tankId, tankName) => setLogTarget({ batch, tankId, tankName })}
             onDeleteReading={deleteReading}
             onEditBrewDayField={setBrewDayFieldTarget}
             onOpenPackaging={setPackagingTarget}
@@ -28651,7 +28746,7 @@ function TankLogApp() {
         />
       )}
       {logTarget && (
-        <LogReadingModal batch={logTarget} onClose={() => setLogTarget(null)} onLog={logReading} />
+        <LogReadingModal batch={logTarget.batch} tankId={logTarget.tankId} tankName={logTarget.tankName} onClose={() => setLogTarget(null)} onLog={logReading} />
       )}
       {brewDayFieldTarget && (
         <EditBrewDayFieldModal target={brewDayFieldTarget} onClose={() => setBrewDayFieldTarget(null)} onSave={updateBrewDayField} />
