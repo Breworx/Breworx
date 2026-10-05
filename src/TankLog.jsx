@@ -1896,6 +1896,16 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+// Readings are read as "first = OG, last = latest", so a backdated entry must
+// slot into date order rather than land at the end. Stable for same-day ones.
+const withStageDate = (batch, stage, date) => ({ ...(batch.stageDates || {}), [stage]: date || today() });
+
+const insertByDate = (list, item) => {
+  const withIdx = [...(list || []), item].map((r, i) => ({ r, i }));
+  withIdx.sort((a, b) => ((a.r.date || "").slice(0, 10) < (b.r.date || "").slice(0, 10) ? -1 : (a.r.date || "").slice(0, 10) > (b.r.date || "").slice(0, 10) ? 1 : a.i - b.i));
+  return withIdx.map((x) => x.r);
+};
+
 const daysBetween = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 // Stays in local time the whole way through — parsing as local, adding
 // days as local, and extracting local components at the end. The old
@@ -6607,6 +6617,7 @@ function AddSplitTankIngredientModal({ tankName, inventory, onClose, onSave }) {
   const [qty, setQty] = useState("");
   const [unit, setUnit] = useState("kg");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(today());
 
   const matches = inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
 
@@ -6619,7 +6630,7 @@ function AddSplitTankIngredientModal({ tankName, inventory, onClose, onSave }) {
 
   const submit = () => {
     if (!name.trim() || !qty || Number(qty) <= 0) return;
-    onSave({ name: name.trim(), qty: Number(qty), unit, note: note.trim() });
+    onSave({ name: name.trim(), qty: Number(qty), unit, note: note.trim(), date });
     onClose();
   };
 
@@ -6661,6 +6672,7 @@ function AddSplitTankIngredientModal({ tankName, inventory, onClose, onSave }) {
             <SelectField label="Unit" value={unit} onChange={setUnit} options={["kg", "g", "L", "mL", "ea"]} />
           </div>
         </div>
+        <BackdateField value={date} onChange={setDate} label="Date added" />
         <TextField label="Note (optional)" value={note} onChange={setNote} placeholder="e.g. Dry hop, day 5" />
         <button
           onClick={submit}
@@ -7766,6 +7778,7 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
   const fermenters = tanks.filter((t) => t.type === "Fermenter");
   const target = remainingVolume(batch);
   const [rows, setRows] = useState([{ id: uid(), tankId: "", volume: target }]);
+  const [date, setDate] = useState(today());
 
   const addRow = () =>
     setRows((prev) => {
@@ -7793,7 +7806,7 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
         return { tankId: r.tankId, tankName: t ? t.name : "", volume: Number(r.volume) || 0 };
       });
     if (final.length === 0) return;
-    onSave(final);
+    onSave(final, date);
     onClose();
   };
 
@@ -7931,6 +7944,7 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
             })()}
           </>
         )}
+        <BackdateField value={date} onChange={setDate} label="Transfer date" />
         <button
           onClick={submit}
           disabled={!canSubmit}
@@ -7959,11 +7973,12 @@ function TransferToFermenterModal({ batch, tanks, batches, onClose, onSave }) {
 function VesselTransferModal({ batch, tanks, batches, toType, actionLabel, onClose, onSave }) {
   const available = tanks.filter((t) => t.type === toType);
   const [tankId, setTankId] = useState("");
+  const [date, setDate] = useState(today());
 
   const submit = () => {
     const tank = available.find((t) => t.id === tankId);
     if (!tank || tankIsOccupied(batches, tank.id, batch.id)) return;
-    onSave(tank);
+    onSave(tank, date);
     onClose();
   };
 
@@ -8005,6 +8020,7 @@ function VesselTransferModal({ batch, tanks, batches, toType, actionLabel, onClo
             </select>
           </label>
         )}
+        <BackdateField value={date} onChange={setDate} label="Transfer date" />
         <button
           onClick={submit}
           disabled={!tankId}
@@ -9014,6 +9030,7 @@ function AddKegsModal({ onClose, onSave }) {
 function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, onMarkLost, onDelete }) {
   const [showFill, setShowFill] = useState(false);
   const [showSend, setShowSend] = useState(false);
+  const [showReturn, setShowReturn] = useState(false);
   const isOverdue = keg.dueBackDate && keg.dueBackDate < today();
   const eligibleBatches = batches.filter((b) => ["Brite Tank", "Packaged"].includes(b.stage) || b.stage === "Primary").slice(0, 50);
 
@@ -9064,7 +9081,7 @@ function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, 
         )}
         {keg.status === "With customer" && (
           <button
-            onClick={() => onReturn(keg.id)}
+            onClick={() => setShowReturn(true)}
             style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "11px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}
           >
             Mark returned
@@ -9123,7 +9140,8 @@ function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, 
         </Modal>
       )}
 
-      {showSend && <SendKegModal customers={customers} onClose={() => setShowSend(false)} onSave={(customerId, customerName, dueBackDate) => { onSend(keg.id, customerId, customerName, dueBackDate); setShowSend(false); }} />}
+      {showReturn && <StageDateModal title="Mark keg returned" confirmLabel="Mark returned" onClose={() => setShowReturn(false)} onConfirm={(d) => onReturn(keg.id, d)} />}
+      {showSend && <SendKegModal customers={customers} onClose={() => setShowSend(false)} onSave={(customerId, customerName, dueBackDate, sentOn) => { onSend(keg.id, customerId, customerName, dueBackDate, sentOn); setShowSend(false); }} />}
     </div>
   );
 }
@@ -9131,11 +9149,12 @@ function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, 
 function SendKegModal({ customers, onClose, onSave }) {
   const [customerId, setCustomerId] = useState("");
   const [dueBackDate, setDueBackDate] = useState("");
+  const [sentOn, setSentOn] = useState(today());
 
   const submit = () => {
     const customer = customers.find((c) => c.id === customerId);
     if (!customer) return;
-    onSave(customerId, customer.name, dueBackDate || null);
+    onSave(customerId, customer.name, dueBackDate || null, sentOn);
   };
 
   return (
@@ -9156,6 +9175,7 @@ function SendKegModal({ customers, onClose, onSave }) {
             ))}
           </select>
         </label>
+        <BackdateField value={sentOn} onChange={setSentOn} label="Date sent" />
         <TextField label="Expected back by (optional)" type="date" value={dueBackDate} onChange={setDueBackDate} />
         <button
           onClick={submit}
@@ -9412,6 +9432,7 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
   });
   const [receivedBy, setReceivedBy] = useState("");
   const [signature, setSignature] = useState(null);
+  const [date, setDate] = useState(today());
 
   const submit = () => {
     const fulfillingNow = (order.lines || [])
@@ -9422,8 +9443,8 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
       })
       .filter((l) => l.fulfillNow > 0);
     if (fulfillingNow.length === 0) return;
-    const pod = receivedBy.trim() || signature ? { receivedBy: receivedBy.trim() || null, signature: signature || null, date: today() } : null;
-    onSave(fulfillingNow, pod);
+    const pod = receivedBy.trim() || signature ? { receivedBy: receivedBy.trim() || null, signature: signature || null, date } : null;
+    onSave(fulfillingNow, pod, date);
     onClose();
   };
 
@@ -9433,6 +9454,7 @@ function RecordFulfillmentModal({ order, onClose, onSave }) {
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
           Enter how much of each line is going out right now — leave the rest for later if it's a partial delivery.
         </div>
+        <BackdateField value={date} onChange={setDate} label="Delivery date" />
         {(order.lines || []).map((l) => {
           const remaining = (l.qty || 0) - (l.fulfilledQty || 0);
           return (
@@ -10031,6 +10053,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     return init;
   });
   const [deliveryCostInput, setDeliveryCostInput] = useState(po.deliveryCost != null ? String(po.deliveryCost) : "");
+  const [receivedOn, setReceivedOn] = useState(today());
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState("");
   const [unmatchedItems, setUnmatchedItems] = useState([]);
@@ -10123,9 +10146,9 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
     });
     const deliveryCostOverride = deliveryCostInput === "" ? null : Number(deliveryCostInput);
     if (combinedPOs.length > 0) {
-      onConfirmMultiple(allPOs.map((p) => p.id), lotNumbers, costs, deliveryCostOverride);
+      onConfirmMultiple(allPOs.map((p) => p.id), lotNumbers, costs, deliveryCostOverride, receivedOn);
     } else {
-      onConfirm(lotNumbers, costs, deliveryCostOverride);
+      onConfirm(lotNumbers, costs, deliveryCostOverride, receivedOn);
     }
     onClose();
   };
@@ -10312,6 +10335,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
             Couldn't match {unmatchedItems.length} item{unmatchedItems.length !== 1 ? "s" : ""} from the last scan — enter these by hand: {unmatchedItems.join(", ")}.
           </div>
         )}
+        <BackdateField value={receivedOn} onChange={setReceivedOn} label="Date received" />
         <button
           onClick={submit}
           style={{
@@ -10499,8 +10523,8 @@ function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple, invent
         <ReceivePOModal
           po={po}
           onClose={() => setShowReceive(false)}
-          onConfirm={(lotNumbers, costOverrides, deliveryCostOverride) => onReceive(po.id, lotNumbers, costOverrides, deliveryCostOverride)}
-          onConfirmMultiple={(poIds, lotNumbers, costOverrides, deliveryCostOverride) => onReceiveMultiple(poIds, lotNumbers, costOverrides, deliveryCostOverride)}
+          onConfirm={(lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => onReceive(po.id, lotNumbers, costOverrides, deliveryCostOverride, receivedOn)}
+          onConfirmMultiple={(poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => onReceiveMultiple(poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn)}
           onExtractDocument={onExtractDocument}
           otherSentPOs={(allPOs || []).filter((p) => p.status === "Sent" && p.id !== po.id)}
         />
@@ -12195,6 +12219,55 @@ function TextField({ label, value, onChange, type = "text" }) {
   );
 }
 
+// Shared "when did this happen" field. Defaults to today; lets the user
+// pick an earlier date to record something they forgot or ran out of time
+// for. Future dates are blocked here (scheduling has its own flows).
+function BackdateField({ value, onChange, label = "Date" }) {
+  const t = today();
+  const isBack = value && value < t;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>{label}</span>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="date"
+          value={value}
+          max={t}
+          onChange={(e) => onChange(e.target.value && e.target.value <= t ? e.target.value : t)}
+          style={{ flex: 1, boxSizing: "border-box", background: "#F5F1E4", border: `1px solid ${isBack ? "#C9A227" : "#DDE0C8"}`, borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+        />
+        {isBack && (
+          <button type="button" onClick={() => onChange(t)} style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px", color: "#5C6B54", fontSize: 12, cursor: "pointer" }}>
+            Today
+          </button>
+        )}
+      </div>
+      {isBack && <span style={{ fontSize: 11.5, color: "#8A6D0B" }}>Backdated — this will be recorded as {value}.</span>}
+    </div>
+  );
+}
+
+// ISO timestamp for a chosen day. Today keeps the real time; a past day is
+// stamped at midday local so it sorts and displays on the right date.
+const stampForDate = (d) => (!d || d >= today() ? new Date().toISOString() : new Date(`${d}T12:00:00`).toISOString());
+
+function StageDateModal({ title, confirmLabel, onClose, onConfirm }) {
+  const [date, setDate] = useState(today());
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <BackdateField value={date} onChange={setDate} label="When did this happen?" />
+        <button
+          onClick={() => { onConfirm(date); onClose(); }}
+          style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: "pointer" }}
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function Modal({ title, onClose, children }) {
   return (
     <div
@@ -13122,10 +13195,11 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
 function DiacetylTestModal({ batch, onClose, onLog }) {
   const [result, setResult] = useState(null);
   const [notes, setNotes] = useState("");
+  const [date, setDate] = useState(today());
 
   const submit = () => {
     if (!result) return;
-    onLog(batch.id, { id: uid(), date: new Date().toISOString(), result, notes: notes.trim() });
+    onLog(batch.id, { id: uid(), date: stampForDate(date), result, notes: notes.trim() });
     onClose();
   };
 
@@ -13168,6 +13242,7 @@ function DiacetylTestModal({ batch, onClose, onLog }) {
             Fail
           </button>
         </div>
+        <BackdateField value={date} onChange={setDate} label="Test date" />
         <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
         <button
           onClick={submit}
@@ -13361,9 +13436,10 @@ function LogReadingModal({ batch, tankId, tankName, onClose, onLog }) {
   const [temp, setTemp] = useState(latestReading(batch, tankId).temp);
   const [ph, setPh] = useState(latestReading(batch, tankId).ph ?? "");
   const [note, setNote] = useState("");
+  const [date, setDate] = useState(today());
 
   const submit = () => {
-    onLog(batch.id, { id: uid(), date: today(), gravity: Number(gravity), temp: Number(temp), ph: ph === "" ? null : Number(ph), note: note.trim() }, tankId);
+    onLog(batch.id, { id: uid(), date, gravity: Number(gravity), temp: Number(temp), ph: ph === "" ? null : Number(ph), note: note.trim() }, tankId);
     onClose();
   };
 
@@ -13375,6 +13451,7 @@ function LogReadingModal({ batch, tankId, tankName, onClose, onLog }) {
           <NumberField label="Temp" value={temp} onChange={setTemp} step="0.5" suffix="°C" />
           <NumberField label="pH (optional)" value={ph} onChange={setPh} step="0.01" />
         </div>
+        <BackdateField value={date} onChange={setDate} label="Reading date" />
         <TextField label="Note (optional)" value={note} onChange={setNote} />
         <button
           onClick={submit}
@@ -13623,6 +13700,7 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
     return init;
   });
   const [packageTypeSelections, setPackageTypeSelections] = useState({});
+  const [date, setDate] = useState(today());
   const activeFaults = currentFaults(batch);
 
   const remaining = remainingVolume(batch);
@@ -13633,7 +13711,7 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
   const submit = () => {
     const session = {};
     CONTAINERS.forEach((c) => (session[c.key] = Number(counts[c.key]) || 0));
-    onSave(batch.id, session, packageTypeSelections);
+    onSave(batch.id, session, packageTypeSelections, date);
     onClose();
   };
 
@@ -13774,6 +13852,7 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
             </div>
           )
         )}
+        <BackdateField value={date} onChange={setDate} label="Packaging date" />
         <button
           onClick={submit}
           disabled={sessionVolume <= 0}
@@ -14655,6 +14734,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
 function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [stageDateOpen, setStageDateOpen] = useState(false);
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
   const latestTankSettings = batch.tankSettingsLog && batch.tankSettingsLog.length > 0 ? [...batch.tankSettingsLog].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
   const [setTempInput, setSetTempInput] = useState(latestTankSettings?.setTemp != null ? String(latestTankSettings.setTemp) : "");
@@ -15434,6 +15514,28 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           );
         })()}
       </div>
+      {!inMashTun && !inKettle && stageIdx < stages.length - 1 && stages[stageIdx + 1] !== "Packaged" && stages[stageIdx + 1] !== "Brite Tank" &&
+        !(batch.stage === "Primary" && stages[stageIdx + 1] === "Cooling" && !(batch.diacetylTests || []).some((t) => t.result === "pass")) && (
+          <button
+            onClick={() => setStageDateOpen(true)}
+            style={{ background: "none", border: "none", color: "#5C6B54", fontSize: 12, textDecoration: "underline", cursor: "pointer", padding: "0 0 8px" }}
+          >
+            Already happened earlier? Set the date
+          </button>
+        )}
+      {batch.stageDates && Object.keys(batch.stageDates).length > 0 && (
+        <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8 }}>
+          {stages.filter((st) => batch.stageDates[st]).map((st) => `${st} ${batch.stageDates[st]}`).join(" · ")}
+        </div>
+      )}
+      {stageDateOpen && (
+        <StageDateModal
+          title={`Advance to ${stages[stageIdx + 1]}`}
+          confirmLabel={`Advance to ${stages[stageIdx + 1]}`}
+          onClose={() => setStageDateOpen(false)}
+          onConfirm={(d) => onAdvance(batch.id, d)}
+        />
+      )}
       {!inMashTun && (batch.stage === "Primary" || batch.stage === "Brite Tank" || inKettle) && (
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button
@@ -22464,7 +22566,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-268";
+const APP_VERSION = "2026-08-03-269";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24601,21 +24703,21 @@ function TankLogApp() {
     showToast("success", `${successCount} keg${successCount !== 1 ? "s" : ""} added.`);
   };
 
-  const fillKeg = async (kegId, batchId, batchName) => {
+  const fillKeg = async (kegId, batchId, batchName, date) => {
     const keg = kegs.find((k) => k.id === kegId);
     if (!keg) return;
-    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "filled", note: `Filled with ${batchName}` };
+    const historyEntry = { id: uid(), date: stampForDate(date), user: user.name, type: "filled", note: `Filled with ${batchName}` };
     const newHistory = [...(keg.history || []), historyEntry];
     const { error } = await supabase.from("kegs").update({ current_batch_id: batchId, current_batch_name: batchName, history: newHistory }).eq("id", kegId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setKegs((prev) => prev.map((k) => (k.id === kegId ? { ...k, currentBatchId: batchId, currentBatchName: batchName, history: newHistory } : k)));
   };
 
-  const sendKeg = async (kegId, customerId, customerName, dueBackDate) => {
+  const sendKeg = async (kegId, customerId, customerName, dueBackDate, date) => {
     const keg = kegs.find((k) => k.id === kegId);
     if (!keg) return;
-    const sentDate = today();
-    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "sent", note: `Sent to ${customerName}${keg.currentBatchName ? ` — ${keg.currentBatchName}` : ""}` };
+    const sentDate = date || today();
+    const historyEntry = { id: uid(), date: stampForDate(date), user: user.name, type: "sent", note: `Sent to ${customerName}${keg.currentBatchName ? ` — ${keg.currentBatchName}` : ""}` };
     const newHistory = [...(keg.history || []), historyEntry];
     const payload = { status: "With customer", current_customer_id: customerId, current_customer_name: customerName, sent_date: sentDate, due_back_date: dueBackDate || null, history: newHistory };
     const { error } = await supabase.from("kegs").update(payload).eq("id", kegId);
@@ -24630,10 +24732,10 @@ function TankLogApp() {
     showToast("success", `Keg ${keg.kegNumber} sent to ${customerName}.`);
   };
 
-  const returnKeg = async (kegId) => {
+  const returnKeg = async (kegId, date) => {
     const keg = kegs.find((k) => k.id === kegId);
     if (!keg) return;
-    const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "returned", note: `Returned from ${keg.currentCustomerName || "customer"}` };
+    const historyEntry = { id: uid(), date: stampForDate(date), user: user.name, type: "returned", note: `Returned from ${keg.currentCustomerName || "customer"}` };
     const newHistory = [...(keg.history || []), historyEntry];
     const payload = { status: "In brewery", current_customer_id: null, current_customer_name: null, current_batch_id: null, current_batch_name: null, sent_date: null, due_back_date: null, history: newHistory };
     const { error } = await supabase.from("kegs").update(payload).eq("id", kegId);
@@ -24841,7 +24943,7 @@ function TankLogApp() {
   // tracked backorder rather than blocking the whole order. Only the
   // portion fulfilled in this pass gets synced to Xero, as its own
   // partial invoice, not the full order total.
-  const recordFulfillment = async (orderId, fulfillingNowLines, pod) => {
+  const recordFulfillment = async (orderId, fulfillingNowLines, pod, date) => {
     const order = salesOrders.find((o) => o.id === orderId);
     if (!order) return;
 
@@ -24861,7 +24963,7 @@ function TankLogApp() {
     setSalesOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, lines: newLines, status: newStatus, proofsOfDelivery } : o)));
     showToast("success", allFulfilled ? "Order fully fulfilled." : "Partial fulfillment recorded — the rest stays open.");
 
-    const partialOrderForXero = { ...order, lines: fulfillingNowLines.map((l) => ({ ...l, qty: l.fulfillNow })) };
+    const partialOrderForXero = { ...order, orderDate: date || order.orderDate, lines: fulfillingNowLines.map((l) => ({ ...l, qty: l.fulfillNow })) };
     syncOrderToXero(partialOrderForXero);
   };
 
@@ -25148,7 +25250,7 @@ function TankLogApp() {
   const addSplitTankIngredient = async (batchId, tankId, entry) => {
     const batch = batches.find((b) => b.id === batchId);
     if (!batch) return;
-    const additionEntry = { id: uid(), name: entry.name, qty: entry.qty, unit: entry.unit, note: entry.note || null, date: today() };
+    const additionEntry = { id: uid(), name: entry.name, qty: entry.qty, unit: entry.unit, note: entry.note || null, date: entry.date || today() };
     const newSplitTanks = batch.splitTanks.map((t) =>
       t.tankId === tankId ? { ...t, additions: [...(t.additions || []), additionEntry] } : t
     );
@@ -25160,7 +25262,7 @@ function TankLogApp() {
     if (item) {
       const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
       const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
-      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — split addition` };
+      const historyEntry = { id: uid(), date: stampForDate(entry.date), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — split addition` };
       const newHistory = [...(item.history || []), historyEntry];
       const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, lots: updatedLots, history: newHistory }).eq("id", item.id);
       if (!invError) setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
@@ -25175,7 +25277,7 @@ function TankLogApp() {
   const addBatchIngredient = async (batchId, entry) => {
     const batch = batches.find((b) => b.id === batchId);
     if (!batch) return;
-    const additionEntry = { id: uid(), name: entry.name, qty: entry.qty, unit: entry.unit, note: entry.note || null, date: today() };
+    const additionEntry = { id: uid(), name: entry.name, qty: entry.qty, unit: entry.unit, note: entry.note || null, date: entry.date || today() };
     const newAdditions = [...(batch.batchAdditions || []), additionEntry];
     const { error } = await supabase.from("batches").update({ batch_additions: newAdditions }).eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -25185,7 +25287,7 @@ function TankLogApp() {
     if (item) {
       const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
       const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
-      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — addition` };
+      const historyEntry = { id: uid(), date: stampForDate(entry.date), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — addition` };
       const newHistory = [...(item.history || []), historyEntry];
       const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, lots: updatedLots, history: newHistory }).eq("id", item.id);
       if (!invError) setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
@@ -25684,7 +25786,7 @@ function TankLogApp() {
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
   };
 
-  const receivePO = async (id, lotNumbers, costOverrides, deliveryCostOverride) => {
+  const receivePO = async (id, lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => {
     const po = purchaseOrders.find((p) => p.id === id);
     if (!po) return;
 
@@ -25714,8 +25816,8 @@ function TankLogApp() {
       const lineValue = (line.qty || 0) * (costPerUnit || 0);
       const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
       const unitCost = costPerUnit != null ? costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
-      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: po.poNumber, unitCost };
-      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
+      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: (receivedOn || today()), poNumber: po.poNumber, unitCost };
+      const historyEntry = { id: uid(), date: stampForDate(receivedOn), user: user.name, type: "received", delta: line.qty, note: `${po.poNumber} — ${po.supplier}` };
 
       if (idx >= 0) {
         const item = nextInventory[idx];
@@ -25742,10 +25844,10 @@ function TankLogApp() {
 
     const { error: poError } = await supabase
       .from("purchase_orders")
-      .update({ status: "Received", received_date: today(), lines: finalizedLines, delivery_cost: deliveryCost })
+      .update({ status: "Received", received_date: (receivedOn || today()), lines: finalizedLines, delivery_cost: deliveryCost })
       .eq("id", id);
     if (poError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: today(), lines: finalizedLines, deliveryCost } : p)));
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received", receivedDate: (receivedOn || today()), lines: finalizedLines, deliveryCost } : p)));
     showToast("success", `${po.poNumber} received — inventory updated.`);
     logActivity("received", "purchase order", po.poNumber, `Purchase order ${po.poNumber} received from ${po.supplier} — inventory updated`);
   };
@@ -25754,7 +25856,7 @@ function TankLogApp() {
   // — the freight charge gets split proportionally across every line from
   // every order combined, not just one PO's lines, and each PO ends up
   // storing its own genuine share of that shared cost.
-  const receiveMultiplePOs = async (poIds, lotNumbers, costOverrides, deliveryCostOverride) => {
+  const receiveMultiplePOs = async (poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => {
     const pos = purchaseOrders.filter((p) => poIds.includes(p.id));
     if (pos.length === 0) return;
     const allLines = pos.flatMap((p) => p.lines.map((l) => ({ ...l, _poId: p.id })));
@@ -25786,8 +25888,8 @@ function TankLogApp() {
       const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
       deliverySharesByPO[line._poId] += deliveryShare;
       const unitCost = costPerUnit != null ? costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
-      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: today(), poNumber: poForLine.poNumber, unitCost };
-      const historyEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "received", delta: line.qty, note: `${poForLine.poNumber} — ${poForLine.supplier} (combined delivery)` };
+      const lotEntry = { id: uid(), lotNumber, qty: line.qty, remainingQty: line.qty, date: (receivedOn || today()), poNumber: poForLine.poNumber, unitCost };
+      const historyEntry = { id: uid(), date: stampForDate(receivedOn), user: user.name, type: "received", delta: line.qty, note: `${poForLine.poNumber} — ${poForLine.supplier} (combined delivery)` };
 
       if (idx >= 0) {
         const item = nextInventory[idx];
@@ -25810,7 +25912,7 @@ function TankLogApp() {
       const share = Math.round(deliverySharesByPO[p.id] * 100) / 100;
       const { error: poError } = await supabase
         .from("purchase_orders")
-        .update({ status: "Received", received_date: today(), lines: finalizedLinesByPO[p.id], delivery_cost: share })
+        .update({ status: "Received", received_date: (receivedOn || today()), lines: finalizedLinesByPO[p.id], delivery_cost: share })
         .eq("id", p.id);
       if (poError) showToast("error", `Something didn't save for ${p.poNumber} — check your connection and try again.`);
     }
@@ -25818,7 +25920,7 @@ function TankLogApp() {
       prev.map((p) => {
         const match = pos.find((x) => x.id === p.id);
         if (!match) return p;
-        return { ...p, status: "Received", receivedDate: today(), lines: finalizedLinesByPO[p.id], deliveryCost: Math.round(deliverySharesByPO[p.id] * 100) / 100 };
+        return { ...p, status: "Received", receivedDate: (receivedOn || today()), lines: finalizedLinesByPO[p.id], deliveryCost: Math.round(deliverySharesByPO[p.id] * 100) / 100 };
       })
     );
     const poNumbers = pos.map((p) => p.poNumber).join(" & ");
@@ -25826,7 +25928,7 @@ function TankLogApp() {
     logActivity("received", "purchase order", poNumbers, `${pos.length} purchase orders received together as one combined delivery — inventory updated`);
   };
 
-  const advance = async (id) => {
+  const advance = async (id, date) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     const stages = getStages(hasBriteTanks);
@@ -25837,10 +25939,11 @@ function TankLogApp() {
       const hasPass = (batch.diacetylTests || []).some((t) => t.result === "pass");
       if (!hasPass) return;
     }
-    const { error } = await supabase.from("batches").update({ stage: nextStage }).eq("id", id);
+    const stageDates = withStageDate(batch, nextStage, date);
+    const { error } = await supabase.from("batches").update({ stage: nextStage, stage_dates: stageDates }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage } : b)));
-    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${nextStage}`);
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, stage: nextStage, stageDates } : b)));
+    logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${nextStage}${date && date < today() ? ` (backdated to ${date})` : ""}`);
   };
 
   const moveStageBack = async (id) => {
@@ -25866,15 +25969,16 @@ function TankLogApp() {
   // tank_id," simply changing tank_id automatically frees the old vessel —
   // no separate release step needed. Reaching a Fermenter is what actually
   // advances the batch's real stage to Primary.
-  const transferBatchVessel = async (id, tank, brewStage, newStage) => {
+  const transferBatchVessel = async (id, tank, brewStage, newStage, date) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     const patch = { tank_id: tank.id, tank_name: tank.name, brew_stage: brewStage };
-    if (newStage) patch.stage = newStage;
+    const stageDates = newStage ? withStageDate(batch, newStage, date) : null;
+    if (newStage) { patch.stage = newStage; patch.stage_dates = stageDates; }
     const { error } = await supabase.from("batches").update(patch).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, tankId: tank.id, tankName: tank.name, brewStage, ...(newStage ? { stage: newStage } : {}) } : b))
+      prev.map((b) => (b.id === id ? { ...b, tankId: tank.id, tankName: tank.name, brewStage, ...(newStage ? { stage: newStage, stageDates } : {}) } : b))
     );
     logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.name}${newStage ? ` — ${newStage}` : ""}`);
     resetTankClean(tank.id, batch);
@@ -25883,17 +25987,18 @@ function TankLogApp() {
   // From the kettle, a batch can go into one fermenter or split across
   // several — this handles both, and either way it's what actually moves
   // the batch's real stage into Primary.
-  const transferToFermenter = async (id, tanksChosen) => {
+  const transferToFermenter = async (id, tanksChosen, date) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
 
     if (tanksChosen.length === 1) {
       const tank = tanksChosen[0];
-      const patch = { tank_id: tank.tankId, tank_name: tank.tankName, split_tanks: [], brew_stage: null, stage: "Primary" };
+      const stageDates = withStageDate(batch, "Primary", date);
+      const patch = { tank_id: tank.tankId, tank_name: tank.tankName, split_tanks: [], brew_stage: null, stage: "Primary", stage_dates: stageDates };
       const { error } = await supabase.from("batches").update(patch).eq("id", id);
       if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
       setBatches((prev) =>
-        prev.map((b) => (b.id === id ? { ...b, tankId: tank.tankId, tankName: tank.tankName, splitTanks: [], brewStage: null, stage: "Primary" } : b))
+        prev.map((b) => (b.id === id ? { ...b, tankId: tank.tankId, tankName: tank.tankName, splitTanks: [], brewStage: null, stage: "Primary", stageDates } : b))
       );
       logActivity("advanced", "batch", batch.name, `${batch.name} (#${batch.number}) moved to ${tank.tankName} — Primary`);
       resetTankClean(tank.tankId, batch);
@@ -25923,6 +26028,7 @@ function TankLogApp() {
         splitGroupId,
         brewStage: null,
         stage: "Primary",
+        stageDates: withStageDate(batch, "Primary", date),
         ingredientCost: batch.ingredientCost != null ? Math.round(batch.ingredientCost * share * 100) / 100 : null,
       };
     });
@@ -25989,13 +26095,13 @@ function TankLogApp() {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
-      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, readings: [...(t.readings || []), reading] } : t));
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, readings: insertByDate(t.readings, reading) } : t));
       const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", id);
       if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
       setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, splitTanks } : b)));
       return;
     }
-    const readings = [...batch.readings, reading];
+    const readings = insertByDate(batch.readings, reading);
     const { error } = await supabase.from("batches").update({ readings }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, readings } : b)));
@@ -26062,7 +26168,7 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, schedule: newSchedule } : b)));
   };
 
-  const deductConsumablesForPackaging = async (batch, sessionCounts, packageTypeSelections, sign = -1) => {
+  const deductConsumablesForPackaging = async (batch, sessionCounts, packageTypeSelections, sign = -1, date) => {
     // Work out total qty to deduct (or, with sign=1, restore) per consumable
     // across every container type in this packaging session.
     const deductions = {}; // consumableId -> total qty
@@ -26103,7 +26209,7 @@ function TankLogApp() {
       const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
       const historyEntry = {
         id: uid(),
-        date: new Date().toISOString(),
+        date: stampForDate(date),
         user: user.name,
         type: "batch",
         delta: actualDelta,
@@ -26117,17 +26223,18 @@ function TankLogApp() {
     setConsumables(nextConsumables);
   };
 
-  const logPackagingSession = async (id, sessionCounts, packageTypeSelections = {}) => {
+  const logPackagingSession = async (id, sessionCounts, packageTypeSelections = {}, date) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
     const events = packagingEvents(batch);
-    const newEvent = { id: uid(), date: today(), ...sessionCounts, packageTypes: packageTypeSelections };
+    const newEvent = { id: uid(), date: date || today(), ...sessionCounts, packageTypes: packageTypeSelections };
+    const stageDates = withStageDate(batch, "Packaged", date);
     const newPackaging = { events: [...events, newEvent], discarded: packagingDiscarded(batch) };
-    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged", packaging_run: null }).eq("id", id);
+    const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged", packaging_run: null, stage_dates: stageDates }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged", packagingRun: null } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged", packagingRun: null, stageDates } : b)));
     syncPackagingToXero(batch, sessionCounts);
-    await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections);
+    await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections, -1, date);
     logActivity("packaged", "batch", batch.name, `${batch.name} (#${batch.number}) packaged`);
   };
 
@@ -28721,7 +28828,7 @@ function TankLogApp() {
         <RecordFulfillmentModal
           order={fulfillmentTarget}
           onClose={() => setFulfillmentTarget(null)}
-          onSave={(fulfillingNowLines, pod) => recordFulfillment(fulfillmentTarget.id, fulfillingNowLines, pod)}
+          onSave={(fulfillingNowLines, pod, date) => recordFulfillment(fulfillmentTarget.id, fulfillingNowLines, pod, date)}
         />
       )}
 
@@ -29198,7 +29305,7 @@ function TankLogApp() {
           toType={vesselTransferTarget.toType}
           actionLabel={vesselTransferTarget.actionLabel}
           onClose={() => setVesselTransferTarget(null)}
-          onSave={(tank) => transferBatchVessel(vesselTransferTarget.batch.id, tank, vesselTransferTarget.brewStage, vesselTransferTarget.newStage)}
+          onSave={(tank, date) => transferBatchVessel(vesselTransferTarget.batch.id, tank, vesselTransferTarget.brewStage, vesselTransferTarget.newStage, date)}
         />
       )}
       {editSplitTanksTarget && (
@@ -29229,7 +29336,7 @@ function TankLogApp() {
           tanks={tanks}
           batches={batches}
           onClose={() => setFermenterTransferTarget(null)}
-          onSave={(tanksChosen) => transferToFermenter(fermenterTransferTarget.id, tanksChosen)}
+          onSave={(tanksChosen, date) => transferToFermenter(fermenterTransferTarget.id, tanksChosen, date)}
         />
       )}
       {startPackagingTarget && (
