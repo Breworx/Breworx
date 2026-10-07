@@ -9031,6 +9031,7 @@ function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, 
   const [showFill, setShowFill] = useState(false);
   const [showSend, setShowSend] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
+  const [fillDate, setFillDate] = useState(today());
   const isOverdue = keg.dueBackDate && keg.dueBackDate < today();
   const eligibleBatches = batches.filter((b) => ["Brite Tank", "Packaged"].includes(b.stage) || b.stage === "Primary").slice(0, 50);
 
@@ -9123,13 +9124,15 @@ function KegDetail({ keg, batches, customers, onBack, onFill, onSend, onReturn, 
       {showFill && (
         <Modal title="What's filled in this keg?" onClose={() => setShowFill(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <BackdateField value={fillDate} onChange={setFillDate} label="Filled on" />
             {eligibleBatches.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No packaged batches available to pick from.</div>}
             {eligibleBatches.map((b) => (
               <button
                 key={b.id}
                 onClick={() => {
-                  onFill(keg.id, b.id, b.name);
+                  onFill(keg.id, b.id, b.name, fillDate);
                   setShowFill(false);
+                  setFillDate(today());
                 }}
                 style={{ textAlign: "left", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "10px 12px", color: "#2A3324", fontSize: 13.5, cursor: "pointer" }}
               >
@@ -13342,12 +13345,14 @@ function SplitTankFaultsSection({ tank, batch, onToggleFault }) {
 // true of the other.
 function SplitTankNotesSection({ tank, batch, onAddNote, onDeleteNote }) {
   const [text, setText] = useState("");
+  const [noteDate, setNoteDate] = useState(today());
   const notes = tank.notes || [];
 
   const submit = () => {
     if (!text.trim()) return;
-    onAddNote(batch.id, text.trim(), tank.tankId);
+    onAddNote(batch.id, text.trim(), tank.tankId, noteDate);
     setText("");
+    setNoteDate(today());
   };
 
   return (
@@ -13365,6 +13370,7 @@ function SplitTankNotesSection({ tank, batch, onAddNote, onDeleteNote }) {
           Add
         </button>
       </div>
+      {(text.trim() || noteDate < today()) && <div style={{ marginBottom: 10 }}><BackdateField value={noteDate} onChange={setNoteDate} label="Note date" /></div>}
       {notes.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {[...notes].reverse().map((n) => (
@@ -14232,6 +14238,7 @@ const barToPsi = (bar) => bar * 14.5038;
 // past entries stay put in the log regardless of today's checkbox state.
 function DumpLogCheckbox({ label, log, onLog, onUndo }) {
   const [pulsing, setPulsing] = useState(false);
+  const [pickDate, setPickDate] = useState(false);
   const latest = log && log.length > 0 ? log[log.length - 1] : null;
   const latestIsToday = latest && (latest.at || "").slice(0, 10) === today();
 
@@ -14267,7 +14274,14 @@ function DumpLogCheckbox({ label, log, onLog, onUndo }) {
             Undo
           </button>
         )}
+        <button
+          onClick={(e) => { e.preventDefault(); setPickDate(true); }}
+          style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontSize: 11, textDecoration: "underline", fontFamily: "'Inter', sans-serif", padding: 0 }}
+        >
+          Other date
+        </button>
       </label>
+      {pickDate && <StageDateModal title={`${label} — which day?`} confirmLabel="Log it" onClose={() => setPickDate(false)} onConfirm={(d) => onLog(d)} />}
       {log && log.length > 0 && (
         <details style={{ marginTop: 4, marginLeft: 23 }}>
           <summary style={{ cursor: "pointer", color: "#5C9A3C", fontSize: 11, fontFamily: "'Inter', sans-serif" }}>
@@ -14734,6 +14748,7 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
 function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [noteDate, setNoteDate] = useState(today());
   const [stageDateOpen, setStageDateOpen] = useState(false);
   const [showTankSettingsForm, setShowTankSettingsForm] = useState(false);
   const latestTankSettings = batch.tankSettingsLog && batch.tankSettingsLog.length > 0 ? [...batch.tankSettingsLog].sort((a, b) => b.date.localeCompare(a.date))[0] : null;
@@ -15040,13 +15055,13 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         <DumpLogCheckbox
           label="Hop dump done"
           log={batch.hopDumpLog}
-          onLog={() => onLogDump(batch.id, "hopDumpLog")}
+          onLog={(d) => onLogDump(batch.id, "hopDumpLog", d)}
           onUndo={() => onUndoDump(batch.id, "hopDumpLog")}
         />
         <DumpLogCheckbox
           label="Yeast dump done"
           log={batch.yeastDumpLog}
-          onLog={() => onLogDump(batch.id, "yeastDumpLog")}
+          onLog={(d) => onLogDump(batch.id, "yeastDumpLog", d)}
           onUndo={() => onUndoDump(batch.id, "yeastDumpLog")}
         />
       </div>
@@ -16147,8 +16162,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               onChange={(e) => setNoteText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && noteText.trim()) {
-                  onAddNote(batch.id, noteText.trim());
+                  onAddNote(batch.id, noteText.trim(), undefined, noteDate);
                   setNoteText("");
+                  setNoteDate(today());
                 }
               }}
               placeholder="Jot something down — brew day, fermentation, packaging, anything"
@@ -16168,8 +16184,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
             <button
               onClick={() => {
                 if (!noteText.trim()) return;
-                onAddNote(batch.id, noteText.trim());
+                onAddNote(batch.id, noteText.trim(), undefined, noteDate);
                 setNoteText("");
+                setNoteDate(today());
               }}
               disabled={!noteText.trim()}
               style={{
@@ -16188,6 +16205,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
               Add
             </button>
           </div>
+          {(noteText.trim() || noteDate < today()) && <div style={{ marginBottom: 10 }}><BackdateField value={noteDate} onChange={setNoteDate} label="Note date" /></div>}
           {(batch.notes || []).length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 26 }}>
               {[...batch.notes].reverse().map((n) => (
@@ -22566,7 +22584,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-269";
+const APP_VERSION = "2026-08-03-270";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -26268,11 +26286,11 @@ function TankLogApp() {
 
   const dumpColumn = (field) => (field === "hopDumpLog" ? "hop_dump_log" : "yeast_dump_log");
 
-  const logDump = async (id, field) => {
+  const logDump = async (id, field, date) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const entry = { id: uid(), at: new Date().toISOString(), user: user.name };
-    const log = [...(batch[field] || []), entry];
+    const entry = { id: uid(), at: stampForDate(date), user: user.name };
+    const log = [...(batch[field] || []), entry].sort((a, b) => (a.at || "").localeCompare(b.at || ""));
     const { error } = await supabase.from("batches").update({ [dumpColumn(field)]: log }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: log } : b)));
@@ -26291,18 +26309,18 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: log } : b)));
   };
 
-  const addBatchNote = async (id, text, tankId) => {
+  const addBatchNote = async (id, text, tankId, date) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
-    const newNote = { id: uid(), date: new Date().toISOString(), text };
+    const newNote = { id: uid(), date: stampForDate(date), text };
     if (tankId && batch.splitTanks && batch.splitTanks.length > 0) {
-      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, notes: [...(t.notes || []), newNote] } : t));
+      const splitTanks = batch.splitTanks.map((t) => (t.tankId === tankId ? { ...t, notes: insertByDate(t.notes, newNote) } : t));
       const { error } = await supabase.from("batches").update({ split_tanks: splitTanks }).eq("id", id);
       if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
       setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, splitTanks } : b)));
       return;
     }
-    const notes = [...(batch.notes || []), newNote];
+    const notes = insertByDate(batch.notes, newNote);
     const { error } = await supabase.from("batches").update({ notes }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, notes } : b)));
