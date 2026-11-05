@@ -380,6 +380,47 @@ export function exciseItemCodeToRow(e, companyId) {
   };
 }
 
+export function rowToExciseReturn(row) {
+  const num = (v) => (v == null ? null : Number(v));
+  return {
+    id: row.id,
+    period: row.period,
+    declaredLitres: num(row.declared_litres),
+    declaredLal: num(row.declared_lal),
+    declaredDuty: num(row.declared_duty),
+    entryNumber: row.entry_number || "",
+    filedDate: row.filed_date || "",
+    notes: row.notes || "",
+    varianceExplanation: row.variance_explanation || "",
+    appLitresAtFiling: num(row.app_litres_at_filing),
+    appLalAtFiling: num(row.app_lal_at_filing),
+    screenshotPaths: row.screenshot_paths || [],
+    reviewedBy: row.reviewed_by || "",
+    reviewedAt: row.reviewed_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+export function exciseReturnToRow(r, companyId) {
+  const num = (v) => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+  return {
+    id: r.id,
+    company_id: companyId,
+    period: r.period,
+    declared_litres: num(r.declaredLitres),
+    declared_lal: num(r.declaredLal),
+    declared_duty: num(r.declaredDuty),
+    entry_number: r.entryNumber || null,
+    filed_date: r.filedDate || null,
+    notes: r.notes || null,
+    variance_explanation: r.varianceExplanation || null,
+    app_litres_at_filing: num(r.appLitresAtFiling),
+    app_lal_at_filing: num(r.appLalAtFiling),
+    screenshot_paths: r.screenshotPaths || [],
+    reviewed_by: r.reviewedBy || null,
+    reviewed_at: r.reviewedAt || null,
+  };
+}
+
 export function rowToTriangleTest(row) {
   return {
     id: row.id,

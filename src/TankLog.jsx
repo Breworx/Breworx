@@ -45,6 +45,8 @@ import {
   pestStationToRow,
   rowToExciseItemCode,
   exciseItemCodeToRow,
+  rowToExciseReturn,
+  exciseReturnToRow,
   rowToAiFeedback,
   aiFeedbackToRow,
   rowToKeg,
@@ -413,6 +415,231 @@ function exciseRowsForBatches(batches, abvMethod) {
     });
   });
   return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
+// ─── Excise self-audit ──────────────────────────────────────────────────────
+// Duty here is declared at packaging (that's how this brewery files), so
+// each month's TSW return should match what was packaged that month. The
+// check compares litres and litres of alcohol (LAL), never dollars — duty
+// rates change every 1 July, so a dollar comparison against today's rates
+// would flag every month filed under an older rate.
+
+// TSW truncates LAL to 3 decimals rather than rounding (confirmed against
+// a real entry), so the expected figure has to be built the same way.
+const exciseLal = (volumeL, abv) => Math.floor(volumeL * (abv / 100) * 1000) / 1000;
+const round3 = (n) => Math.round((n || 0) * 1000) / 1000;
+
+function addMonthsToKey(key, n) {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Customs' standard due date for a monthly excise return is the 20th of
+// the following month — shown as a guide, since arrangements can differ.
+const exciseDueDate = (period) => `${addMonthsToKey(period, 1)}-20`;
+
+// Differences this small are rounding, not a real discrepancy.
+const litresTolerance = (expected) => Math.max(1, Math.abs(expected) * 0.005);
+const lalTolerance = (expected) => Math.max(0.05, Math.abs(expected) * 0.005);
+
+function exciseAuditMonths({ batches, abvMethod, exciseReturns, exciseItemCodes, todayStr }) {
+  const rows = exciseRowsForBatches(batches, abvMethod);
+  const byMonth = {};
+  const ensure = (k) => byMonth[k] || (byMonth[k] = { litres: 0, lal: 0, rows: [], noAbv: [] });
+  let undated = 0;
+
+  rows.forEach((r) => {
+    const k = monthKeyFromDate(r.date);
+    if (k === "unknown") { undated += 1; return; }
+    const m = ensure(k);
+    m.litres += r.volumeL;
+    m.lal += exciseLal(r.volumeL, r.abv);
+    m.rows.push(r);
+  });
+
+  // exciseRowsForBatches skips a batch entirely when it has no measured
+  // ABV — that beer is still packaged and still owes duty, so it's the
+  // single most important thing for the audit to surface.
+  const counted = new Set(rows.map((r) => r.batchId));
+  batches.forEach((b) => {
+    if (counted.has(b.id)) return;
+    packagingEvents(b).forEach((e) => {
+      const v = packagedVolume(e);
+      if (v <= 0) return;
+      const k = monthKeyFromDate(e.date);
+      if (k === "unknown") { undated += 1; return; }
+      ensure(k).noAbv.push({ batchName: b.name, batchNumber: b.number, date: e.date, volumeL: v });
+    });
+  });
+
+  const returnsByPeriod = {};
+  exciseReturns.forEach((r) => (returnsByPeriod[r.period] = r));
+
+  const keys = [...Object.keys(byMonth), ...Object.keys(returnsByPeriod)].sort();
+  if (keys.length === 0) return { months: [], undated };
+  const thisMonth = todayStr.slice(0, 7);
+  const last = keys[keys.length - 1] > thisMonth ? keys[keys.length - 1] : thisMonth;
+  const months = [];
+
+  for (let k = keys[0]; k <= last; k = addMonthsToKey(k, 1)) {
+    const m = byMonth[k] || { litres: 0, lal: 0, rows: [], noAbv: [] };
+    const ret = returnsByPeriod[k] || null;
+    const appLitres = round3(m.litres);
+    const appLal = round3(m.lal);
+    const due = exciseDueDate(k);
+    const notDueYet = todayStr <= due;
+    const issues = [];
+    const red = (text) => issues.push({ level: "red", text });
+    const amber = (text) => issues.push({ level: "amber", text });
+    const hasActivity = appLitres > 0 || m.noAbv.length > 0;
+
+    if (m.noAbv.length > 0) {
+      const v = round3(m.noAbv.reduce((s, x) => s + x.volumeL, 0));
+      red(`${v} L packaged with no ABV recorded (${m.noAbv.map((x) => x.batchName).join(", ")}) — log a final gravity so it's counted.`);
+    }
+    const fallbacks = [...new Set(m.rows.filter((r) => r.usedFallback).map((r) => r.batchName))];
+    if (fallbacks.length > 0) amber(`No label ABV set for ${fallbacks.join(", ")} — measured ABV used instead.`);
+    const types = [...new Set(m.rows.map((r) => r.productType))];
+    const noCode = types.filter((t) => !exciseItemCodes.find((e) => e.productType === t)?.itemNumber);
+    if (noCode.length > 0) amber(`No excise item number set for ${noCode.join(", ")}.`);
+
+    let litresDiff = null;
+    let lalDiff = null;
+    let status;
+
+    if (!ret) {
+      if (!hasActivity) status = "nil";
+      else if (notDueYet) status = "notdue";
+      else {
+        red("Beer was packaged this month but no return has been recorded here.");
+        status = "missing";
+      }
+    } else {
+      const explained = !!(ret.varianceExplanation || "").trim();
+      if (ret.declaredLitres == null && ret.declaredLal == null) {
+        amber("Return recorded, but no declared litres or LAL entered yet.");
+      }
+      if (ret.declaredLitres != null) {
+        litresDiff = round3(ret.declaredLitres - appLitres);
+        if (Math.abs(litresDiff) > litresTolerance(appLitres)) {
+          const text = `Declared ${ret.declaredLitres} L but ${appLitres} L was packaged (${litresDiff > 0 ? "+" : ""}${litresDiff} L).`;
+          explained ? amber(`${text} Explained.`) : red(text);
+        }
+      }
+      if (ret.declaredLal != null) {
+        lalDiff = round3(ret.declaredLal - appLal);
+        if (Math.abs(lalDiff) > lalTolerance(appLal)) {
+          const text = `Declared ${ret.declaredLal} LAL but records give ${appLal} LAL (${lalDiff > 0 ? "+" : ""}${lalDiff}).`;
+          explained ? amber(`${text} Explained.`) : red(text);
+        }
+      }
+      if (ret.appLitresAtFiling != null && Math.abs(ret.appLitresAtFiling - appLitres) > 0.01) {
+        amber(`Packaging records for this month changed after the return was recorded (was ${ret.appLitresAtFiling} L, now ${appLitres} L).`);
+      }
+      if (!ret.filedDate) amber("No filed date recorded.");
+      else if (ret.filedDate > due) amber(`Filed ${ret.filedDate}, after the usual due date of ${due}.`);
+      if (!ret.entryNumber) amber("No TSW entry number recorded.");
+      if (!(ret.screenshotPaths || []).length) amber("No TSW screenshot attached as evidence.");
+      status = issues.some((i) => i.level === "red") ? "attention" : issues.length > 0 ? "check" : "ok";
+    }
+    if (status === "nil" && issues.length > 0) status = "check";
+
+    months.push({ period: k, appLitres, appLal, rows: m.rows, noAbv: m.noAbv, ret, litresDiff, lalDiff, due, issues, status });
+  }
+  return { months: months.reverse(), undated };
+}
+
+const AUDIT_STATUS = {
+  ok: { label: "Matches", color: "#3F7A28", bg: "#E4F0DA" },
+  check: { label: "Check notes", color: "#8A6D0B", bg: "#FBF0CC" },
+  attention: { label: "Needs attention", color: "#B5502F", bg: "#F8DDD3" },
+  missing: { label: "No return", color: "#B5502F", bg: "#F8DDD3" },
+  notdue: { label: "Not due yet", color: "#5C6B54", bg: "#EBE8D6" },
+  nil: { label: "Nothing packaged", color: "#9BA88A", bg: "#F0EDE0" },
+};
+
+// Screenshots straight off an iPad are large PNGs. Shrinking to a sharp
+// JPEG keeps them well inside the image limit for reading, makes uploads
+// quick, and is still perfectly legible as stored evidence.
+function shrinkImageFile(file, maxSide = 2400) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error("Couldn't process that image."));
+          const reader = new FileReader();
+          reader.onload = () => resolve({ blob, base64: String(reader.result).split(",")[1], previewUrl: URL.createObjectURL(blob) });
+          reader.onerror = () => reject(new Error("Couldn't read that image."));
+          reader.readAsDataURL(blob);
+        },
+        "image/jpeg",
+        0.88
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That file isn't an image this device can open.")); };
+    img.src = url;
+  });
+}
+
+// A TSW line doesn't always show all three figures. Any two of litres,
+// LAL and ABV give the third: LAL = litres × ABV%, litres = LAL ÷ ABV%,
+// ABV = LAL ÷ litres. Worked-out figures are flagged so the review
+// screen can show which ones weren't read straight off the screenshot.
+// LAL follows TSW's truncation; litres derived from a truncated LAL can be
+// out by a fraction of a litre, which sits inside the matching tolerance.
+function completeTswLine(line) {
+  const out = { ...line, derived: [] };
+  const has = (v) => v != null && Number.isFinite(v) && v > 0;
+  if (!has(out.lal) && has(out.litres) && has(out.abv)) {
+    out.lal = exciseLal(out.litres, out.abv);
+    out.derived.push("lal");
+  }
+  if (!has(out.litres) && has(out.lal) && has(out.abv)) {
+    out.litres = round3(out.lal / (out.abv / 100));
+    out.derived.push("litres");
+  }
+  if (!has(out.abv) && has(out.lal) && has(out.litres)) {
+    out.abv = Math.round((out.lal / out.litres) * 100 * 100) / 100;
+    out.derived.push("abv");
+  }
+  return out;
+}
+
+// Several screenshots can belong to one return (a long entry scrolled
+// across two screens), and the same screen can get picked twice by
+// accident — so lines are merged per period, with exact duplicates from
+// a different screenshot dropped rather than double-counted.
+function groupScreenshotReadings(readings) {
+  const groups = {};
+  readings.forEach((r, idx) => {
+    const key = r.period || `unknown-${idx}`;
+    if (!groups[key]) groups[key] = { period: r.period || "", images: [], lines: [], entryNumber: "", filedDate: "", totalDuty: null, notes: [] };
+    const g = groups[key];
+    g.images.push(r.image);
+    (r.lines || []).map(completeTswLine).forEach((line) => {
+      const dup = g.lines.find((l) => l.imageIdx !== idx && l.itemCode === line.itemCode && l.litres === line.litres && l.lal === line.lal);
+      if (!dup) g.lines.push({ ...line, imageIdx: idx });
+    });
+    if (!g.entryNumber && r.entryNumber) g.entryNumber = r.entryNumber;
+    if (!g.filedDate && r.filedDate) g.filedDate = r.filedDate;
+    if (r.totalDuty != null) g.totalDuty = (g.totalDuty || 0) + r.totalDuty;
+    if (r.notes) g.notes.push(r.notes);
+  });
+  return Object.values(groups).map((g) => {
+    const litres = g.lines.some((l) => l.litres != null) ? round3(g.lines.reduce((s, l) => s + (l.litres || 0), 0)) : null;
+    const lal = g.lines.some((l) => l.lal != null) ? round3(g.lines.reduce((s, l) => s + (l.lal || 0), 0)) : null;
+    const lineDuty = g.lines.some((l) => l.duty != null) ? Math.round(g.lines.reduce((s, l) => s + (l.duty || 0), 0) * 100) / 100 : null;
+    return { ...g, litres, lal, duty: lineDuty != null ? lineDuty : g.totalDuty != null ? Math.round(g.totalDuty * 100) / 100 : null };
+  });
 }
 
 function monthKeyFromDate(dateStr) {
@@ -1230,6 +1457,11 @@ const PAGE_TOURS = {
     {
       title: "Duty on your own batches",
       body: "Classify each recipe's product type once, then this calculates duty per batch at the current NZ Customs rates and exports a CSV formatted for TSW filing. Worth having an accountant check before using it for a real return.",
+      target: null,
+    },
+    {
+      title: "Self-audit your returns",
+      body: "Import screenshots of your TSW returns and each month is checked against what you packaged — litres and pure alcohol. Anything that doesn't line up is flagged so you can fix or explain it, and the audit report prints as a PDF to show Customs.",
       target: null,
     },
   ],
@@ -18290,7 +18522,453 @@ This exercise tested our ability to trace and identify affected product using ou
   );
 }
 
-function ExciseReportView({ batches, exciseItemCodes, onSaveItemCode, abvMethod, onSetAbvMethod, onSetLabelAbv }) {
+const auditLabelStyle = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" };
+const auditTextareaStyle = { width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14, resize: "vertical" };
+const auditPrimaryBtn = (enabled = true) => ({ background: enabled ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "12px", color: enabled ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: enabled ? "pointer" : "default" });
+const auditSecondaryBtn = { background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" };
+const fmtL = (n) => (n == null ? "—" : `${round3(n)} L`);
+const fmtLal = (n) => (n == null ? "—" : `${round3(n)} LAL`);
+
+function AuditStatusPill({ status }) {
+  const s = AUDIT_STATUS[status] || AUDIT_STATUS.nil;
+  return <span style={{ background: s.bg, color: s.color, borderRadius: 999, padding: "3px 9px", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>{s.label}</span>;
+}
+
+// Side-by-side "what Brewpoint says" vs "what was declared".
+function AuditFigures({ appLitres, appLal, declaredLitres, declaredLal }) {
+  const cell = (label, app, declared, fmt, tol) => {
+    const off = declared != null && Math.abs(declared - app) > tol(app);
+    return (
+      <div style={{ background: "#F5F1E4", borderRadius: 5, padding: "8px 10px" }}>
+        <div style={auditLabelStyle}>{label}</div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "#2A3324", marginTop: 3 }}>Records: {fmt(app)}</div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: off ? "#B5502F" : "#2A3324" }}>Declared: {fmt(declared)}</div>
+      </div>
+    );
+  };
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+      {cell("Litres", appLitres, declaredLitres, fmtL, litresTolerance)}
+      {cell("Pure alcohol", appLal, declaredLal, fmtLal, lalTolerance)}
+    </div>
+  );
+}
+
+function ExciseReturnModal({ month, onClose, onSave, onDelete }) {
+  const r = month.ret || {};
+  const s = (v) => (v == null ? "" : String(v));
+  const [declaredLitres, setDeclaredLitres] = useState(s(r.declaredLitres));
+  const [declaredLal, setDeclaredLal] = useState(s(r.declaredLal));
+  const [declaredDuty, setDeclaredDuty] = useState(s(r.declaredDuty));
+  const [declaredAbv, setDeclaredAbv] = useState("");
+  const [entryNumber, setEntryNumber] = useState(r.entryNumber || "");
+  const [filedDate, setFiledDate] = useState(r.filedDate || today());
+  // Fill whichever of litres / LAL is blank from the other plus ABV.
+  const worked = completeTswLine({ litres: declaredLitres === "" ? null : Number(declaredLitres), lal: declaredLal === "" ? null : Number(declaredLal), abv: declaredAbv === "" ? null : Number(declaredAbv) });
+  const [varianceExplanation, setVarianceExplanation] = useState(r.varianceExplanation || "");
+  const [notes, setNotes] = useState(r.notes || "");
+  const [saving, setSaving] = useState(false);
+  const canSave = !saving && (declaredLitres !== "" || declaredLal !== "");
+
+  const submit = async () => {
+    setSaving(true);
+    await onSave({ ...r, period: month.period, declaredLitres: worked.litres ?? declaredLitres, declaredLal: worked.lal ?? declaredLal, declaredDuty, entryNumber: entryNumber.trim(), filedDate, varianceExplanation: varianceExplanation.trim(), notes: notes.trim() });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <Modal title={`${month.ret ? "Edit" : "Record"} return — ${monthLabelFromKey(month.period)}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5 }}>
+          Enter the figures exactly as they appear on the return you lodged in TSW — not Brewpoint's numbers. The point is to compare the two.
+        </div>
+        <div style={{ background: "#F5F1E4", borderRadius: 5, padding: "8px 10px", fontSize: 12.5, color: "#5C6B54" }}>
+          Brewpoint's records for this month: <strong style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtL(month.appLitres)} · {fmtLal(month.appLal)}</strong>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <NumberField label="Declared litres" value={declaredLitres} onChange={setDeclaredLitres} suffix="L" />
+          <NumberField label="Declared LAL" value={declaredLal} onChange={setDeclaredLal} suffix="LAL" />
+        </div>
+        <NumberField label="ABV on the return (only if a figure above is missing)" value={declaredAbv} onChange={setDeclaredAbv} suffix="%" />
+        {(worked.derived.includes("litres") || worked.derived.includes("lal")) && (
+          <div style={{ fontSize: 12.5, color: "#8A6D0B", marginTop: -6 }}>
+            {worked.derived.includes("litres") ? `Litres worked out as ${worked.litres} L (LAL ÷ ABV%).` : `LAL worked out as ${worked.lal} (litres × ABV%).`}
+          </div>
+        )}
+        <NumberField label="Duty paid (optional)" value={declaredDuty} onChange={setDeclaredDuty} suffix="$" />
+        <TextField label="TSW entry number" value={entryNumber} onChange={setEntryNumber} />
+        <BackdateField label="Date filed" value={filedDate} onChange={setFiledDate} />
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Explanation for any difference</span>
+          <textarea value={varianceExplanation} onChange={(e) => setVarianceExplanation(e.target.value)} rows={3} placeholder="e.g. 48 cans packaged 31st, declared on next month's return" style={auditTextareaStyle} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Notes (optional)</span>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={auditTextareaStyle} />
+        </label>
+        <button onClick={submit} disabled={!canSave} style={auditPrimaryBtn(canSave)}>{saving ? "Saving..." : "Save return"}</button>
+        {month.ret && (
+          <button
+            onClick={async () => {
+              if (!window.confirm(`Delete the recorded return for ${monthLabelFromKey(month.period)}? Its screenshots are deleted too.`)) return;
+              await onDelete(month.ret);
+              onClose();
+            }}
+            style={{ background: "none", border: "none", color: "#B5502F", fontSize: 13, cursor: "pointer", padding: 6 }}
+          >
+            Delete this return
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// Review what was read off the screenshots before anything is saved —
+// the reading can be wrong, so every figure stays editable and nothing
+// lands in the audit without a person confirming it.
+function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
+  const [drafts, setDrafts] = useState(() =>
+    groups.map((g) => ({
+      ...g,
+      declaredLitres: g.litres == null ? "" : String(g.litres),
+      declaredLal: g.lal == null ? "" : String(g.lal),
+      declaredDuty: g.duty == null ? "" : String(g.duty),
+      saved: false,
+      saving: false,
+    }))
+  );
+  const update = (i, patch) => setDrafts((prev) => prev.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const periodOptions = useMemo(() => {
+    const opts = [];
+    let k = addMonthsToKey(today().slice(0, 7), 0);
+    for (let n = 0; n < 48; n += 1) { opts.push(k); k = addMonthsToKey(k, -1); }
+    return opts;
+  }, []);
+
+  return (
+    <Modal title="Check what was read" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5 }}>
+          Compare each figure against the screenshot and fix anything misread before saving. The screenshot is kept with the month as evidence.
+        </div>
+        {drafts.map((d, i) => {
+          const month = d.period ? monthsByPeriod[d.period] : null;
+          const existing = month?.ret;
+          const canSave = !d.saving && !d.saved && /^\d{4}-\d{2}$/.test(d.period) && (d.declaredLitres !== "" || d.declaredLal !== "");
+          return (
+            <div key={i} style={{ border: "1px solid #DDE0C8", borderRadius: 7, padding: 12, background: "#FFFFFF", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+                {d.images.map((img, j) => (
+                  <img key={j} src={img.previewUrl} alt="TSW screenshot" onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
+                ))}
+              </div>
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Return period</span>
+                <select value={d.period} onChange={(e) => update(i, { period: e.target.value })} style={{ background: "#F5F1E4", border: `1px solid ${d.period ? "#DDE0C8" : "#B5502F"}`, borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }}>
+                  <option value="">Choose the month…</option>
+                  {[...new Set([d.period, ...periodOptions].filter(Boolean))].map((k) => <option key={k} value={k}>{monthLabelFromKey(k)}</option>)}
+                </select>
+              </label>
+              {d.lines.length > 0 && (
+                <div style={{ fontSize: 12, color: "#5C6B54", background: "#F5F1E4", borderRadius: 5, padding: "8px 10px" }}>
+                  {d.lines.map((l, j) => (
+                    <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", padding: "2px 0" }}>
+                      {l.description || l.itemCode || "Line"} — {fmtL(l.litres)}{l.derived?.includes("litres") ? "*" : ""} · {fmtLal(l.lal)}{l.derived?.includes("lal") ? "*" : ""}{l.abv != null ? ` · ${l.abv}%${l.derived?.includes("abv") ? "*" : ""}` : ""}
+                    </div>
+                  ))}
+                  {d.lines.some((l) => l.derived?.length) && (
+                    <div style={{ marginTop: 4, color: "#8A6D0B" }}>* Worked out from the other two figures (LAL = litres × ABV%), not read directly.</div>
+                  )}
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <NumberField label="Declared litres" value={d.declaredLitres} onChange={(v) => update(i, { declaredLitres: v })} suffix="L" />
+                <NumberField label="Declared LAL" value={d.declaredLal} onChange={(v) => update(i, { declaredLal: v })} suffix="LAL" />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <NumberField label="Duty paid" value={d.declaredDuty} onChange={(v) => update(i, { declaredDuty: v })} suffix="$" />
+                <TextField label="Entry number" value={d.entryNumber} onChange={(v) => update(i, { entryNumber: v })} />
+              </div>
+              <TextField label="Date filed" type="date" value={d.filedDate} onChange={(v) => update(i, { filedDate: v })} />
+              {month && (
+                <div style={{ fontSize: 12.5, color: "#5C6B54" }}>
+                  Brewpoint's records for {monthLabelFromKey(d.period)}: <strong style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtL(month.appLitres)} · {fmtLal(month.appLal)}</strong>
+                </div>
+              )}
+              {d.notes.length > 0 && <div style={{ fontSize: 12, color: "#8A6D0B" }}>Reading note: {d.notes.join(" ")}</div>}
+              {existing && !d.saved && <div style={{ fontSize: 12, color: "#8A6D0B" }}>A return is already recorded for this month — saving replaces its declared figures and adds these screenshots.</div>}
+              <button
+                disabled={!canSave}
+                onClick={async () => {
+                  update(i, { saving: true });
+                  const ok = await onSaveGroup(d);
+                  update(i, { saving: false, saved: !!ok });
+                }}
+                style={auditPrimaryBtn(canSave)}
+              >
+                {d.saved ? "Saved ✓" : d.saving ? "Saving..." : "Save this return"}
+              </button>
+            </div>
+          );
+        })}
+        <button onClick={onClose} style={auditSecondaryBtn}>Done</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ExciseAuditReport({ months, companyName, abvMethod, onClose }) {
+  const checked = months.filter((m) => m.status !== "nil");
+  const periodRange = checked.length ? `${monthLabelFromKey(checked[checked.length - 1].period)} – ${monthLabelFromKey(checked[0].period)}` : "No periods";
+  const count = (st) => checked.filter((m) => m.status === st).length;
+  const ordered = [...checked].reverse();
+  return (
+    <div id="excise-audit-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto" }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #excise-audit-print, #excise-audit-print * { visibility: visible; }
+          #excise-audit-print { position: absolute; top: 0; left: 0; width: 100%; background: #FFFFFF; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+      <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
+        <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5 }}>
+          <X size={16} /> Close
+        </button>
+        <button onClick={() => window.print()} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}>
+          Print / Save as PDF
+        </button>
+      </div>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "36px 28px 60px", color: "#1A1F16" }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5C6B54" }}>{companyName || "Brewery"}</div>
+        <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 500, margin: "4px 0 6px" }}>Excise Self-Audit Report</h1>
+        <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 18 }}>Period: {periodRange} · Generated {today()}</div>
+        <div style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 22, color: "#2A3324" }}>
+          Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 26, pageBreakInside: "avoid" }}>
+          {[["Months", checked.length], ["Matching", count("ok")], ["Notes", count("check")], ["Attention", count("attention") + count("missing")]].map(([l, n]) => (
+            <div key={l} style={{ border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ fontSize: 20, fontFamily: "'JetBrains Mono', monospace" }}>{n}</div>
+              <div style={{ fontSize: 11, color: "#5C6B54" }}>{l}</div>
+            </div>
+          ))}
+        </div>
+        {ordered.map((m) => (
+          <div key={m.period} style={{ borderTop: "1px solid #DDE0C8", padding: "12px 0", fontSize: 12.5, pageBreakInside: "avoid" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <strong style={{ fontSize: 14 }}>{monthLabelFromKey(m.period)}</strong>
+              <AuditStatusPill status={m.status} />
+            </div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>
+              Packaged {fmtL(m.appLitres)} / {fmtLal(m.appLal)} · Declared {fmtL(m.ret?.declaredLitres)} / {fmtLal(m.ret?.declaredLal)}
+            </div>
+            {m.ret && (
+              <div style={{ color: "#5C6B54", marginTop: 3 }}>
+                Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{m.ret.declaredDuty != null ? ` · Duty $${Number(m.ret.declaredDuty).toFixed(2)}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
+              </div>
+            )}
+            {m.issues.map((iss, j) => (
+              <div key={j} style={{ color: iss.level === "red" ? "#B5502F" : "#8A6D0B", marginTop: 3 }}>• {iss.text}</div>
+            ))}
+            {m.ret?.varianceExplanation && <div style={{ marginTop: 3 }}>Explanation: {m.ret.varianceExplanation}</div>}
+            {m.ret?.reviewedBy && <div style={{ color: "#3F7A28", marginTop: 3 }}>Reviewed by {m.ret.reviewedBy} on {String(m.ret.reviewedAt || "").slice(0, 10)}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, companyName, onSaveReturn, onDeleteReturn, onReviewReturn, onReadScreenshot, onImportGroup, onViewScreenshot }) {
+  const [filter, setFilter] = useState("all");
+  const [editingMonth, setEditingMonth] = useState(null);
+  const [importGroups, setImportGroups] = useState(null);
+  const [reading, setReading] = useState(null);
+  const [readError, setReadError] = useState("");
+  const [showReport, setShowReport] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+  const fileRef = useRef(null);
+
+  const { months, undated } = useMemo(
+    () => exciseAuditMonths({ batches, abvMethod, exciseReturns, exciseItemCodes, todayStr: today() }),
+    [batches, abvMethod, exciseReturns, exciseItemCodes]
+  );
+  const monthsByPeriod = useMemo(() => Object.fromEntries(months.map((m) => [m.period, m])), [months]);
+  const needsAttention = (m) => m.status === "attention" || m.status === "missing" || m.status === "check";
+  const shown = filter === "attention" ? months.filter(needsAttention) : months.filter((m) => m.status !== "nil" || m.ret);
+  const counted = months.filter((m) => m.status !== "nil");
+  const n = (st) => counted.filter((m) => st.includes(m.status)).length;
+
+  const handleFiles = async (fileList) => {
+    const files = [...(fileList || [])];
+    if (files.length === 0) return;
+    setReadError("");
+    const readings = [];
+    for (let i = 0; i < files.length; i += 1) {
+      setReading(`Reading screenshot ${i + 1} of ${files.length}…`);
+      try {
+        const img = await shrinkImageFile(files[i]);
+        const result = await onReadScreenshot(img.base64);
+        if (!result) continue;
+        if (result.isTswExcise === false) {
+          setReadError((e) => `${e}${files[i].name || "One image"} doesn't look like a TSW excise screen — skipped. `);
+          continue;
+        }
+        readings.push({ ...result, image: img });
+      } catch (err) {
+        setReadError((e) => `${e}${err.message} `);
+      }
+    }
+    setReading(null);
+    if (fileRef.current) fileRef.current.value = "";
+    if (readings.length > 0) setImportGroups(groupScreenshotReadings(readings));
+  };
+
+  const exportCsv = () =>
+    downloadCSV(
+      `excise-self-audit-${today()}.csv`,
+      ["Period", "Status", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Duty paid ($)", "TSW entry number", "Filed date", "Usual due date", "Screenshots on file", "Issues", "Explanation", "Reviewed by", "Reviewed on"],
+      [...counted].reverse().map((m) => [
+        m.period,
+        AUDIT_STATUS[m.status].label,
+        m.appLitres,
+        m.appLal,
+        m.ret?.declaredLitres ?? "",
+        m.ret?.declaredLal ?? "",
+        m.litresDiff ?? "",
+        m.lalDiff ?? "",
+        m.ret?.declaredDuty ?? "",
+        m.ret?.entryNumber || "",
+        m.ret?.filedDate || "",
+        m.due,
+        (m.ret?.screenshotPaths || []).length,
+        m.issues.map((x) => x.text).join(" | "),
+        m.ret?.varianceExplanation || "",
+        m.ret?.reviewedBy || "",
+        String(m.ret?.reviewedAt || "").slice(0, 10),
+      ])
+    );
+
+  return (
+    <div>
+      <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 14px", marginBottom: 16, fontSize: 12.5, lineHeight: 1.55, color: "#2A3324" }}>
+        Checks each month's TSW return against what you packaged that month, so you find any gaps before Customs does. It compares litres and pure alcohol (LAL), not dollars, because duty rates change every July. A clean result is a good sign, not a guarantee — if it turns up an underpayment, Customs' voluntary disclosure process is the way to put it right.
+      </div>
+
+      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
+      <button onClick={() => fileRef.current?.click()} disabled={!!reading} style={{ ...auditPrimaryBtn(!reading), width: "100%", marginBottom: 8 }}>
+        {reading || "Import TSW screenshots"}
+      </button>
+      <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 12, lineHeight: 1.5 }}>
+        Screenshot the excise entry in TSW (one month or several), then pick the screenshots here. You'll check every figure before it's saved.
+      </div>
+      {readError && <div style={{ color: "#B5502F", fontSize: 12.5, marginBottom: 12 }}>{readError}</div>}
+
+      {counted.length === 0 ? (
+        <EmptyState icon={FileText} title="Nothing to check yet" subtitle="Once you've packaged beer or recorded a return, each month shows up here." />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+            {[["Matching", n(["ok"]), "#3F7A28"], ["Check notes", n(["check"]), "#8A6D0B"], ["Attention", n(["attention", "missing"]), "#B5502F"]].map(([l, v, c]) => (
+              <div key={l} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: c }}>{v}</div>
+                <div style={auditLabelStyle}>{l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+            <button onClick={() => setShowReport(true)} style={auditSecondaryBtn}>Audit report (PDF)</button>
+            <button onClick={exportCsv} style={auditSecondaryBtn}>Export audit pack (CSV)</button>
+          </div>
+          <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden", marginBottom: 12 }}>
+            {[["all", "All months"], ["attention", "Needs a look"]].map(([k, l]) => (
+              <button key={k} onClick={() => setFilter(k)} style={{ flex: 1, background: filter === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: filter === k ? "#16191A" : "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>{l}</button>
+            ))}
+          </div>
+          {undated > 0 && <div style={{ color: "#B5502F", fontSize: 12.5, marginBottom: 12 }}>{undated} packaging run(s) have no date, so they can't be placed in any month.</div>}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {shown.map((m) => (
+              <div key={m.period} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, color: "#2A3324" }}>{monthLabelFromKey(m.period)}</div>
+                  <AuditStatusPill status={m.status} />
+                </div>
+                {m.status !== "nil" && <AuditFigures appLitres={m.appLitres} appLal={m.appLal} declaredLitres={m.ret?.declaredLitres} declaredLal={m.ret?.declaredLal} />}
+                {m.issues.length > 0 && (
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {m.issues.map((iss, j) => (
+                      <div key={j} style={{ fontSize: 12.5, color: iss.level === "red" ? "#B5502F" : "#8A6D0B", lineHeight: 1.45 }}>• {iss.text}</div>
+                    ))}
+                  </div>
+                )}
+                {m.ret?.varianceExplanation && <div style={{ marginTop: 8, fontSize: 12.5, color: "#5C6B54" }}>Explanation: {m.ret.varianceExplanation}</div>}
+                {m.ret?.reviewedBy && <div style={{ marginTop: 8, fontSize: 12, color: "#3F7A28" }}>✓ Reviewed by {m.ret.reviewedBy} on {String(m.ret.reviewedAt).slice(0, 10)}</div>}
+                {(m.ret?.screenshotPaths || []).length > 0 && (
+                  <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {m.ret.screenshotPaths.map((p, j) => (
+                      <button key={p} onClick={() => onViewScreenshot(p)} style={{ background: "none", border: "none", padding: 0, color: "#5C9A3C", fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>Screenshot {j + 1}</button>
+                    ))}
+                  </div>
+                )}
+                {expanded === m.period && m.rows.length > 0 && (
+                  <div style={{ marginTop: 10, background: "#F5F1E4", borderRadius: 5, padding: "8px 10px" }}>
+                    {m.rows.map((r, j) => (
+                      <div key={j} style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", padding: "2px 0" }}>
+                        {r.date} · {r.batchName} · {round3(r.volumeL)} L @ {r.abv.toFixed(2)}% = {exciseLal(r.volumeL, r.abv)} LAL
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  <button onClick={() => setEditingMonth(m)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>{m.ret ? "Edit return" : "Enter manually"}</button>
+                  {m.rows.length > 0 && (
+                    <button onClick={() => setExpanded(expanded === m.period ? null : m.period)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>{expanded === m.period ? "Hide packaging" : "Show packaging"}</button>
+                  )}
+                  {m.ret && !m.ret.reviewedBy && (
+                    <button onClick={() => onReviewReturn(m.ret)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>Mark reviewed</button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {shown.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13, padding: "12px 0" }}>Nothing needs a look right now.</div>}
+          </div>
+        </>
+      )}
+
+      {editingMonth && <ExciseReturnModal month={editingMonth} onClose={() => setEditingMonth(null)} onSave={(r) => onSaveReturn(r, editingMonth)} onDelete={onDeleteReturn} />}
+      {importGroups && (
+        <TswImportModal
+          groups={importGroups}
+          monthsByPeriod={monthsByPeriod}
+          onClose={() => setImportGroups(null)}
+          onSaveGroup={(g) => onImportGroup(g, monthsByPeriod[g.period] || { period: g.period, appLitres: 0, appLal: 0 })}
+        />
+      )}
+      {showReport && <ExciseAuditReport months={months} companyName={companyName} abvMethod={abvMethod} onClose={() => setShowReport(false)} />}
+    </div>
+  );
+}
+
+function ExciseReportView(props) {
+  const [tab, setTab] = useState("calculate");
+  return (
+    <div>
+      <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 5, overflow: "hidden", marginBottom: 18 }}>
+        {[["calculate", "Calculate & export"], ["audit", "Self-audit"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ flex: 1, background: tab === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: "10px", color: tab === k ? "#16191A" : "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: tab === k ? 600 : 400, cursor: "pointer" }}>{l}</button>
+        ))}
+      </div>
+      {tab === "calculate" ? <ExciseCalculateView {...props} /> : <ExciseSelfAudit {...props} />}
+    </div>
+  );
+}
+
+function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMethod, onSetAbvMethod, onSetLabelAbv }) {
   const [monthFilter, setMonthFilter] = useState("");
   const [labelDrafts, setLabelDrafts] = useState({});
   const [codeDrafts, setCodeDrafts] = useState(() => {
@@ -22584,7 +23262,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-08-03-270";
+const APP_VERSION = "2026-11-06-271";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -23236,6 +23914,7 @@ function TankLogApp() {
   const [aiFeedback, setAiFeedback] = useState([]);
   const [kegs, setKegs] = useState([]);
   const [triangleTests, setTriangleTests] = useState([]);
+  const [exciseReturns, setExciseReturns] = useState([]);
   const [editingTriangleTest, setEditingTriangleTest] = useState(null);
   const [showQcApproval, setShowQcApproval] = useState(false);
   const [showLabMeasurement, setShowLabMeasurement] = useState(false);
@@ -23523,7 +24202,7 @@ function TankLogApp() {
       const myProfile = rowToProfile(profileRow.data);
       setProfile(myProfile);
 
-      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes, aiFeedbackRes, kegsRes, triangleTestsRes] = await Promise.all([
+      const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes, aiFeedbackRes, kegsRes, triangleTestsRes, exciseReturnsRes] = await Promise.all([
         supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled, excise_abv_method").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
@@ -23553,6 +24232,7 @@ function TankLogApp() {
         supabase.from("ai_helper_feedback").select("*").order("created_at", { ascending: false }),
         supabase.from("kegs").select("*").order("keg_number", { ascending: true }),
         supabase.from("triangle_tests").select("*").order("test_date", { ascending: false }),
+        supabase.from("excise_returns").select("*").order("period", { ascending: false }),
       ]);
       if (cancelled) return;
       if (companyRes.error) {
@@ -23626,6 +24306,10 @@ function TankLogApp() {
 
       if (triangleTestsRes.error) console.error(triangleTestsRes.error);
       else setTriangleTests(triangleTestsRes.data.map(rowToTriangleTest));
+      // Self-audit is optional — if the table hasn't been created yet the
+      // rest of the app still loads normally.
+      if (exciseReturnsRes.error) console.error(exciseReturnsRes.error);
+      else setExciseReturns(exciseReturnsRes.data.map(rowToExciseReturn));
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -26399,6 +27083,82 @@ function TankLogApp() {
     showToast("success", "Triangle test saved.");
   };
 
+  // ─── Excise self-audit ────────────────────────────────────────────────
+  // Saves one month's declared return. The first save also freezes what
+  // Brewpoint's own records said at that moment, so later edits to that
+  // month's packaging show up as "changed since filing". Any edit clears
+  // the reviewed sign-off, since it no longer covers what's there now.
+  const saveExciseReturn = async (draft, month, newImages = []) => {
+    const existing = exciseReturns.find((r) => r.period === draft.period);
+    const paths = [...(existing?.screenshotPaths || [])];
+    for (const img of newImages) {
+      const path = `${profile.companyId}/${draft.period}/${uid()}.jpg`;
+      const { error: upErr } = await supabase.storage.from("excise-evidence").upload(path, img.blob, { contentType: "image/jpeg" });
+      if (upErr) { console.error(upErr); showToast("error", "A screenshot didn't upload — check your connection and try again."); return false; }
+      paths.push(path);
+    }
+    const record = {
+      ...(existing || {}),
+      ...draft,
+      id: existing?.id,
+      screenshotPaths: paths,
+      appLitresAtFiling: existing?.appLitresAtFiling ?? month.appLitres,
+      appLalAtFiling: existing?.appLalAtFiling ?? month.appLal,
+      reviewedBy: "",
+      reviewedAt: null,
+    };
+    const row = exciseReturnToRow(record, profile.companyId);
+    delete row.id;
+    const { data, error } = await supabase.from("excise_returns").upsert(row, { onConflict: "company_id,period" }).select().single();
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    const saved = rowToExciseReturn(data);
+    setExciseReturns((prev) => [saved, ...prev.filter((r) => r.period !== saved.period)]);
+    logActivity(existing ? "updated" : "created", "excise_return", saved.period, `Excise return for ${monthLabelFromKey(saved.period)} ${existing ? "updated" : "recorded"}`);
+    showToast("success", `Return for ${monthLabelFromKey(saved.period)} saved.`);
+    return true;
+  };
+
+  const importExciseScreenshotGroup = (g, month) =>
+    saveExciseReturn(
+      { period: g.period, declaredLitres: g.declaredLitres, declaredLal: g.declaredLal, declaredDuty: g.declaredDuty, entryNumber: (g.entryNumber || "").trim(), filedDate: g.filedDate || "" },
+      month,
+      g.images
+    );
+
+  const deleteExciseReturn = async (ret) => {
+    if ((ret.screenshotPaths || []).length) await supabase.storage.from("excise-evidence").remove(ret.screenshotPaths);
+    const { error } = await supabase.from("excise_returns").delete().eq("id", ret.id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setExciseReturns((prev) => prev.filter((r) => r.id !== ret.id));
+    logActivity("deleted", "excise_return", ret.period, `Excise return for ${monthLabelFromKey(ret.period)} deleted`);
+  };
+
+  const reviewExciseReturn = async (ret) => {
+    const reviewedAt = new Date().toISOString();
+    const reviewedBy = profile.name || "Owner";
+    const { error } = await supabase.from("excise_returns").update({ reviewed_by: reviewedBy, reviewed_at: reviewedAt }).eq("id", ret.id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setExciseReturns((prev) => prev.map((r) => (r.id === ret.id ? { ...r, reviewedBy, reviewedAt } : r)));
+    logActivity("reviewed", "excise_return", ret.period, `Excise return for ${monthLabelFromKey(ret.period)} reviewed`);
+    showToast("success", "Marked as reviewed.");
+  };
+
+  const readTswScreenshot = async (base64) => {
+    const { data, error } = await supabase.functions.invoke("read-tsw-return", { body: { image: base64, mediaType: "image/jpeg" } });
+    if (error) {
+      let msg = "Couldn't read that screenshot — try again.";
+      try { const body = await error.context?.json?.(); if (body?.error) msg = body.error; } catch { /* keep default */ }
+      throw new Error(msg);
+    }
+    return data;
+  };
+
+  const viewExciseScreenshot = async (path) => {
+    const { data, error } = await supabase.storage.from("excise-evidence").createSignedUrl(path, 120);
+    if (error) { showToast("error", "Couldn't open that screenshot."); return; }
+    window.open(data.signedUrl, "_blank");
+  };
+
   const deleteTriangleTest = async (id) => {
     const { error } = await supabase.from("triangle_tests").delete().eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -27159,6 +27919,14 @@ function TankLogApp() {
                 abvMethod={exciseAbvMethod}
                 onSetAbvMethod={updateExciseAbvMethod}
                 onSetLabelAbv={setBatchLabelAbv}
+                exciseReturns={exciseReturns}
+                companyName={companyName}
+                onSaveReturn={saveExciseReturn}
+                onDeleteReturn={deleteExciseReturn}
+                onReviewReturn={reviewExciseReturn}
+                onReadScreenshot={readTswScreenshot}
+                onImportGroup={importExciseScreenshotGroup}
+                onViewScreenshot={viewExciseScreenshot}
               />
             )}
 
