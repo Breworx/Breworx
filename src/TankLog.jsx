@@ -13815,7 +13815,15 @@ function EditBrewDayFieldModal({ target, onClose, onSave }) {
 // steps in between) rather than just looking up "what's in it right now."
 function TankHistoryModal({ tank, batches, onClose, onOpenBatch }) {
   const history = [...(tank.history || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
-  const batchEntries = history.filter((h) => h.type === "batch");
+  // The history log only gets an entry when a batch is started in the app,
+  // so batches added any other way (imported, backdated) would be missing.
+  // Anything assigned to this tank but not in the log is added from the
+  // batch itself, dated to its brew day.
+  const loggedIds = new Set(history.filter((h) => h.type === "batch").map((h) => h.batchId));
+  const derivedEntries = batches
+    .filter((b) => !loggedIds.has(b.id) && b.startDate && batchTankIds(b).includes(tank.id))
+    .map((b) => ({ id: `derived-${b.id}`, type: "batch", date: new Date(`${b.startDate}T09:00:00`).toISOString(), batchId: b.id, batchName: b.name, batchNumber: b.number }));
+  const batchEntries = [...history.filter((h) => h.type === "batch"), ...derivedEntries].sort((a, b) => new Date(b.date) - new Date(a.date));
   const cleanEntries = history.filter((h) => h.type === "clean");
   const [tab, setTab] = useState("batches");
 
@@ -23347,7 +23355,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-06-273";
+const APP_VERSION = "2026-11-07-274";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
