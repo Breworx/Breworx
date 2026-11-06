@@ -13908,6 +13908,11 @@ function TankHistoryModal({ tank, batches, onClose, onOpenBatch }) {
         )
       )}
 
+      {tab === "clean" && cleanEntries.some((h) => h.reconstructed) && (
+        <div style={{ color: "#5C6B54", fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
+          Entries marked "reconstructed" were added afterwards from brew and packaging dates, not logged at the time.
+        </div>
+      )}
       {tab === "clean" && (
         cleanEntries.length === 0 ? (
           <div style={{ color: "#9BA88A", fontSize: 13 }}>No cleaning steps logged for this tank yet.</div>
@@ -13931,6 +13936,7 @@ function TankHistoryModal({ tank, batches, onClose, onOpenBatch }) {
                 <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#2A3324", fontFamily: "'Inter', sans-serif" }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: CLEAN_STAGE_COLOR[h.stage] || "#9BA88A", flexShrink: 0 }} />
                   {h.stage}
+                  {h.reconstructed && <span style={{ color: "#9BA88A", fontSize: 11.5, fontStyle: "italic" }}>· reconstructed</span>}
                 </span>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11.5, flexShrink: 0 }}>
                   {formatHistoryStamp(h.date)}
@@ -23355,7 +23361,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-274";
+const APP_VERSION = "2026-11-07-275";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
