@@ -92,3 +92,6 @@ create policy "company excise evidence delete" on storage.objects
     bucket_id = 'excise-evidence'
     and (storage.foldername(name))[1] in (select company_id::text from public.profiles where id = auth.uid())
   );
+
+-- Each line read off the TSW return, for the line-by-line comparison.
+alter table public.excise_returns add column if not exists declared_lines jsonb not null default '[]'::jsonb;

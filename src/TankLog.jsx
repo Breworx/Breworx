@@ -534,6 +534,13 @@ function exciseAuditMonths({ batches, abvMethod, exciseReturns, exciseItemCodes,
           explained ? amber(`${text} Explained.`) : red(text);
         }
       }
+      if ((ret.declaredLines || []).length > 0) {
+        const offRows = exciseAbvComparison(m.rows, ret.declaredLines).filter((r) => r.off);
+        if (offRows.length > 0) {
+          const detail = offRows.slice(0, 3).map((r) => `${r.abv === "?" ? "unknown ABV" : `${r.abv}%`}: packaged ${r.packedL} L, declared ${r.declaredL} L`).join("; ");
+          amber(`By strength — ${detail}${offRows.length > 3 ? `; and ${offRows.length - 3} more` : ""}.`);
+        }
+      }
       if (ret.appLitresAtFiling != null && Math.abs(ret.appLitresAtFiling - appLitres) > 0.01) {
         amber(`Packaging records for this month changed after the return was recorded (was ${ret.appLitresAtFiling} L, now ${appLitres} L).`);
       }
@@ -669,32 +676,94 @@ async function imagesFromZip(zipFile) {
 
 const isZipFile = (f) => /\.zip$/i.test(f.name || "") || f.type === "application/zip" || f.type === "application/x-zip-compressed";
 
-// Several screenshots can belong to one return (a long entry scrolled
-// across two screens), and the same screen can get picked twice by
-// accident — so lines are merged per period, with exact duplicates from
-// a different screenshot dropped rather than double-counted.
+// Two lines count as the same line only when every figure matches. The
+// same line on two different screenshots is the overlap from scrolling
+// (or the same page picked twice), so it's counted once; identical lines
+// on one screenshot are genuinely separate entries and both stay.
+const sameTswLine = (a, b) =>
+  String(a.itemCode || "") === String(b.itemCode || "") && a.litres === b.litres && a.lal === b.lal && (a.abv ?? null) === (b.abv ?? null);
+
+function mergeTswLines(base, extra) {
+  const out = [...base];
+  extra.forEach((l) => {
+    if (!out.some((x) => x.source !== l.source && sameTswLine(x, l))) out.push(l);
+  });
+  return out;
+}
+
+function tswTotals(lines) {
+  const sum = (k, dp) => (lines.some((l) => l[k] != null) ? Math.round(lines.reduce((acc, l) => acc + (l[k] || 0), 0) * 10 ** dp) / 10 ** dp : null);
+  return { litres: sum("litres", 3), lal: sum("lal", 3), duty: sum("duty", 2) };
+}
+
+// One TSW return often runs over two or three screens, and only the first
+// usually shows the month. Screenshots are matched to a return by entry
+// number first, then by month, and a page with neither is treated as the
+// next page of the screenshot before it.
 function groupScreenshotReadings(readings) {
-  const groups = {};
+  const norm = (v) => String(v || "").replace(/\s/g, "").toUpperCase();
+  const groups = [];
+  let prev = null;
   readings.forEach((r, idx) => {
-    const key = r.period || `unknown-${idx}`;
-    if (!groups[key]) groups[key] = { period: r.period || "", images: [], lines: [], entryNumber: "", filedDate: "", totalDuty: null, notes: [] };
-    const g = groups[key];
+    let g = null;
+    if (r.entryNumber) g = groups.find((x) => x.entryNumber && norm(x.entryNumber) === norm(r.entryNumber)) || null;
+    if (!g && r.period) g = groups.find((x) => x.period === r.period) || null;
+    if (!g && !r.period && prev) g = prev;
+    if (!g) {
+      g = { period: "", images: [], lines: [], entryNumber: "", filedDate: "", totalDuty: null, notes: [] };
+      groups.push(g);
+    }
+    if (!g.period && r.period) g.period = r.period;
     g.images.push(r.image);
-    (r.lines || []).map(completeTswLine).forEach((line) => {
-      const dup = g.lines.find((l) => l.imageIdx !== idx && l.itemCode === line.itemCode && l.litres === line.litres && l.lal === line.lal);
-      if (!dup) g.lines.push({ ...line, imageIdx: idx });
-    });
+    g.lines = mergeTswLines(g.lines, (r.lines || []).map((l) => ({ ...completeTswLine(l), source: `img${idx}` })));
     if (!g.entryNumber && r.entryNumber) g.entryNumber = r.entryNumber;
     if (!g.filedDate && r.filedDate) g.filedDate = r.filedDate;
-    if (r.totalDuty != null) g.totalDuty = (g.totalDuty || 0) + r.totalDuty;
+    // A grand total is usually on the last page — keep the latest one seen
+    // rather than adding up the same total read off two pages.
+    if (r.totalDuty != null) g.totalDuty = r.totalDuty;
     if (r.notes) g.notes.push(r.notes);
+    prev = g;
   });
-  return Object.values(groups).map((g) => {
-    const litres = g.lines.some((l) => l.litres != null) ? round3(g.lines.reduce((s, l) => s + (l.litres || 0), 0)) : null;
-    const lal = g.lines.some((l) => l.lal != null) ? round3(g.lines.reduce((s, l) => s + (l.lal || 0), 0)) : null;
-    const lineDuty = g.lines.some((l) => l.duty != null) ? Math.round(g.lines.reduce((s, l) => s + (l.duty || 0), 0) * 100) / 100 : null;
-    return { ...g, litres, lal, duty: lineDuty != null ? lineDuty : g.totalDuty != null ? Math.round(g.totalDuty * 100) / 100 : null };
+  return groups;
+}
+
+// Lines up what was packaged against what was declared, strength by
+// strength. TSW lists each ABV as its own line, so this shows which beer
+// a difference comes from — something the monthly totals can hide when
+// an over and an under cancel out.
+function exciseAbvComparison(rows, declaredLines) {
+  const key = (abv) => (abv == null || !Number.isFinite(abv) ? "?" : (Math.round(abv * 10) / 10).toFixed(1));
+  const map = {};
+  const get = (k) => map[k] || (map[k] = { abv: k, packedL: 0, packedLal: 0, beers: new Set(), declaredL: 0, declaredLal: 0, descriptions: new Set() });
+  rows.forEach((r) => {
+    const g = get(key(r.abv));
+    g.packedL += r.volumeL;
+    g.packedLal += exciseLal(r.volumeL, r.abv);
+    g.beers.add(r.batchName);
   });
+  (declaredLines || []).forEach((l) => {
+    const g = get(key(l.abv));
+    g.declaredL += l.litres || 0;
+    g.declaredLal += l.lal || 0;
+    if (l.description) g.descriptions.add(l.description);
+  });
+  return Object.values(map)
+    .map((g) => {
+      const packedL = round3(g.packedL);
+      const declaredL = round3(g.declaredL);
+      return {
+        ...g,
+        packedL,
+        declaredL,
+        packedLal: round3(g.packedLal),
+        declaredLal: round3(g.declaredLal),
+        beers: [...g.beers],
+        descriptions: [...g.descriptions],
+        diff: round3(declaredL - packedL),
+        off: Math.abs(declaredL - packedL) > litresTolerance(packedL),
+      };
+    })
+    .sort((a, b) => (a.abv === "?") - (b.abv === "?") || Number(a.abv) - Number(b.abv));
 }
 
 function monthKeyFromDate(dateStr) {
@@ -18715,20 +18784,62 @@ function ExciseReturnModal({ month, onClose, onSave, onDelete }) {
 // the reading can be wrong, so every figure stays editable and nothing
 // lands in the audit without a person confirming it.
 function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
+  // Works out what saving this draft would put on the month: just these
+  // pages, or — when the month already has a return and "add" is chosen —
+  // these pages on top of what's saved, with any page imported twice
+  // counted once.
+  const withTotals = (d) => {
+    const existing = d.period ? monthsByPeriod[d.period]?.ret : null;
+    let lines = d.lines;
+    let totals = tswTotals(d.lines);
+    if (existing && d.mode === "add") {
+      if ((existing.declaredLines || []).length > 0) {
+        lines = mergeTswLines(existing.declaredLines.map((l) => ({ ...l, source: "saved" })), d.lines);
+        totals = tswTotals(lines);
+      } else {
+        const plus = (a, b, dp) => (a == null && b == null ? null : Math.round(((a || 0) + (b || 0)) * 10 ** dp) / 10 ** dp);
+        totals = { litres: plus(existing.declaredLitres, totals.litres, 3), lal: plus(existing.declaredLal, totals.lal, 3), duty: plus(existing.declaredDuty, totals.duty, 2) };
+      }
+    }
+    const duty = totals.duty != null ? totals.duty : d.totalDuty != null ? Math.round(d.totalDuty * 100) / 100 : null;
+    return {
+      ...d,
+      saveLines: lines,
+      declaredLitres: totals.litres == null ? "" : String(totals.litres),
+      declaredLal: totals.lal == null ? "" : String(totals.lal),
+      declaredDuty: duty == null ? "" : String(duty),
+    };
+  };
+  const defaultMode = (period) => (period && monthsByPeriod[period]?.ret ? "add" : "replace");
+
   const [drafts, setDrafts] = useState(() =>
-    groups.map((g) => ({
-      ...g,
-      declaredLitres: g.litres == null ? "" : String(g.litres),
-      declaredLal: g.lal == null ? "" : String(g.lal),
-      declaredDuty: g.duty == null ? "" : String(g.duty),
-      saved: false,
-      saving: false,
-    }))
+    groups.map((g) => withTotals({ ...g, mode: defaultMode(g.period), saved: false, saving: false }))
   );
   const update = (i, patch) => setDrafts((prev) => prev.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+
+  // Picking the same month on two cards means they're pages of one
+  // return, so they become one card.
+  const setPeriod = (i, period) =>
+    setDrafts((prev) => {
+      const target = period ? prev.findIndex((d, j) => j !== i && !d.saved && d.period === period) : -1;
+      if (target < 0) return prev.map((d, j) => (j === i ? withTotals({ ...d, period, mode: defaultMode(period) }) : d));
+      const a = prev[target];
+      const b = prev[i];
+      const merged = withTotals({
+        ...a,
+        images: [...a.images, ...b.images],
+        lines: mergeTswLines(a.lines, b.lines),
+        entryNumber: a.entryNumber || b.entryNumber,
+        filedDate: a.filedDate || b.filedDate,
+        totalDuty: b.totalDuty ?? a.totalDuty,
+        notes: [...a.notes, ...b.notes],
+      });
+      return prev.map((d, j) => (j === target ? merged : d)).filter((_, j) => j !== i);
+    });
+
   const periodOptions = useMemo(() => {
     const opts = [];
-    let k = addMonthsToKey(today().slice(0, 7), 0);
+    let k = today().slice(0, 7);
     for (let n = 0; n < 48; n += 1) { opts.push(k); k = addMonthsToKey(k, -1); }
     return opts;
   }, []);
@@ -18737,22 +18848,24 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
     <Modal title="Check what was read" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5 }}>
-          Compare each figure against the screenshot and fix anything misread before saving. The screenshot is kept with the month as evidence.
+          Pages of the same return are put together automatically. If one ends up on its own card, set its month to match the others and it joins them. Check every figure against the screenshots before saving.
         </div>
         {drafts.map((d, i) => {
           const month = d.period ? monthsByPeriod[d.period] : null;
           const existing = month?.ret;
           const canSave = !d.saving && !d.saved && /^\d{4}-\d{2}$/.test(d.period) && (d.declaredLitres !== "" || d.declaredLal !== "");
+          const comparison = month ? exciseAbvComparison(month.rows, d.saveLines) : [];
           return (
-            <div key={i} style={{ border: "1px solid #DDE0C8", borderRadius: 7, padding: 12, background: "#FFFFFF", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div key={`${d.period}-${i}`} style={{ border: "1px solid #DDE0C8", borderRadius: 7, padding: 12, background: "#FFFFFF", display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
                 {d.images.map((img, j) => (
-                  <img key={j} src={img.previewUrl} alt="TSW screenshot" onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
+                  <img key={j} src={img.previewUrl} alt={`TSW screenshot page ${j + 1}`} onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
                 ))}
               </div>
+              <div style={{ fontSize: 11.5, color: "#9BA88A" }}>{d.images.length} screenshot{d.images.length === 1 ? "" : "s"} · {d.lines.length} line{d.lines.length === 1 ? "" : "s"} read</div>
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Return period</span>
-                <select value={d.period} onChange={(e) => update(i, { period: e.target.value })} style={{ background: "#F5F1E4", border: `1px solid ${d.period ? "#DDE0C8" : "#B5502F"}`, borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }}>
+                <select value={d.period} onChange={(e) => setPeriod(i, e.target.value)} style={{ background: "#F5F1E4", border: `1px solid ${d.period ? "#DDE0C8" : "#B5502F"}`, borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }}>
                   <option value="">Choose the month…</option>
                   {[...new Set([d.period, ...periodOptions].filter(Boolean))].map((k) => <option key={k} value={k}>{monthLabelFromKey(k)}</option>)}
                 </select>
@@ -18769,6 +18882,16 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                   )}
                 </div>
               )}
+              {existing && !d.saved && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: 12, color: "#8A6D0B" }}>{monthLabelFromKey(d.period)} already has a return saved ({(existing.screenshotPaths || []).length} screenshot{(existing.screenshotPaths || []).length === 1 ? "" : "s"}).</div>
+                  <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
+                    {[["add", "Add these pages to it"], ["replace", "Replace it"]].map(([k, l]) => (
+                      <button key={k} onClick={() => update(i, withTotals({ ...d, mode: k }))} style={{ flex: 1, background: d.mode === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: d.mode === k ? "#16191A" : "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <NumberField label="Declared litres" value={d.declaredLitres} onChange={(v) => update(i, { declaredLitres: v })} suffix="L" />
                 <NumberField label="Declared LAL" value={d.declaredLal} onChange={(v) => update(i, { declaredLal: v })} suffix="LAL" />
@@ -18778,13 +18901,8 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                 <TextField label="Entry number" value={d.entryNumber} onChange={(v) => update(i, { entryNumber: v })} />
               </div>
               <TextField label="Date filed" type="date" value={d.filedDate} onChange={(v) => update(i, { filedDate: v })} />
-              {month && (
-                <div style={{ fontSize: 12.5, color: "#5C6B54" }}>
-                  Brewpoint's records for {monthLabelFromKey(d.period)}: <strong style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtL(month.appLitres)} · {fmtLal(month.appLal)}</strong>
-                </div>
-              )}
+              {month && comparison.length > 0 && <AbvComparisonTable rows={comparison} hasDeclaredLines={d.saveLines.length > 0} />}
               {d.notes.length > 0 && <div style={{ fontSize: 12, color: "#8A6D0B" }}>Reading note: {d.notes.join(" ")}</div>}
-              {existing && !d.saved && <div style={{ fontSize: 12, color: "#8A6D0B" }}>A return is already recorded for this month — saving replaces its declared figures and adds these screenshots.</div>}
               <button
                 disabled={!canSave}
                 onClick={async () => {
@@ -18802,6 +18920,44 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
         <button onClick={onClose} style={auditSecondaryBtn}>Done</button>
       </div>
     </Modal>
+  );
+}
+
+// Packaged vs declared, one row per strength.
+function AbvComparisonTable({ rows, hasDeclaredLines }) {
+  const cell = { padding: "6px 4px", borderBottom: "1px solid #EBE8D6", verticalAlign: "top" };
+  const num = { ...cell, textAlign: "right", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" };
+  return (
+    <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 10px" }}>
+      <div style={{ ...auditLabelStyle, marginBottom: 4 }}>Packaged vs declared, by ABV</div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: "#2A3324" }}>
+        <thead>
+          <tr style={{ color: "#5C6B54", textAlign: "left" }}>
+            <th style={{ ...cell, fontWeight: 500 }}>ABV</th>
+            <th style={{ ...cell, fontWeight: 500, textAlign: "right" }}>Packaged</th>
+            <th style={{ ...cell, fontWeight: 500, textAlign: "right" }}>Declared</th>
+            <th style={{ ...cell, fontWeight: 500, textAlign: "right" }}>Diff</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.abv}>
+              <td style={cell}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace" }}>{r.abv === "?" ? "—" : `${r.abv}%`}</div>
+                {r.beers.length > 0 && <div style={{ color: "#5C6B54", fontSize: 11 }}>{r.beers.join(", ")}</div>}
+                {r.beers.length === 0 && r.descriptions.length > 0 && <div style={{ color: "#5C6B54", fontSize: 11 }}>{r.descriptions.join(", ")}</div>}
+              </td>
+              <td style={num}>{r.packedL} L</td>
+              <td style={num}>{hasDeclaredLines ? `${r.declaredL} L` : "—"}</td>
+              <td style={{ ...num, color: hasDeclaredLines && r.off ? "#B5502F" : "#3F7A28", fontWeight: hasDeclaredLines && r.off ? 600 : 400 }}>
+                {hasDeclaredLines ? (r.off ? `${r.diff > 0 ? "+" : ""}${r.diff}` : "✓") : ""}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!hasDeclaredLines && <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 6 }}>Import this month's TSW screenshots to compare each line.</div>}
+    </div>
   );
 }
 
@@ -18855,6 +19011,15 @@ function ExciseAuditReport({ months, companyName, abvMethod, onClose }) {
             {m.ret && (
               <div style={{ color: "#5C6B54", marginTop: 3 }}>
                 Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{m.ret.declaredDuty != null ? ` · Duty $${Number(m.ret.declaredDuty).toFixed(2)}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
+              </div>
+            )}
+            {(m.ret?.declaredLines || []).length > 0 && (
+              <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#2A3324" }}>
+                {exciseAbvComparison(m.rows, m.ret.declaredLines).map((r) => (
+                  <div key={r.abv} style={{ color: r.off ? "#B5502F" : "#2A3324" }}>
+                    {r.abv === "?" ? "Unknown ABV" : `${r.abv}%`}: packaged {r.packedL} L · declared {r.declaredL} L{r.off ? ` (${r.diff > 0 ? "+" : ""}${r.diff})` : " ✓"}{r.beers.length ? ` — ${r.beers.join(", ")}` : ""}
+                  </div>
+                ))}
               </div>
             )}
             {m.issues.map((iss, j) => (
@@ -18998,6 +19163,11 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
                   <AuditStatusPill status={m.status} />
                 </div>
                 {m.status !== "nil" && <AuditFigures appLitres={m.appLitres} appLal={m.appLal} declaredLitres={m.ret?.declaredLitres} declaredLal={m.ret?.declaredLal} />}
+                {(m.rows.length > 0 || (m.ret?.declaredLines || []).length > 0) && (
+                  <div style={{ marginTop: 10 }}>
+                    <AbvComparisonTable rows={exciseAbvComparison(m.rows, m.ret?.declaredLines)} hasDeclaredLines={(m.ret?.declaredLines || []).length > 0} />
+                  </div>
+                )}
                 {m.issues.length > 0 && (
                   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
                     {m.issues.map((iss, j) => (
@@ -19026,7 +19196,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
                 <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button onClick={() => setEditingMonth(m)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>{m.ret ? "Edit return" : "Enter manually"}</button>
                   {m.rows.length > 0 && (
-                    <button onClick={() => setExpanded(expanded === m.period ? null : m.period)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>{expanded === m.period ? "Hide packaging" : "Show packaging"}</button>
+                    <button onClick={() => setExpanded(expanded === m.period ? null : m.period)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>{expanded === m.period ? "Hide packaging runs" : "Show packaging runs"}</button>
                   )}
                   {m.ret && !m.ret.reviewedBy && (
                     <button onClick={() => onReviewReturn(m.ret)} style={{ ...auditSecondaryBtn, padding: "8px 12px" }}>Mark reviewed</button>
@@ -23361,7 +23531,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-275";
+const APP_VERSION = "2026-11-07-276";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -27189,16 +27359,21 @@ function TankLogApp() {
   // the reviewed sign-off, since it no longer covers what's there now.
   const saveExciseReturn = async (draft, month, newImages = []) => {
     const existing = exciseReturns.find((r) => r.period === draft.period);
-    const paths = [...(existing?.screenshotPaths || [])];
+    // "Replace" swaps out the old screenshots too; the files are only
+    // removed once the new return has saved.
+    const replacing = !!draft.replaceEvidence && !!existing;
+    const oldPaths = replacing ? existing.screenshotPaths || [] : [];
+    const paths = replacing ? [] : [...(existing?.screenshotPaths || [])];
     for (const img of newImages) {
       const path = `${profile.companyId}/${draft.period}/${uid()}.jpg`;
       const { error: upErr } = await supabase.storage.from("excise-evidence").upload(path, img.blob, { contentType: "image/jpeg" });
       if (upErr) { console.error(upErr); showToast("error", "A screenshot didn't upload — check your connection and try again."); return false; }
       paths.push(path);
     }
+    const { replaceEvidence, ...fields } = draft;
     const record = {
       ...(existing || {}),
-      ...draft,
+      ...fields,
       id: existing?.id,
       screenshotPaths: paths,
       appLitresAtFiling: existing?.appLitresAtFiling ?? month.appLitres,
@@ -27211,6 +27386,7 @@ function TankLogApp() {
     const { data, error } = await supabase.from("excise_returns").upsert(row, { onConflict: "company_id,period" }).select().single();
     if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
     const saved = rowToExciseReturn(data);
+    if (oldPaths.length) await supabase.storage.from("excise-evidence").remove(oldPaths);
     setExciseReturns((prev) => [saved, ...prev.filter((r) => r.period !== saved.period)]);
     logActivity(existing ? "updated" : "created", "excise_return", saved.period, `Excise return for ${monthLabelFromKey(saved.period)} ${existing ? "updated" : "recorded"}`);
     showToast("success", `Return for ${monthLabelFromKey(saved.period)} saved.`);
@@ -27219,7 +27395,16 @@ function TankLogApp() {
 
   const importExciseScreenshotGroup = (g, month) =>
     saveExciseReturn(
-      { period: g.period, declaredLitres: g.declaredLitres, declaredLal: g.declaredLal, declaredDuty: g.declaredDuty, entryNumber: (g.entryNumber || "").trim(), filedDate: g.filedDate || "" },
+      {
+        period: g.period,
+        declaredLitres: g.declaredLitres,
+        declaredLal: g.declaredLal,
+        declaredDuty: g.declaredDuty,
+        declaredLines: g.saveLines || g.lines || [],
+        entryNumber: (g.entryNumber || "").trim(),
+        filedDate: g.filedDate || "",
+        replaceEvidence: g.mode === "replace",
+      },
       month,
       g.images
     );

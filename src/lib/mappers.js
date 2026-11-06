@@ -395,6 +395,7 @@ export function rowToExciseReturn(row) {
     appLitresAtFiling: num(row.app_litres_at_filing),
     appLalAtFiling: num(row.app_lal_at_filing),
     screenshotPaths: row.screenshot_paths || [],
+    declaredLines: Array.isArray(row.declared_lines) ? row.declared_lines : [],
     reviewedBy: row.reviewed_by || "",
     reviewedAt: row.reviewed_at || null,
     updatedAt: row.updated_at || null,
@@ -416,6 +417,7 @@ export function exciseReturnToRow(r, companyId) {
     app_litres_at_filing: num(r.appLitresAtFiling),
     app_lal_at_filing: num(r.appLalAtFiling),
     screenshot_paths: r.screenshotPaths || [],
+    declared_lines: (r.declaredLines || []).map(({ source, imageIdx, ...l }) => l),
     reviewed_by: r.reviewedBy || null,
     reviewed_at: r.reviewedAt || null,
   };
