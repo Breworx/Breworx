@@ -25,10 +25,13 @@ const PROMPT = `This is a screenshot from New Zealand Customs' Trade Single Wind
 
 Read the figures exactly as shown. Do not calculate, estimate or correct anything. If a value isn't visible, use null.
 
+Dates in TSW are New Zealand format, day/month/year: 01/03/2024 is 1 March 2024, never 3 January. The month is usually written as a month name and a two-digit year, e.g. "January 26" means January 2026 and "February 24" means February 2024 — the number is the year, not a day of the month. The period is the month the excise return covers — not the date it was lodged or printed. If a period range is shown (e.g. 01/03/2024 – 31/03/2024), the period is that month.
+
 Reply with only this JSON, no other text:
 {
   "isTswExcise": true or false (false if this clearly isn't a TSW excise entry),
-  "period": "YYYY-MM" — the month the return covers. Use the stated period if shown; otherwise null,
+  "period": "YYYY-MM" with a two-digit month (e.g. "2024-03") — the month the return covers, or null if not shown,
+  "periodAsShown": the period text exactly as it appears on screen, or null,
   "entryNumber": the entry / declaration / reference number as shown, or null,
   "filedDate": "YYYY-MM-DD" lodgement or submitted date if shown, or null,
   "lines": [
@@ -44,6 +47,33 @@ Reply with only this JSON, no other text:
   "totalDuty": total excise duty in dollars if a total is shown, or null,
   "notes": one short sentence on anything unclear, cut off, or hard to read — or null
 }`;
+
+// Turns whatever form the month comes back in into "YYYY-MM": "2024-3",
+// "March 2024", "Mar-24", "03/2024", or an NZ day/month/year date.
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function normalisePeriod(v: unknown): string | null {
+  if (v == null) return null;
+  const text = String(v).trim().toLowerCase();
+  if (!text) return null;
+  const pad = (m: number) => String(m).padStart(2, "0");
+  const fullYear = (y: string) => (y.length === 2 ? `20${y}` : y);
+  const ok = (y: string, m: number) => (m >= 1 && m <= 12 && /^\d{4}$/.test(y) ? `${y}-${pad(m)}` : null);
+  let m = text.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
+  if (m) return ok(m[1], Number(m[2]));
+  // A month written as a word next to its year wins over any date nearby
+  // (a lodgement date on the same line, say).
+  m = text.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?[\s,-]*(\d{4}|\d{2})\b/);
+  if (m) return ok(fullYear(m[2]), MONTHS.indexOf(m[1]) + 1);
+  // A range: use the first date in it.
+  m = text.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+  if (m) return ok(fullYear(m[3]), Number(m[2]));
+  m = text.match(/^(\d{1,2})[\/.-](\d{4})$/);
+  if (m) return ok(m[2], Number(m[1]));
+  const name = MONTHS.findIndex((mon) => text.includes(mon));
+  const year = text.match(/\b(\d{4}|\d{2})\b(?!.*\b\d{4}\b)/);
+  if (name >= 0 && year) return ok(fullYear(year[1]), name + 1);
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -114,7 +144,10 @@ Deno.serve(async (req) => {
   try {
     const parsed = JSON.parse(text.slice(start, end + 1));
     const num = (v: unknown) => (v == null || v === "" || Number.isNaN(Number(String(v).replace(/[$,\s]/g, ""))) ? null : Number(String(v).replace(/[$,\s]/g, "")));
-    const period = typeof parsed.period === "string" && /^\d{4}-\d{2}$/.test(parsed.period) ? parsed.period : null;
+    // The text as it appears on screen is the more reliable of the two —
+    // "January 26" is unambiguous to the parser, while a reader can mistake
+    // the 26 for a day and guess the year.
+    const period = normalisePeriod(parsed.periodAsShown) || normalisePeriod(parsed.period);
     const filedDate = typeof parsed.filedDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.filedDate) ? parsed.filedDate : null;
     return json({
       isTswExcise: parsed.isTswExcise !== false,
