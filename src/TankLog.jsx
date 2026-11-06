@@ -614,6 +614,61 @@ function completeTswLine(line) {
   return out;
 }
 
+// Reads the images out of a .zip without any extra library — the zip's
+// central directory lists every file, and deflated entries are unpacked
+// with the browser's own DecompressionStream (Safari 16.4+, Chrome, Firefox).
+// Folders, Mac "__MACOSX" metadata and non-image files are skipped.
+const ZIP_IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", heic: "image/heic", heif: "image/heif", webp: "image/webp", gif: "image/gif" };
+
+async function imagesFromZip(zipFile) {
+  const buf = new Uint8Array(await zipFile.arrayBuffer());
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  // End-of-central-directory record sits in the last 64 KB of the file.
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i -= 1) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error(`${zipFile.name} isn't a zip file this can open.`);
+  const count = view.getUint16(eocd + 10, true);
+  let ptr = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  const out = [];
+  for (let n = 0; n < count; n += 1) {
+    if (view.getUint32(ptr, true) !== 0x02014b50) break;
+    const method = view.getUint16(ptr + 10, true);
+    const compSize = view.getUint32(ptr + 20, true);
+    const nameLen = view.getUint16(ptr + 28, true);
+    const extraLen = view.getUint16(ptr + 30, true);
+    const commentLen = view.getUint16(ptr + 32, true);
+    const localOffset = view.getUint32(ptr + 42, true);
+    const name = decoder.decode(buf.subarray(ptr + 46, ptr + 46 + nameLen));
+    ptr += 46 + nameLen + extraLen + commentLen;
+
+    const base = name.split("/").pop();
+    const ext = (base.split(".").pop() || "").toLowerCase();
+    if (name.endsWith("/") || name.startsWith("__MACOSX/") || base.startsWith(".") || !ZIP_IMAGE_TYPES[ext]) continue;
+
+    const localNameLen = view.getUint16(localOffset + 26, true);
+    const localExtraLen = view.getUint16(localOffset + 28, true);
+    const start = localOffset + 30 + localNameLen + localExtraLen;
+    const raw = buf.subarray(start, start + compSize);
+    let data;
+    if (method === 0) data = raw;
+    else if (method === 8) {
+      if (typeof DecompressionStream === "undefined") throw new Error("This device's browser can't unzip files — update iPadOS, or pick the screenshots directly.");
+      const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      data = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else continue;
+    const blob = new Blob([data], { type: ZIP_IMAGE_TYPES[ext] });
+    blob.name = base;
+    out.push(blob);
+  }
+  // Keep the zip's own name order, so screenshots named by month read in order.
+  return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+const isZipFile = (f) => /\.zip$/i.test(f.name || "") || f.type === "application/zip" || f.type === "application/x-zip-compressed";
+
 // Several screenshots can belong to one return (a long entry scrolled
 // across two screens), and the same screen can get picked twice by
 // accident — so lines are merged per period, with exact duplicates from
@@ -18804,9 +18859,22 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
   const n = (st) => counted.filter((m) => st.includes(m.status)).length;
 
   const handleFiles = async (fileList) => {
-    const files = [...(fileList || [])];
-    if (files.length === 0) return;
+    const picked = [...(fileList || [])];
+    if (picked.length === 0) return;
     setReadError("");
+    const files = [];
+    for (const f of picked) {
+      if (!isZipFile(f)) { files.push(f); continue; }
+      setReading(`Unzipping ${f.name}…`);
+      try {
+        const imgs = await imagesFromZip(f);
+        if (imgs.length === 0) setReadError((e) => `${e}No screenshots found inside ${f.name}. `);
+        files.push(...imgs);
+      } catch (err) {
+        setReadError((e) => `${e}${err.message} `);
+      }
+    }
+    if (files.length === 0) { setReading(null); if (fileRef.current) fileRef.current.value = ""; return; }
     const readings = [];
     for (let i = 0; i < files.length; i += 1) {
       setReading(`Reading screenshot ${i + 1} of ${files.length}…`);
@@ -18859,12 +18927,12 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
         Checks each month's TSW return against what you packaged that month, so you find any gaps before Customs does. It compares litres and pure alcohol (LAL), not dollars, because duty rates change every July. A clean result is a good sign, not a guarantee — if it turns up an underpayment, Customs' voluntary disclosure process is the way to put it right.
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
+      <input ref={fileRef} type="file" accept="image/*,.zip,application/zip" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
       <button onClick={() => fileRef.current?.click()} disabled={!!reading} style={{ ...auditPrimaryBtn(!reading), width: "100%", marginBottom: 8 }}>
         {reading || "Import TSW screenshots"}
       </button>
       <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 12, lineHeight: 1.5 }}>
-        Screenshot the excise entry in TSW (one month or several), then pick the screenshots here. You'll check every figure before it's saved.
+        Screenshot the excise entry in TSW (one month or several), then pick the screenshots here — or a single .zip of them from the Files app. You'll check every figure before it's saved.
       </div>
       {readError && <div style={{ color: "#B5502F", fontSize: 12.5, marginBottom: 12 }}>{readError}</div>}
 
@@ -23262,7 +23330,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-06-271";
+const APP_VERSION = "2026-11-06-272";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
