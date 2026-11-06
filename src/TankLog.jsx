@@ -3530,6 +3530,7 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
   const [notes, setNotes] = useState("");
   const [completedBy, setCompletedBy] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
+  const [date, setDate] = useState(today());
 
   const toggle = (i) => setChecked((prev) => prev.map((c, idx) => (idx === i ? !c : c)));
   const allChecked = checked.every(Boolean);
@@ -3541,7 +3542,7 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
     onSave({
       category: "checklist",
       frequency: template.frequency,
-      date: today(),
+      date,
       items: template.items.map((label, i) => ({ label, checked: checked[i] })),
       notes: notes.trim(),
       completedBy: completedBy.trim(),
@@ -3603,6 +3604,7 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
           <TextField label="Corrective action (required)" value={correctiveAction} onChange={setCorrectiveAction} placeholder="What's being done about the failed item(s)?" />
         )}
         <TextField label="Completed by (required)" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
+        <BackdateField value={date} onChange={setDate} label="Date completed" />
         <TextField label="Notes (optional)" value={notes} onChange={setNotes} />
         <button
           onClick={submit}
@@ -17314,6 +17316,11 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
     "Complaint": "Customer complaint",
   };
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
+  // Records typed in from paper keep the date they happened, but the
+  // report is upfront that they were entered afterwards — an auditor
+  // trusts a transcribed log far more when it says so.
+  const enteredLater = (r) => !!r.createdAt && !!r.date && r.createdAt.slice(0, 10) > r.date;
+  const transferredCount = records.filter(enteredLater).length;
   const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
   const periodLabel = monthFilter ? monthLabelFromKey(monthFilter) : "All records";
   const counts = {};
@@ -17371,6 +17378,11 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
         <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 28 }}>
           Period: {periodLabel} · Generated {today()}
         </div>
+        {transferredCount > 0 && (
+          <div style={{ fontSize: 12.5, color: "#5C6B54", marginTop: -18, marginBottom: 24 }}>
+            {transferredCount} record{transferredCount === 1 ? " was" : "s were"} transferred from written logs and entered after the date shown. Original paper records are kept on file.
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 28, pageBreakInside: "avoid" }}>
           {Object.entries(counts).map(([cat, n]) => (
@@ -17403,7 +17415,10 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
             <div key={r.id} style={{ display: "flex", gap: 14, padding: "8px 0", borderBottom: "1px solid #F0EDE0", fontSize: 12.5, pageBreakInside: "avoid" }}>
               <div style={{ width: 78, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>{r.date}</div>
               <div style={{ width: 90, flexShrink: 0, color: "#5C6B54" }}>{categoryLabel[r.category] || r.category}</div>
-              <div style={{ flex: 1 }}>{recordDetail(r)}</div>
+              <div style={{ flex: 1 }}>
+                {recordDetail(r)}
+                {enteredLater(r) && <span style={{ color: "#5C6B54", fontStyle: "italic" }}> — transferred from written record, entered {r.createdAt.slice(0, 10)}</span>}
+              </div>
             </div>
           ))}
           {sorted.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13, padding: "12px 0" }}>No records in this period.</div>}
@@ -18418,6 +18433,7 @@ function MockRecallModal({ inventory, batches, salesOrders, mixedPackAssemblies,
   const [manualChecked, setManualChecked] = useState(() => new Set());
   const [reviewNotes, setReviewNotes] = useState("");
   const [completedBy, setCompletedBy] = useState("");
+  const [recallDate, setRecallDate] = useState(today());
 
   const item = inventory.find((it) => it.id === itemId);
   const lots = item ? [...new Map((item.lots || []).map((l) => [l.lotNumber, l])).values()] : [];
@@ -18448,7 +18464,7 @@ In a real recall, this notice would detail the issue, the action we're taking, a
   const verifierDraft = `SIMULATED RECALL — DO NOT SEND
 
 To: [Verifier / New Zealand Food Safety]
-Re: Simulated recall exercise — ${today()}
+Re: Simulated recall exercise — ${recallDate}
 
 Scenario: ${scenario || "[scenario]"}
 Affected lot: ${lotNumber || "[lot]"} (${item?.name || "[ingredient]"})
@@ -18467,7 +18483,7 @@ This exercise tested our ability to trace and identify affected product using ou
       `Manual steps completed: ${manualChecked.size}/${RECALL_MANUAL_STEPS.length}`,
       reviewNotes.trim() ? `Review notes: ${reviewNotes.trim()}` : "",
     ].filter(Boolean).join("\n");
-    onSave({ category: "recall", date: today(), notes, completedBy: completedBy.trim(), correctiveActionResolved: true });
+    onSave({ category: "recall", date: recallDate, notes, completedBy: completedBy.trim(), correctiveActionResolved: true });
     onClose();
   };
 
@@ -18560,6 +18576,7 @@ This exercise tested our ability to trace and identify affected product using ou
             </div>
             <TextField label="Review notes (optional)" value={reviewNotes} onChange={setReviewNotes} placeholder="What went well, what to improve next time" />
             <TextField label="Completed by" value={completedBy} onChange={setCompletedBy} placeholder="Your name" />
+            <BackdateField value={recallDate} onChange={setRecallDate} label="Date of the exercise" />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setStep(3)} style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "12px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 14, cursor: "pointer" }}>← Back</button>
               <button
@@ -23330,7 +23347,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-06-272";
+const APP_VERSION = "2026-11-06-273";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
