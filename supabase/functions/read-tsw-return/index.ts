@@ -55,7 +55,8 @@ Deno.serve(async (req) => {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) return json({ error: "Please sign in again." }, 401);
 
-  const apiKey = (Deno.env.get("ANTHROPIC_API_KEY") || "").trim();
+  // Trim spaces and any quote marks pasted in along with the key.
+  const apiKey = (Deno.env.get("ANTHROPIC_API_KEY") || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
   if (!apiKey) return json({ error: "Screenshot reading isn't set up yet (missing ANTHROPIC_API_KEY)." }, 500);
 
   let image = "";
@@ -95,6 +96,12 @@ Deno.serve(async (req) => {
   if (!res.ok) {
     const detail = await res.text();
     console.error("Anthropic API error", res.status, detail);
+    if (res.status === 401 || res.status === 403) {
+      return json({ error: "The Anthropic API key is wrong or has been revoked — update ANTHROPIC_API_KEY in Supabase → Edge Functions → Secrets." }, 502);
+    }
+    if (res.status === 400 && /credit balance/i.test(detail)) {
+      return json({ error: "The Anthropic account is out of credit — top it up at console.anthropic.com." }, 502);
+    }
     return json({ error: "Couldn't read the screenshot right now — try again in a minute." }, 502);
   }
 
