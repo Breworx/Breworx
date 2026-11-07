@@ -19110,9 +19110,18 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
     if (files.length === 0) { setReading(null); if (fileRef.current) fileRef.current.value = ""; return; }
     const readings = [];
     for (let i = 0; i < files.length; i += 1) {
-      setReading(`Reading screenshot ${i + 1} of ${files.length}…`);
+      setReading(`Preparing screenshot ${i + 1} of ${files.length}…`);
       try {
         const img = await shrinkImageFile(files[i]);
+        // A file already named by month ("2024-02 page 1.jpg") for a month
+        // whose return is saved line by line only needs attaching as
+        // evidence — no need to send it off to be read.
+        const named = /^(\d{4})-(0[1-9]|1[0-2])\b/.exec(files[i].name || "");
+        const namedPeriod = named ? `${named[1]}-${named[2]}` : null;
+        if (namedPeriod && (exciseReturns.find((r) => r.period === namedPeriod)?.declaredLines || []).length > 0) {
+          readings.push({ period: namedPeriod, lines: [], image: img });
+          continue;
+        }
         const result = await onReadScreenshot(img.base64);
         if (!result) continue;
         if (result.isTswExcise === false) {
@@ -23568,7 +23577,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-277";
+const APP_VERSION = "2026-11-07-278";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
