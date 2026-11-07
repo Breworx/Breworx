@@ -537,7 +537,7 @@ function exciseAuditMonths({ batches, abvMethod, exciseReturns, exciseItemCodes,
       if ((ret.declaredLines || []).length > 0) {
         const offRows = exciseAbvComparison(m.rows, ret.declaredLines).filter((r) => r.off);
         if (offRows.length > 0) {
-          const detail = offRows.slice(0, 3).map((r) => `${r.abv === "?" ? "unknown ABV" : `${r.abv}%`}: packaged ${r.packedL} L, declared ${r.declaredL} L`).join("; ");
+          const detail = offRows.slice(0, 3).map((r) => `${r.abv === "?" ? "unknown ABV" : `${r.abv}%`}: packaged ${Math.round(r.packedL)} L, declared ${Math.round(r.declaredL)} L`).join("; ");
           amber(`By strength — ${detail}${offRows.length > 3 ? `; and ${offRows.length - 3} more` : ""}.`);
         }
       }
@@ -18681,8 +18681,15 @@ const auditLabelStyle = { fontSize: 11, letterSpacing: "0.06em", textTransform: 
 const auditTextareaStyle = { width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14, resize: "vertical" };
 const auditPrimaryBtn = (enabled = true) => ({ background: enabled ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "12px", color: enabled ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: enabled ? "pointer" : "default" });
 const auditSecondaryBtn = { background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" };
-const fmtL = (n) => (n == null ? "—" : `${round3(n)} L`);
-const fmtLal = (n) => (n == null ? "—" : `${round3(n)} LAL`);
+// The audit shows figures the way they're declared on TSW — whole litres
+// and LAL to one decimal — so packaged and declared read the same when
+// they agree, instead of 159.8 L against 160 L from 330ml can rounding.
+const fmtL = (n) => (n == null ? "—" : `${Math.round(n).toLocaleString("en-NZ")} L`);
+const fmtLal = (n) => (n == null ? "—" : `${(Math.round(n * 10) / 10).toFixed(1)} LAL`);
+const fmtDiffL = (n) => `${n > 0 ? "+" : ""}${Math.round(n)} L`;
+// Exact figures for checking a screenshot reading line by line.
+const fmtLExact = (n) => (n == null ? "—" : `${round3(n)} L`);
+const fmtLalExact = (n) => (n == null ? "—" : `${round3(n)} LAL`);
 
 function AuditStatusPill({ status }) {
   const s = AUDIT_STATUS[status] || AUDIT_STATUS.nil;
@@ -18903,7 +18910,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                 <div style={{ fontSize: 12, color: "#5C6B54", background: "#F5F1E4", borderRadius: 5, padding: "8px 10px" }}>
                   {d.lines.map((l, j) => (
                     <div key={j} style={{ fontFamily: "'JetBrains Mono', monospace", padding: "2px 0" }}>
-                      {l.description || l.itemCode || "Line"} — {fmtL(l.litres)}{l.derived?.includes("litres") ? "*" : ""} · {fmtLal(l.lal)}{l.derived?.includes("lal") ? "*" : ""}{l.abv != null ? ` · ${l.abv}%${l.derived?.includes("abv") ? "*" : ""}` : ""}
+                      {l.description || l.itemCode || "Line"} — {fmtLExact(l.litres)}{l.derived?.includes("litres") ? "*" : ""} · {fmtLalExact(l.lal)}{l.derived?.includes("lal") ? "*" : ""}{l.abv != null ? ` · ${l.abv}%${l.derived?.includes("abv") ? "*" : ""}` : ""}
                     </div>
                   ))}
                   {d.lines.some((l) => l.derived?.length) && (
@@ -18984,16 +18991,18 @@ function AbvComparisonTable({ rows, hasDeclaredLines }) {
                 {r.beers.length > 0 && <div style={{ color: "#5C6B54", fontSize: 11 }}>{r.beers.join(", ")}</div>}
                 {r.beers.length === 0 && r.descriptions.length > 0 && <div style={{ color: "#5C6B54", fontSize: 11 }}>{r.descriptions.join(", ")}</div>}
               </td>
-              <td style={num}>{r.packedL} L</td>
-              <td style={num}>{hasDeclaredLines ? `${r.declaredL} L` : "—"}</td>
+              <td style={num}>{fmtL(r.packedL)}</td>
+              <td style={num}>{hasDeclaredLines ? fmtL(r.declaredL) : "—"}</td>
               <td style={{ ...num, color: hasDeclaredLines && r.off ? "#B5502F" : "#3F7A28", fontWeight: hasDeclaredLines && r.off ? 600 : 400 }}>
-                {hasDeclaredLines ? (r.off ? `${r.diff > 0 ? "+" : ""}${r.diff}` : "✓") : ""}
+                {hasDeclaredLines ? (r.off ? fmtDiffL(r.diff) : "✓") : ""}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {!hasDeclaredLines && <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 6 }}>Import this month's TSW screenshots to compare each line.</div>}
+      <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 6 }}>
+        {hasDeclaredLines ? "Litres to the nearest litre, as declared on TSW." : "Import this month's TSW screenshots to compare each line."}
+      </div>
     </div>
   );
 }
@@ -19054,7 +19063,7 @@ function ExciseAuditReport({ months, companyName, abvMethod, onClose }) {
               <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#2A3324" }}>
                 {exciseAbvComparison(m.rows, m.ret.declaredLines).map((r) => (
                   <div key={r.abv} style={{ color: r.off ? "#B5502F" : "#2A3324" }}>
-                    {r.abv === "?" ? "Unknown ABV" : `${r.abv}%`}: packaged {r.packedL} L · declared {r.declaredL} L{r.off ? ` (${r.diff > 0 ? "+" : ""}${r.diff})` : " ✓"}{r.beers.length ? ` — ${r.beers.join(", ")}` : ""}
+                    {r.abv === "?" ? "Unknown ABV" : `${r.abv}%`}: packaged {fmtL(r.packedL)} · declared {fmtL(r.declaredL)}{r.off ? ` (${fmtDiffL(r.diff)})` : " ✓"}{r.beers.length ? ` — ${r.beers.join(", ")}` : ""}
                   </div>
                 ))}
               </div>
@@ -23577,7 +23586,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-278";
+const APP_VERSION = "2026-11-07-279";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
