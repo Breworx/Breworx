@@ -23825,7 +23825,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-08-283";
+const APP_VERSION = "2026-11-08-284";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -28046,6 +28046,19 @@ function TankLogApp() {
         }
         .bp-hamburger-btn { display: none; }
         .bp-sidebar-backdrop { display: none; }
+        /* Wide screens: the menu stays put while the page scrolls, and
+           scrolls on its own if it's taller than the screen. */
+        @media (min-width: 861px) {
+          .bp-sidebar {
+            position: sticky;
+            top: 0;
+            align-self: flex-start;
+            height: 100vh;
+            height: 100dvh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+        }
         @media (max-width: 860px) {
           .bp-hamburger-btn { display: flex !important; }
           .bp-sidebar {
