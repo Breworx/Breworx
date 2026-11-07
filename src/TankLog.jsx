@@ -5794,7 +5794,12 @@ function FinishedGoodsStockView({
   onClearStock,
   onUndoClear,
 }) {
-  const relevant = availableStock.filter((s) => s.packaged > 0);
+  const [showSoldOut, setShowSoldOut] = useState(false);
+  // On hand means available right now — sold-out and cleared lines stay
+  // hidden unless asked for.
+  const everPackaged = availableStock.filter((s) => s.packaged > 0);
+  const relevant = showSoldOut ? everPackaged : everPackaged.filter((s) => s.available > 0);
+  const soldOutCount = everPackaged.filter((s) => s.available <= 0).length;
   const clearHistory = stockClearHistory(batches);
   const grouped = {};
   relevant.forEach((s) => {
@@ -5896,8 +5901,20 @@ function FinishedGoodsStockView({
         )}
       </div>
 
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>{showSoldOut ? "All packaged stock" : "In stock now"}</div>
+        {soldOutCount > 0 && (
+          <button onClick={() => setShowSoldOut((v) => !v)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}>
+            {showSoldOut ? "Hide sold out" : `Show sold out (${soldOutCount})`}
+          </button>
+        )}
+      </div>
       {beerNames.length === 0 ? (
-        <EmptyState icon={Package} title="Nothing packaged yet" subtitle="Once a batch is packaged, what's available to sell will show up here automatically." />
+        everPackaged.length > 0 ? (
+          <EmptyState icon={Package} title="Nothing in stock" subtitle="Everything packaged has been sold or cleared. New packaging runs show up here automatically." />
+        ) : (
+          <EmptyState icon={Package} title="Nothing packaged yet" subtitle="Once a batch is packaged, what's available to sell will show up here automatically." />
+        )
       ) : (
         beerNames.map((name) => (
           <div key={name} style={{ marginBottom: 20 }}>
@@ -23825,7 +23842,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-08-284";
+const APP_VERSION = "2026-11-08-285";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
