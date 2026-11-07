@@ -18900,7 +18900,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
             <div key={`${d.period}-${i}`} style={{ border: "1px solid #DDE0C8", borderRadius: 7, padding: 12, background: "#FFFFFF", display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
                 {d.images.map((img, j) => (
-                  <img key={j} src={img.previewUrl} alt={`TSW screenshot page ${j + 1}`} onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: d.mode === "evidence" && month?.ret ? 60 : 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
+                  <img key={j} src={img.previewUrl} alt={`TSW screenshot page ${j + 1}`} onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
                 ))}
               </div>
               <div style={{ fontSize: 11.5, color: "#9BA88A" }}>{d.images.length} screenshot{d.images.length === 1 ? "" : "s"} · {d.lines.length} line{d.lines.length === 1 ? "" : "s"} read</div>
@@ -18950,7 +18950,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                   <TextField label="Date filed" type="date" value={d.filedDate} onChange={(v) => update(i, { filedDate: v })} />
                 </>
               )}
-              {month && comparison.length > 0 && !(d.mode === "evidence" && existing) && <AbvComparisonTable rows={comparison} hasDeclaredLines={d.saveLines.length > 0} />}
+              {month && comparison.length > 0 && <AbvComparisonTable rows={comparison} hasDeclaredLines={d.saveLines.length > 0} />}
               {d.notes.length > 0 && <div style={{ fontSize: 12, color: "#8A6D0B" }}>Reading note: {d.notes.join(" ")}</div>}
               <button
                 disabled={!canSave}
@@ -23603,7 +23603,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-280";
+const APP_VERSION = "2026-11-07-281";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
