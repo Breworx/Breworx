@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge, Pencil, Sparkles } from "lucide-react";
 // Charts are lazy-loaded — recharts is one of the heaviest dependencies in
 // the app and most people never open a screen with a chart on it in a given
@@ -5601,6 +5602,28 @@ function AssembleMixedPackModal({ mixedPackType, availableStock, onClose, onSave
   );
 }
 
+// A large floating panel for long review lists (TSW import, clear stock).
+// It stops short of the top and bottom of the screen so the buttons are
+// never hidden behind the iPad's edge or home bar, and it's rendered
+// straight onto the page so no surrounding layout can clip it.
+const SHEET_BACKDROP_STYLE = { position: "fixed", inset: 0, zIndex: 59, background: "rgba(10,12,11,0.6)" };
+const SHEET_PANEL_STYLE = {
+  position: "fixed",
+  zIndex: 60,
+  top: "calc(28px + env(safe-area-inset-top))",
+  bottom: "calc(28px + env(safe-area-inset-bottom))",
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: "min(680px, calc(100vw - 32px))",
+  background: "#F8F5EA",
+  border: "1px solid #DDE0C8",
+  borderRadius: 12,
+  boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+};
+
 // Every clear-out ever made, newest first — rebuilt from the entries on each
 // batch so one clear-out spread over many batches shows (and undoes) as one.
 function stockClearHistory(batches) {
@@ -5686,9 +5709,11 @@ function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
     if (ok) onClose();
   };
 
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#F8F5EA", display: "flex", flexDirection: "column", height: "100dvh" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "calc(12px + env(safe-area-inset-top)) 18px 12px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
+  return createPortal(
+    <>
+    <div style={SHEET_BACKDROP_STYLE} />
+    <div style={SHEET_PANEL_STYLE}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
         <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>Clear packaged stock</h2>
         <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
           <X size={20} />
@@ -5736,7 +5761,7 @@ function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
           </label>
         </div>
       </div>
-      <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", background: "#F8F5EA", padding: "12px 18px calc(12px + env(safe-area-inset-bottom))", display: "flex", justifyContent: "center" }}>
+      <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", background: "#F8F5EA", padding: "12px 18px", display: "flex", justifyContent: "center" }}>
         <div style={{ width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 12.5, color: "#5C6B54", textAlign: "center" }}>
             Clearing {plan.cleared.toLocaleString("en-NZ")} units (about {plan.clearedL.toLocaleString("en-NZ")} L) · keeping {plan.kept.toLocaleString("en-NZ")}
@@ -5750,6 +5775,8 @@ function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
         </div>
       </div>
     </div>
+    </>,
+    document.body
   );
 }
 
@@ -19066,12 +19093,14 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
     return opts;
   }, []);
 
-  return (
+  return createPortal(
     // A full-screen sheet rather than a centred pop-up: a zip of a few
     // years' returns makes dozens of cards, and the save button has to stay
     // reachable on an iPad however far down the list you are.
-    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#F8F5EA", display: "flex", flexDirection: "column", height: "100dvh" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "calc(12px + env(safe-area-inset-top)) 18px 12px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
+    <>
+    <div style={SHEET_BACKDROP_STYLE} />
+    <div style={SHEET_PANEL_STYLE}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
         <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>Check what was read</h2>
         <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
           <X size={20} />
@@ -19159,7 +19188,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
         })}
       </div>
       </div>
-      <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", background: "#F8F5EA", padding: "12px 18px calc(12px + env(safe-area-inset-bottom))", display: "flex", gap: 10, justifyContent: "center" }}>
+      <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", background: "#F8F5EA", padding: "12px 18px", display: "flex", gap: 10, justifyContent: "center" }}>
         <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 640 }}>
           {drafts.some((d) => !d.saved) && drafts.length > 1 && (
             <button onClick={saveAll} disabled={savingAll || !drafts.some(draftCanSave)} style={{ ...auditPrimaryBtn(!savingAll && drafts.some(draftCanSave)), flex: 2 }}>
@@ -19172,6 +19201,8 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
         </div>
       </div>
     </div>
+    </>,
+    document.body
   );
 }
 
@@ -23794,7 +23825,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-08-282";
+const APP_VERSION = "2026-11-08-283";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
