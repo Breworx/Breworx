@@ -18876,13 +18876,18 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
   }, []);
 
   return (
-    <Modal title="Check what was read" onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {drafts.filter((d) => !d.saved).length > 1 && (
-          <button onClick={saveAll} disabled={savingAll || !drafts.some(draftCanSave)} style={auditPrimaryBtn(!savingAll && drafts.some(draftCanSave))}>
-            {savingAll ? "Saving…" : `Save all (${drafts.filter(draftCanSave).length})`}
-          </button>
-        )}
+    // A full-screen sheet rather than a centred pop-up: a zip of a few
+    // years' returns makes dozens of cards, and the save button has to stay
+    // reachable on an iPad however far down the list you are.
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#F8F5EA", display: "flex", flexDirection: "column", height: "100dvh" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "calc(12px + env(safe-area-inset-top)) 18px 12px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>Check what was read</h2>
+        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
+          <X size={20} />
+        </button>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 640, margin: "0 auto", padding: "16px 18px 24px" }}>
         <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5 }}>
           Pages of the same return are put together automatically. If one ends up on its own card, set its month to match the others and it joins them. Check every figure against the screenshots before saving.
         </div>
@@ -18895,7 +18900,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
             <div key={`${d.period}-${i}`} style={{ border: "1px solid #DDE0C8", borderRadius: 7, padding: 12, background: "#FFFFFF", display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
                 {d.images.map((img, j) => (
-                  <img key={j} src={img.previewUrl} alt={`TSW screenshot page ${j + 1}`} onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
+                  <img key={j} src={img.previewUrl} alt={`TSW screenshot page ${j + 1}`} onClick={() => window.open(img.previewUrl, "_blank")} style={{ height: d.mode === "evidence" && month?.ret ? 60 : 90, borderRadius: 4, border: "1px solid #DDE0C8", cursor: "zoom-in" }} />
                 ))}
               </div>
               <div style={{ fontSize: 11.5, color: "#9BA88A" }}>{d.images.length} screenshot{d.images.length === 1 ? "" : "s"} · {d.lines.length} line{d.lines.length === 1 ? "" : "s"} read</div>
@@ -18945,7 +18950,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                   <TextField label="Date filed" type="date" value={d.filedDate} onChange={(v) => update(i, { filedDate: v })} />
                 </>
               )}
-              {month && comparison.length > 0 && <AbvComparisonTable rows={comparison} hasDeclaredLines={d.saveLines.length > 0} />}
+              {month && comparison.length > 0 && !(d.mode === "evidence" && existing) && <AbvComparisonTable rows={comparison} hasDeclaredLines={d.saveLines.length > 0} />}
               {d.notes.length > 0 && <div style={{ fontSize: 12, color: "#8A6D0B" }}>Reading note: {d.notes.join(" ")}</div>}
               <button
                 disabled={!canSave}
@@ -18961,9 +18966,21 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
             </div>
           );
         })}
-        <button onClick={onClose} style={auditSecondaryBtn}>Done</button>
       </div>
-    </Modal>
+      </div>
+      <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", background: "#F8F5EA", padding: "12px 18px calc(12px + env(safe-area-inset-bottom))", display: "flex", gap: 10, justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: 10, width: "100%", maxWidth: 640 }}>
+          {drafts.some((d) => !d.saved) && drafts.length > 1 && (
+            <button onClick={saveAll} disabled={savingAll || !drafts.some(draftCanSave)} style={{ ...auditPrimaryBtn(!savingAll && drafts.some(draftCanSave)), flex: 2 }}>
+              {savingAll
+                ? `Saving… ${drafts.filter((d) => d.saved).length} of ${drafts.length}`
+                : `Save all (${drafts.filter(draftCanSave).length})`}
+            </button>
+          )}
+          <button onClick={onClose} style={{ ...auditSecondaryBtn, flex: 1 }}>{drafts.every((d) => d.saved) ? "Done" : "Close"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -23586,7 +23603,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-279";
+const APP_VERSION = "2026-11-07-280";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
