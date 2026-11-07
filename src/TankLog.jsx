@@ -544,9 +544,9 @@ function exciseAuditMonths({ batches, abvMethod, exciseReturns, exciseItemCodes,
       if (ret.appLitresAtFiling != null && Math.abs(ret.appLitresAtFiling - appLitres) > 0.01) {
         amber(`Packaging records for this month changed after the return was recorded (was ${ret.appLitresAtFiling} L, now ${appLitres} L).`);
       }
-      if (!ret.filedDate) amber("No filed date recorded.");
-      else if (ret.filedDate > due) amber(`Filed ${ret.filedDate}, after the usual due date of ${due}.`);
-      if (!ret.entryNumber) amber("No TSW entry number recorded.");
+      // TSW's return screens don't show a lodgement date or entry number,
+      // so their absence isn't flagged — only a known late filing is.
+      if (ret.filedDate && ret.filedDate > due) amber(`Filed ${ret.filedDate}, after the usual due date of ${due}.`);
       if (!(ret.screenshotPaths || []).length) amber("No TSW screenshot attached as evidence.");
       status = issues.some((i) => i.level === "red") ? "attention" : issues.length > 0 ? "check" : "ok";
     }
@@ -18792,6 +18792,11 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
     const existing = d.period ? monthsByPeriod[d.period]?.ret : null;
     let lines = d.lines;
     let totals = tswTotals(d.lines);
+    if (existing && d.mode === "evidence") {
+      // Figures stay exactly as saved; only the screenshots are added.
+      const r2 = (v) => (v == null ? "" : String(v));
+      return { ...d, saveLines: existing.declaredLines || [], declaredLitres: r2(existing.declaredLitres), declaredLal: r2(existing.declaredLal), declaredDuty: r2(existing.declaredDuty) };
+    }
     if (existing && d.mode === "add") {
       if ((existing.declaredLines || []).length > 0) {
         lines = mergeTswLines(existing.declaredLines.map((l) => ({ ...l, source: "saved" })), d.lines);
@@ -18810,7 +18815,26 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
       declaredDuty: duty == null ? "" : String(duty),
     };
   };
-  const defaultMode = (period) => (period && monthsByPeriod[period]?.ret ? "add" : "replace");
+  // A month that already has its return saved line by line just needs the
+  // screenshots as evidence; one saved without lines gets these pages added.
+  const defaultMode = (period) => {
+    const ret = period ? monthsByPeriod[period]?.ret : null;
+    if (!ret) return "replace";
+    return (ret.declaredLines || []).length > 0 ? "evidence" : "add";
+  };
+  const [savingAll, setSavingAll] = useState(false);
+  const draftCanSave = (d) => !d.saving && !d.saved && /^\d{4}-\d{2}$/.test(d.period) && (d.mode === "evidence" || d.declaredLitres !== "" || d.declaredLal !== "");
+  const saveAll = async () => {
+    setSavingAll(true);
+    for (let i = 0; i < drafts.length; i += 1) {
+      const d = drafts[i];
+      if (!draftCanSave(d)) continue;
+      update(i, { saving: true });
+      const ok = await onSaveGroup(d, { quiet: true });
+      update(i, { saving: false, saved: !!ok });
+    }
+    setSavingAll(false);
+  };
 
   const [drafts, setDrafts] = useState(() =>
     groups.map((g) => withTotals({ ...g, mode: defaultMode(g.period), saved: false, saving: false }))
@@ -18847,13 +18871,18 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
   return (
     <Modal title="Check what was read" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {drafts.filter((d) => !d.saved).length > 1 && (
+          <button onClick={saveAll} disabled={savingAll || !drafts.some(draftCanSave)} style={auditPrimaryBtn(!savingAll && drafts.some(draftCanSave))}>
+            {savingAll ? "Saving…" : `Save all (${drafts.filter(draftCanSave).length})`}
+          </button>
+        )}
         <div style={{ color: "#5C6B54", fontSize: 12.5, lineHeight: 1.5 }}>
           Pages of the same return are put together automatically. If one ends up on its own card, set its month to match the others and it joins them. Check every figure against the screenshots before saving.
         </div>
         {drafts.map((d, i) => {
           const month = d.period ? monthsByPeriod[d.period] : null;
           const existing = month?.ret;
-          const canSave = !d.saving && !d.saved && /^\d{4}-\d{2}$/.test(d.period) && (d.declaredLitres !== "" || d.declaredLal !== "");
+          const canSave = !savingAll && draftCanSave(d);
           const comparison = month ? exciseAbvComparison(month.rows, d.saveLines) : [];
           return (
             <div key={`${d.period}-${i}`} style={{ border: "1px solid #DDE0C8", borderRadius: 7, padding: 12, background: "#FFFFFF", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -18886,21 +18915,29 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{ fontSize: 12, color: "#8A6D0B" }}>{monthLabelFromKey(d.period)} already has a return saved ({(existing.screenshotPaths || []).length} screenshot{(existing.screenshotPaths || []).length === 1 ? "" : "s"}).</div>
                   <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
-                    {[["add", "Add these pages to it"], ["replace", "Replace it"]].map(([k, l]) => (
+                    {[...((existing.declaredLines || []).length > 0 ? [["evidence", "Attach screenshots only"]] : []), ["add", "Add these pages"], ["replace", "Replace it"]].map(([k, l]) => (
                       <button key={k} onClick={() => update(i, withTotals({ ...d, mode: k }))} style={{ flex: 1, background: d.mode === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: d.mode === k ? "#16191A" : "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>{l}</button>
                     ))}
                   </div>
                 </div>
               )}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <NumberField label="Declared litres" value={d.declaredLitres} onChange={(v) => update(i, { declaredLitres: v })} suffix="L" />
-                <NumberField label="Declared LAL" value={d.declaredLal} onChange={(v) => update(i, { declaredLal: v })} suffix="LAL" />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <NumberField label="Duty paid" value={d.declaredDuty} onChange={(v) => update(i, { declaredDuty: v })} suffix="$" />
-                <TextField label="Entry number" value={d.entryNumber} onChange={(v) => update(i, { entryNumber: v })} />
-              </div>
-              <TextField label="Date filed" type="date" value={d.filedDate} onChange={(v) => update(i, { filedDate: v })} />
+              {d.mode === "evidence" && existing ? (
+                <div style={{ fontSize: 12.5, color: "#3F7A28", background: "#E4F0DA", borderRadius: 5, padding: "8px 10px", lineHeight: 1.5 }}>
+                  The saved figures stay exactly as they are ({fmtLal(existing.declaredLal)} across {(existing.declaredLines || []).length} lines) — these screenshots are just attached as evidence.
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <NumberField label="Declared litres" value={d.declaredLitres} onChange={(v) => update(i, { declaredLitres: v })} suffix="L" />
+                    <NumberField label="Declared LAL" value={d.declaredLal} onChange={(v) => update(i, { declaredLal: v })} suffix="LAL" />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <NumberField label="Duty paid" value={d.declaredDuty} onChange={(v) => update(i, { declaredDuty: v })} suffix="$" />
+                    <TextField label="Entry number" value={d.entryNumber} onChange={(v) => update(i, { entryNumber: v })} />
+                  </div>
+                  <TextField label="Date filed" type="date" value={d.filedDate} onChange={(v) => update(i, { filedDate: v })} />
+                </>
+              )}
               {month && comparison.length > 0 && <AbvComparisonTable rows={comparison} hasDeclaredLines={d.saveLines.length > 0} />}
               {d.notes.length > 0 && <div style={{ fontSize: 12, color: "#8A6D0B" }}>Reading note: {d.notes.join(" ")}</div>}
               <button
@@ -18912,7 +18949,7 @@ function TswImportModal({ groups, monthsByPeriod, onClose, onSaveGroup }) {
                 }}
                 style={auditPrimaryBtn(canSave)}
               >
-                {d.saved ? "Saved ✓" : d.saving ? "Saving..." : "Save this return"}
+                {d.saved ? "Saved ✓" : d.saving ? "Saving..." : d.mode === "evidence" && existing ? "Attach screenshots" : "Save this return"}
               </button>
             </div>
           );
@@ -19215,7 +19252,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
           groups={importGroups}
           monthsByPeriod={monthsByPeriod}
           onClose={() => setImportGroups(null)}
-          onSaveGroup={(g) => onImportGroup(g, monthsByPeriod[g.period] || { period: g.period, appLitres: 0, appLal: 0 })}
+          onSaveGroup={(g, opts) => onImportGroup(g, monthsByPeriod[g.period] || { period: g.period, appLitres: 0, appLal: 0 }, opts)}
         />
       )}
       {showReport && <ExciseAuditReport months={months} companyName={companyName} abvMethod={abvMethod} onClose={() => setShowReport(false)} />}
@@ -23531,7 +23568,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-276";
+const APP_VERSION = "2026-11-07-277";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -27357,7 +27394,7 @@ function TankLogApp() {
   // Brewpoint's own records said at that moment, so later edits to that
   // month's packaging show up as "changed since filing". Any edit clears
   // the reviewed sign-off, since it no longer covers what's there now.
-  const saveExciseReturn = async (draft, month, newImages = []) => {
+  const saveExciseReturn = async (draft, month, newImages = [], opts = {}) => {
     const existing = exciseReturns.find((r) => r.period === draft.period);
     // "Replace" swaps out the old screenshots too; the files are only
     // removed once the new return has saved.
@@ -27370,7 +27407,7 @@ function TankLogApp() {
       if (upErr) { console.error(upErr); showToast("error", "A screenshot didn't upload — check your connection and try again."); return false; }
       paths.push(path);
     }
-    const { replaceEvidence, ...fields } = draft;
+    const { replaceEvidence, evidenceOnly, ...fields } = draft;
     const record = {
       ...(existing || {}),
       ...fields,
@@ -27378,8 +27415,9 @@ function TankLogApp() {
       screenshotPaths: paths,
       appLitresAtFiling: existing?.appLitresAtFiling ?? month.appLitres,
       appLalAtFiling: existing?.appLalAtFiling ?? month.appLal,
-      reviewedBy: "",
-      reviewedAt: null,
+      // Attaching evidence doesn't change any figure, so a sign-off stands.
+      reviewedBy: evidenceOnly ? existing?.reviewedBy || "" : "",
+      reviewedAt: evidenceOnly ? existing?.reviewedAt || null : null,
     };
     const row = exciseReturnToRow(record, profile.companyId);
     delete row.id;
@@ -27389,12 +27427,21 @@ function TankLogApp() {
     if (oldPaths.length) await supabase.storage.from("excise-evidence").remove(oldPaths);
     setExciseReturns((prev) => [saved, ...prev.filter((r) => r.period !== saved.period)]);
     logActivity(existing ? "updated" : "created", "excise_return", saved.period, `Excise return for ${monthLabelFromKey(saved.period)} ${existing ? "updated" : "recorded"}`);
-    showToast("success", `Return for ${monthLabelFromKey(saved.period)} saved.`);
+    if (!opts.quiet) showToast("success", `Return for ${monthLabelFromKey(saved.period)} saved.`);
     return true;
   };
 
-  const importExciseScreenshotGroup = (g, month) =>
-    saveExciseReturn(
+  const importExciseScreenshotGroup = (g, month, opts = {}) => {
+    const existing = exciseReturns.find((r) => r.period === g.period);
+    if (g.mode === "evidence" && existing) {
+      return saveExciseReturn(
+        { period: g.period, entryNumber: existing.entryNumber || (g.entryNumber || "").trim(), filedDate: existing.filedDate || g.filedDate || "", evidenceOnly: true },
+        month,
+        g.images,
+        opts
+      );
+    }
+    return saveExciseReturn(
       {
         period: g.period,
         declaredLitres: g.declaredLitres,
@@ -27406,8 +27453,10 @@ function TankLogApp() {
         replaceEvidence: g.mode === "replace",
       },
       month,
-      g.images
+      g.images,
+      opts
     );
+  };
 
   const deleteExciseReturn = async (ret) => {
     if ((ret.screenshotPaths || []).length) await supabase.storage.from("excise-evidence").remove(ret.screenshotPaths);
