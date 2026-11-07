@@ -95,3 +95,6 @@ create policy "company excise evidence delete" on storage.objects
 
 -- Each line read off the TSW return, for the line-by-line comparison.
 alter table public.excise_returns add column if not exists declared_lines jsonb not null default '[]'::jsonb;
+
+-- Packaged stock cleared outside of sales orders (see Finished stock → Clear stock).
+alter table public.batches add column if not exists stock_cleared jsonb not null default '[]'::jsonb;

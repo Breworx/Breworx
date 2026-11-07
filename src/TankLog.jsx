@@ -241,6 +241,10 @@ function availableStockList(batches, salesOrders, mixedPackAssemblies) {
     const packaged = packagedTotalsByContainer(b);
     const sold = soldTotalsByContainer(b.id, salesOrders);
     const consumedByMixedPacks = mixedPackConsumptionByContainer(b.id, mixedPackAssemblies);
+    // Stock written off with "Clear stock" — kept off the packaging itself
+    // so the excise records behind it never change.
+    const cleared = {};
+    (b.stockCleared || []).forEach((e) => Object.entries(e.counts || {}).forEach(([k, v]) => (cleared[k] = (cleared[k] || 0) + v)));
     CONTAINERS.forEach((c) => {
       if ((packaged[c.key] || 0) > 0) {
         list.push({
@@ -250,7 +254,7 @@ function availableStockList(batches, salesOrders, mixedPackAssemblies) {
           containerKey: c.key,
           containerLabel: c.label,
           packaged: packaged[c.key],
-          available: (packaged[c.key] || 0) - (sold[c.key] || 0) - (consumedByMixedPacks[c.key] || 0),
+          available: (packaged[c.key] || 0) - (sold[c.key] || 0) - (consumedByMixedPacks[c.key] || 0) - (cleared[c.key] || 0),
         });
       }
     });
@@ -5597,6 +5601,158 @@ function AssembleMixedPackModal({ mixedPackType, availableStock, onClose, onSave
   );
 }
 
+// Every clear-out ever made, newest first — rebuilt from the entries on each
+// batch so one clear-out spread over many batches shows (and undoes) as one.
+function stockClearHistory(batches) {
+  const byId = {};
+  batches.forEach((b) => {
+    (b.stockCleared || []).forEach((e) => {
+      if (!byId[e.id]) byId[e.id] = { id: e.id, date: e.date, user: e.user, reason: e.reason, counts: {}, batches: 0 };
+      const h = byId[e.id];
+      h.batches += 1;
+      Object.entries(e.counts || {}).forEach(([k, v]) => (h.counts[k] = (h.counts[k] || 0) + v));
+    });
+  });
+  return Object.values(byId).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+const containerCountsLabel = (counts) =>
+  CONTAINERS.filter((c) => counts[c.key])
+    .map((c) => `${counts[c.key]} × ${c.shortLabel}`)
+    .join(", ");
+
+const lastPackagedDate = (b) => packagingEvents(b).reduce((m, e) => (e.date && e.date > m ? e.date : m), "");
+
+// Clears packaged stock in bulk — for starting stock control fresh (say in
+// Xero) without deleting or changing the packaging behind it, which the
+// excise records depend on. Pick what to keep: everything packaged from a
+// date, and/or a number of units per product. Kept units come from the
+// newest batches, so what's left is the freshest beer.
+function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
+  const [keepFrom, setKeepFrom] = useState("");
+  const [keep, setKeep] = useState({});
+  const [reason, setReason] = useState("Cleared before connecting Xero stock — already sold or accounted for");
+  const [saving, setSaving] = useState(false);
+  const batchById = useMemo(() => Object.fromEntries(batches.map((b) => [b.id, b])), [batches]);
+
+  const products = useMemo(() => {
+    const map = {};
+    availableStock
+      .filter((s) => s.available > 0)
+      .forEach((s) => {
+        const key = `${s.batchName}::${s.containerKey}`;
+        if (!map[key]) map[key] = { key, name: s.batchName, containerKey: s.containerKey, containerLabel: s.containerLabel, rows: [], available: 0 };
+        map[key].rows.push({ ...s, packedOn: lastPackagedDate(batchById[s.batchId] || {}) });
+        map[key].available += s.available;
+      });
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name) || a.containerKey.localeCompare(b.containerKey));
+  }, [availableStock, batchById]);
+
+  const plan = useMemo(() => {
+    const perBatch = {};
+    let cleared = 0;
+    let kept = 0;
+    let clearedL = 0;
+    products.forEach((p) => {
+      const newestFirst = [...p.rows].sort((a, b) => b.packedOn.localeCompare(a.packedOn));
+      const byDate = keepFrom ? newestFirst.filter((r) => r.packedOn >= keepFrom).reduce((s2, r) => s2 + r.available, 0) : 0;
+      const typed = Math.max(0, Math.floor(Number(keep[p.key]) || 0));
+      let toKeep = Math.min(p.available, Math.max(typed, byDate));
+      kept += toKeep;
+      newestFirst.forEach((r) => {
+        const k = Math.min(r.available, toKeep);
+        toKeep -= k;
+        const clear = r.available - k;
+        if (clear > 0) {
+          if (!perBatch[r.batchId]) perBatch[r.batchId] = {};
+          perBatch[r.batchId][p.containerKey] = (perBatch[r.batchId][p.containerKey] || 0) + clear;
+          cleared += clear;
+          clearedL += clear * (CONTAINERS.find((c) => c.key === p.containerKey)?.volumeL || 0);
+        }
+      });
+    });
+    return { perBatch, cleared, kept, clearedL: Math.round(clearedL) };
+  }, [products, keep, keepFrom]);
+
+  const keptFor = (p) => {
+    const byDate = keepFrom ? p.rows.filter((r) => r.packedOn >= keepFrom).reduce((s2, r) => s2 + r.available, 0) : 0;
+    return Math.min(p.available, Math.max(Math.floor(Number(keep[p.key]) || 0), byDate));
+  };
+
+  const confirm = async () => {
+    setSaving(true);
+    const ok = await onConfirm(plan.perBatch, reason.trim());
+    setSaving(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#F8F5EA", display: "flex", flexDirection: "column", height: "100dvh" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "calc(12px + env(safe-area-inset-top)) 18px 12px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
+        <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>Clear packaged stock</h2>
+        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
+          <X size={20} />
+        </button>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 18px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.55 }}>
+            Writes stock off so what's on hand starts fresh. Your batches and packaging records — and so your excise figures — don't change, and you can undo a clear-out afterwards. Anything you keep comes from the newest batches.
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Keep everything packaged on or after (optional)</span>
+            <input type="date" value={keepFrom} onChange={(e) => setKeepFrom(e.target.value)} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }} />
+          </label>
+          <div style={{ fontSize: 12, color: "#9BA88A" }}>Or type how many to keep for each product below. Leave at 0 to clear it all.</div>
+          {products.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>There's no packaged stock to clear.</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {products.map((p) => (
+              <div key={p.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, color: "#2A3324" }}>{p.name}</div>
+                  <div style={{ fontSize: 11.5, color: "#9BA88A" }}>
+                    {p.containerLabel} · {p.available} on hand · clears {p.available - keptFor(p)}
+                  </div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5C6B54" }}>
+                  Keep
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    max={p.available}
+                    value={keep[p.key] ?? ""}
+                    placeholder={String(keptFor(p))}
+                    onChange={(e) => setKeep((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                    style={{ width: 70, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", fontSize: 14, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Reason (kept on record)</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }} />
+          </label>
+        </div>
+      </div>
+      <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", background: "#F8F5EA", padding: "12px 18px calc(12px + env(safe-area-inset-bottom))", display: "flex", justifyContent: "center" }}>
+        <div style={{ width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 12.5, color: "#5C6B54", textAlign: "center" }}>
+            Clearing {plan.cleared.toLocaleString("en-NZ")} units (about {plan.clearedL.toLocaleString("en-NZ")} L) · keeping {plan.kept.toLocaleString("en-NZ")}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={confirm} disabled={saving || plan.cleared === 0 || !reason.trim()} style={{ ...auditPrimaryBtn(!saving && plan.cleared > 0 && !!reason.trim()), flex: 2 }}>
+              {saving ? "Clearing…" : "Clear stock"}
+            </button>
+            <button onClick={onClose} style={{ ...auditSecondaryBtn, flex: 1 }}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FinishedGoodsStockView({
   availableStock,
   onStartStockTake,
@@ -5607,8 +5763,12 @@ function FinishedGoodsStockView({
   onNewMixedPackType,
   onEditMixedPackType,
   onAssembleMixedPack,
+  batches = [],
+  onClearStock,
+  onUndoClear,
 }) {
   const relevant = availableStock.filter((s) => s.packaged > 0);
+  const clearHistory = stockClearHistory(batches);
   const grouped = {};
   relevant.forEach((s) => {
     if (!grouped[s.batchName]) grouped[s.batchName] = [];
@@ -5632,7 +5792,38 @@ function FinishedGoodsStockView({
         >
           Past reports ({stockTakeCount})
         </button>
+        {onClearStock && (
+          <button
+            onClick={onClearStock}
+            style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px", color: "#B5502F", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Clear stock…
+          </button>
+        )}
       </div>
+
+      {clearHistory.length > 0 && (
+        <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 }}>
+          {clearHistory.map((h) => (
+            <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", background: "#FBF7EA", border: "1px solid #E8DFC0", borderRadius: 6 }}>
+              <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
+                <strong style={{ color: "#2A3324" }}>Cleared {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {containerCountsLabel(h.counts)}
+                {h.reason ? <div style={{ color: "#9BA88A" }}>{h.reason}</div> : null}
+              </div>
+              {onUndoClear && (
+                <button
+                  onClick={() => {
+                    if (window.confirm("Undo this clear-out? That stock will show as on hand again.")) onUndoClear(h.id);
+                  }}
+                  style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "6px 10px", color: "#5C6B54", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  Undo
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -23603,7 +23794,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-07-281";
+const APP_VERSION = "2026-11-08-282";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24256,6 +24447,7 @@ function TankLogApp() {
   const [kegs, setKegs] = useState([]);
   const [triangleTests, setTriangleTests] = useState([]);
   const [exciseReturns, setExciseReturns] = useState([]);
+  const [showClearStock, setShowClearStock] = useState(false);
   const [editingTriangleTest, setEditingTriangleTest] = useState(null);
   const [showQcApproval, setShowQcApproval] = useState(false);
   const [showLabMeasurement, setShowLabMeasurement] = useState(false);
@@ -25676,6 +25868,55 @@ function TankLogApp() {
       .single();
     if (stError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setStockTakes((prev) => [rowToStockTake(data), ...prev]);
+  };
+
+  // Writes packaged stock off in one go. Each affected batch gets an entry
+  // with the same id, so the whole clear-out can be undone together.
+  const updateStockCleared = async (changes) => {
+    for (let i = 0; i < changes.length; i += 15) {
+      const slice = changes.slice(i, i + 15);
+      const results = await Promise.all(slice.map(({ id, stockCleared }) => supabase.from("batches").update({ stock_cleared: stockCleared }).eq("id", id)));
+      if (results.some((r) => r.error)) {
+        console.error(results.find((r) => r.error).error);
+        return i + results.filter((r) => !r.error).length;
+      }
+    }
+    return changes.length;
+  };
+
+  const clearPackagedStock = async (perBatch, reason) => {
+    const clearId = uid();
+    const entryFor = (counts) => ({ id: clearId, date: new Date().toISOString(), user: user?.name || "Someone", reason, counts });
+    const changes = Object.entries(perBatch).map(([id, counts]) => {
+      const b = batches.find((x) => x.id === id);
+      return { id, stockCleared: [...(b?.stockCleared || []), entryFor(counts)] };
+    });
+    const done = await updateStockCleared(changes);
+    const doneIds = new Set(changes.slice(0, done).map((c) => c.id));
+    setBatches((prev) => prev.map((b) => (doneIds.has(b.id) ? { ...b, stockCleared: changes.find((c) => c.id === b.id).stockCleared } : b)));
+    if (done < changes.length) {
+      showToast("error", `Only part of the stock was cleared (${done} of ${changes.length} batches) — check your connection and try again.`);
+      return false;
+    }
+    const units = Object.values(perBatch).reduce((s2, c) => s2 + Object.values(c).reduce((a, v) => a + v, 0), 0);
+    logActivity("cleared", "stock", "Packaged stock", `Cleared ${units} units of packaged stock — ${reason}`);
+    showToast("success", `Cleared ${units.toLocaleString("en-NZ")} units of packaged stock.`);
+    return true;
+  };
+
+  const undoStockClear = async (clearId) => {
+    const changes = batches
+      .filter((b) => (b.stockCleared || []).some((e) => e.id === clearId))
+      .map((b) => ({ id: b.id, stockCleared: (b.stockCleared || []).filter((e) => e.id !== clearId) }));
+    const done = await updateStockCleared(changes);
+    const doneIds = new Set(changes.slice(0, done).map((c) => c.id));
+    setBatches((prev) => prev.map((b) => (doneIds.has(b.id) ? { ...b, stockCleared: changes.find((c) => c.id === b.id).stockCleared } : b)));
+    if (done < changes.length) {
+      showToast("error", "Only part of the clear-out was undone — check your connection and try again.");
+      return;
+    }
+    logActivity("restored", "stock", "Packaged stock", "Undid a packaged stock clear-out");
+    showToast("success", "Clear-out undone.");
   };
 
   // Finished stock isn't a single stored number the way ingredients or
@@ -28834,7 +29075,13 @@ function TankLogApp() {
                 onNewMixedPackType={() => setShowNewMixedPackType(true)}
                 onEditMixedPackType={setEditingMixedPackType}
                 onAssembleMixedPack={setAssemblingMixedPackType}
+                batches={batches}
+                onClearStock={() => setShowClearStock(true)}
+                onUndoClear={undoStockClear}
               />
+            )}
+            {showClearStock && (
+              <ClearStockModal availableStock={availableStock} batches={batches} onClose={() => setShowClearStock(false)} onConfirm={clearPackagedStock} />
             )}
             {(showNewMixedPackType || editingMixedPackType) && (
               <MixedPackTypeModal
