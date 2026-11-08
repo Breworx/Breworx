@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
       if (!res.ok) return json({ error: "Could not fetch items from Xero", detail: res.data }, 400);
       const items = (res.data.Items || [])
         .filter((i) => i.Code)
-        .map((i) => ({ code: i.Code, name: i.Name || i.Code, tracked: !!i.IsTrackedAsInventory }));
+        .map((i) => ({ code: i.Code, name: i.Name || i.Code, tracked: !!i.IsTrackedAsInventory, qtyOnHand: i.IsTrackedAsInventory ? Number(i.QuantityOnHand) || 0 : null }));
       return json({ items });
     }
 

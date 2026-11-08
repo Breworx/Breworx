@@ -5795,7 +5795,7 @@ function stockClearHistory(batches) {
   const byId = {};
   batches.forEach((b) => {
     (b.stockCleared || []).forEach((e) => {
-      if (!byId[e.id]) byId[e.id] = { id: e.id, date: e.date, user: e.user, reason: e.reason, counts: {}, batches: 0 };
+      if (!byId[e.id]) byId[e.id] = { id: e.id, date: e.date, user: e.user, reason: e.reason, kind: e.kind, counts: {}, batches: 0 };
       const h = byId[e.id];
       h.batches += 1;
       Object.entries(e.counts || {}).forEach(([k, v]) => (h.counts[k] = (h.counts[k] || 0) + v));
@@ -5806,7 +5806,7 @@ function stockClearHistory(batches) {
 
 const containerCountsLabel = (counts) =>
   CONTAINERS.filter((c) => counts[c.key])
-    .map((c) => `${counts[c.key]} × ${c.shortLabel}`)
+    .map((c) => (counts[c.key] < 0 ? `${-counts[c.key]} × ${c.shortLabel} put back` : `${counts[c.key]} × ${c.shortLabel}`))
     .join(", ");
 
 const lastPackagedDate = (b) => packagingEvents(b).reduce((m, e) => (e.date && e.date > m ? e.date : m), "");
@@ -6044,6 +6044,178 @@ function XeroItemMatchModal({ xeroItems, beerNames, existing, highlightCodes, on
   );
 }
 
+// ─── Compare Brewpoint's stock with Xero's, and line Brewpoint up ───────────
+// Xero items are turned into Brewpoint products through the same matches
+// the sales sync uses (several Xero items can be one beer; a case of 24 is
+// 24 cans). Brewpoint's side is what's on hand per beer + container.
+function compareXeroStock({ xeroItems, salesMap, itemMappings, availableStock }) {
+  const mapByCode = {};
+  (salesMap || []).forEach((m) => (mapByCode[String(m.xero_item_code).toLowerCase()] = m));
+  const resolve = (code) => {
+    const m = mapByCode[String(code).toLowerCase()];
+    if (m) return m.ignore ? { ignore: true } : m.product_key ? { productKey: m.product_key, beerName: m.beer_name, containerKey: m.container_key || m.product_key.split("::")[1], units: Number(m.units_per_xero_unit) || 1 } : null;
+    const fm = (itemMappings || []).find((x) => String(x.xero_item_code).toLowerCase() === String(code).toLowerCase());
+    if (fm) return { productKey: fm.product_key, beerName: (fm.product_label || "").split(" — ")[0] || fm.product_key.split("::")[0], containerKey: fm.product_key.split("::")[1], units: 1 };
+    return null;
+  };
+
+  const products = {};
+  const productFor = (key, name, containerKey) =>
+    products[key] || (products[key] = { key, name, containerKey, xero: 0, xeroItems: [], brewpoint: 0, inXero: false, inBrewpoint: false });
+  (availableStock || []).forEach((s) => {
+    const p = productFor(productKeyFor(s.batchName, s.containerKey), s.batchName.trim(), s.containerKey);
+    p.brewpoint += s.available;
+    p.inBrewpoint = true;
+  });
+  const unmatched = [];
+  (xeroItems || []).forEach((it) => {
+    if (!it.tracked) return;
+    const r = resolve(it.code);
+    if (r && r.ignore) return;
+    if (!r) {
+      if (Number(it.qtyOnHand) !== 0) unmatched.push(it);
+      return;
+    }
+    const p = productFor(r.productKey, products[r.productKey]?.name || r.beerName || r.productKey.split("::")[0], r.containerKey);
+    p.xero += Math.round((Number(it.qtyOnHand) || 0) * r.units * 1000) / 1000;
+    p.xeroItems.push(`${it.code} × ${Number(it.qtyOnHand) || 0}${r.units !== 1 ? ` (${r.units} each)` : ""}`);
+    p.inXero = true;
+  });
+  const rows = Object.values(products)
+    .filter((p) => p.inXero || p.brewpoint !== 0)
+    .map((p) => ({ ...p, brewpoint: Math.round(p.brewpoint * 1000) / 1000, diff: Math.round((p.xero - p.brewpoint) * 1000) / 1000 }))
+    .sort((a, b) => (b.diff !== 0) - (a.diff !== 0) || a.name.localeCompare(b.name) || a.containerKey.localeCompare(b.containerKey));
+  return { rows, unmatched };
+}
+
+// Turns the chosen differences into per-batch stock entries. Too much in
+// Brewpoint → written off from the oldest batches first (the freshest beer
+// stays). Too little → put back on the newest batches first, undoing
+// earlier clear-outs/write-offs before anything else; anything beyond that
+// goes on the newest batch.
+function planXeroStockMatch({ rows, availableStock, batches }) {
+  const batchById = Object.fromEntries((batches || []).map((b) => [b.id, b]));
+  const offPerBatch = {};
+  const backPerBatch = {};
+  const add = (target, batchId, containerKey, qty) => {
+    if (!target[batchId]) target[batchId] = {};
+    target[batchId][containerKey] = Math.round(((target[batchId][containerKey] || 0) + qty) * 1000) / 1000;
+  };
+  rows.forEach((row) => {
+    const lines = (availableStock || [])
+      .filter((s) => productKeyFor(s.batchName, s.containerKey) === row.key)
+      .map((s) => ({ ...s, packedOn: lastPackagedDate(batchById[s.batchId] || {}) }));
+    if (row.diff < 0) {
+      let need = -row.diff;
+      [...lines].sort((a, b) => a.packedOn.localeCompare(b.packedOn)).forEach((s) => {
+        const take = Math.min(need, Math.max(0, s.available));
+        if (take <= 0) return;
+        add(offPerBatch, s.batchId, s.containerKey, take);
+        need -= take;
+      });
+    } else if (row.diff > 0) {
+      let need = row.diff;
+      const newest = [...lines].sort((a, b) => b.packedOn.localeCompare(a.packedOn));
+      newest.forEach((s) => {
+        if (need <= 0) return;
+        const b = batchById[s.batchId];
+        const writtenOff =
+          (b?.stockCleared || []).reduce((t, e) => t + (Number(e.counts?.[s.containerKey]) || 0), 0) +
+          (b?.xeroSold || []).filter((e) => e.containerKey === s.containerKey).reduce((t, e) => t + (Number(e.qty) || 0), 0);
+        const give = Math.min(need, Math.max(0, writtenOff));
+        if (give <= 0) return;
+        add(backPerBatch, s.batchId, s.containerKey, give);
+        need -= give;
+      });
+      if (need > 0 && newest[0]) add(backPerBatch, newest[0].batchId, newest[0].containerKey, need);
+    }
+  });
+  return { offPerBatch, backPerBatch };
+}
+
+function XeroStockCompareModal({ xeroItems, salesMap, itemMappings, availableStock, onClose, onMatch, onMatchItems }) {
+  const { rows, unmatched } = useMemo(() => compareXeroStock({ xeroItems, salesMap, itemMappings, availableStock }), [xeroItems, salesMap, itemMappings, availableStock]);
+  const [picked, setPicked] = useState(() => Object.fromEntries(rows.filter((r) => r.diff !== 0 && r.inXero && r.inBrewpoint).map((r) => [r.key, true])));
+  const [saving, setSaving] = useState(false);
+  const chosen = rows.filter((r) => picked[r.key] && r.diff !== 0 && r.inXero && r.inBrewpoint);
+  const containerShort = (k) => CONTAINERS.find((c) => c.key === k)?.label || k;
+  const num = (n) => (Math.round(n * 1000) / 1000).toLocaleString("en-NZ");
+  const cell = { fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "right", whiteSpace: "nowrap" };
+
+  const confirm = async () => {
+    setSaving(true);
+    const ok = await onMatch(chosen);
+    setSaving(false);
+    if (ok) onClose();
+  };
+
+  return createPortal(
+    <>
+      <div style={SHEET_BACKDROP_STYLE} />
+      <div style={SHEET_PANEL_STYLE}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
+          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>Compare with Xero</h2>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
+            <X size={20} />
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ padding: "14px 18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
+              Xero's stock on hand next to Brewpoint's, in Brewpoint units (cans and kegs). Tick the lines to bring Brewpoint into line with Xero.
+              Extra stock is written off from the oldest batch; missing stock goes back on the newest. Your packaging and excise records don't change, and you can undo it from Finished stock.
+            </div>
+            {unmatched.length > 0 && (
+              <div style={{ background: "#FBF3DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 10px", color: "#8A6D0B", fontSize: 12, lineHeight: 1.45 }}>
+                Xero has stock of {unmatched.length} item{unmatched.length === 1 ? "" : "s"} not matched to a beer yet: {unmatched.map((i) => `${i.code} (${i.qtyOnHand})`).join(", ")}.{" "}
+                <button onClick={onMatchItems} style={{ background: "none", border: "none", padding: 0, color: "#5C9A3C", textDecoration: "underline", fontSize: 12, cursor: "pointer" }}>Match Xero items</button>
+              </div>
+            )}
+            {rows.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No stock in either Xero or Brewpoint to compare.</div>}
+            {rows.length > 0 && (
+              <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 64px 76px 64px", gap: 6, padding: "8px 10px", background: "#F5F1E4", fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>
+                  <span />
+                  <span>Product</span>
+                  <span style={{ textAlign: "right" }}>Xero</span>
+                  <span style={{ textAlign: "right" }}>Brewpoint</span>
+                  <span style={{ textAlign: "right" }}>Change</span>
+                </div>
+                {rows.map((r) => {
+                  const canPick = r.diff !== 0 && r.inXero && r.inBrewpoint;
+                  return (
+                    <label key={r.key} style={{ display: "grid", gridTemplateColumns: "28px 1fr 64px 76px 64px", gap: 6, alignItems: "center", padding: "9px 10px", borderTop: "1px solid #EEF0E2", cursor: canPick ? "pointer" : "default" }}>
+                      <input type="checkbox" disabled={!canPick} checked={!!picked[r.key] && canPick} onChange={(e) => setPicked((prev) => ({ ...prev, [r.key]: e.target.checked }))} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: 13, color: "#2A3324" }}>{r.name}</span>
+                        <span style={{ display: "block", fontSize: 11, color: "#9BA88A" }}>
+                          {containerShort(r.containerKey)}
+                          {r.inXero ? ` · ${r.xeroItems.join(", ")}` : " · not matched to a Xero item"}
+                          {r.inXero && !r.inBrewpoint ? " · never packaged in Brewpoint" : ""}
+                        </span>
+                      </span>
+                      <span style={{ ...cell, color: r.inXero ? "#2A3324" : "#C3C9B0" }}>{r.inXero ? num(r.xero) : "—"}</span>
+                      <span style={{ ...cell, color: "#2A3324" }}>{num(r.brewpoint)}</span>
+                      <span style={{ ...cell, color: r.diff === 0 ? "#9BA88A" : r.diff > 0 ? "#5C9A3C" : "#B5502F" }}>{r.diff === 0 || !r.inXero ? "✓" : `${r.diff > 0 ? "+" : "−"}${num(Math.abs(r.diff))}`}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", padding: "12px 18px", display: "flex", gap: 10 }}>
+          <button onClick={confirm} disabled={saving || chosen.length === 0} style={{ ...auditPrimaryBtn(!saving && chosen.length > 0), flex: 2 }}>
+            {saving ? "Updating…" : chosen.length === 0 ? "Everything matches" : `Match Brewpoint to Xero (${chosen.length})`}
+          </button>
+          <button onClick={onClose} style={{ ...auditSecondaryBtn, flex: 1 }}>Close</button>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+}
+
 function FinishedGoodsStockView({
   availableStock,
   onStartStockTake,
@@ -6057,6 +6229,7 @@ function FinishedGoodsStockView({
   batches = [],
   onClearStock,
   onUndoClear,
+  onCompareXero,
 }) {
   const [showSoldOut, setShowSoldOut] = useState(false);
   // On hand means available right now — sold-out and cleared lines stay
@@ -6097,19 +6270,27 @@ function FinishedGoodsStockView({
           </button>
         )}
       </div>
+      {onCompareXero && (
+        <button
+          onClick={onCompareXero}
+          style={{ width: "100%", marginTop: -8, marginBottom: 18, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+        >
+          Compare with Xero
+        </button>
+      )}
 
       {clearHistory.length > 0 && (
         <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 }}>
           {clearHistory.map((h) => (
             <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", background: "#FBF7EA", border: "1px solid #E8DFC0", borderRadius: 6 }}>
               <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
-                <strong style={{ color: "#2A3324" }}>Cleared {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {containerCountsLabel(h.counts)}
+                <strong style={{ color: "#2A3324" }}>{h.kind === "xero-match" ? "Matched to Xero" : "Cleared"} {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {containerCountsLabel(h.counts)}
                 {h.reason ? <div style={{ color: "#9BA88A" }}>{h.reason}</div> : null}
               </div>
               {onUndoClear && (
                 <button
                   onClick={() => {
-                    if (window.confirm("Undo this clear-out? That stock will show as on hand again.")) onUndoClear(h.id);
+                    if (window.confirm(h.kind === "xero-match" ? "Undo this Xero match? Stock goes back to what it was before." : "Undo this clear-out? That stock will show as on hand again.")) onUndoClear(h.id);
                   }}
                   style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "6px 10px", color: "#5C6B54", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
                 >
@@ -24106,7 +24287,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-09-286";
+const APP_VERSION = "2026-11-09-287";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24905,6 +25086,7 @@ function TankLogApp() {
   const [xeroSalesSyncing, setXeroSalesSyncing] = useState(false);
   const [xeroUnmatched, setXeroUnmatched] = useState([]);
   const [xeroMatchItems, setXeroMatchItems] = useState(null);
+  const [xeroCompareItems, setXeroCompareItems] = useState(null);
   const [xeroAccounts, setXeroAccounts] = useState([]);
   const [xeroItems, setXeroItems] = useState([]);
   const [xeroContacts, setXeroContacts] = useState([]);
@@ -26369,6 +26551,41 @@ function TankLogApp() {
     const savedCodes = new Set(records.map((r) => String(r.xero_item_code).toLowerCase()));
     setXeroUnmatched((prev) => prev.filter((c) => !savedCodes.has(String(c).toLowerCase())));
     showToast("success", `Saved ${records.length} Xero item match${records.length === 1 ? "" : "es"}.`);
+    return true;
+  };
+
+  const openXeroStockCompare = async () => {
+    const data = await callXeroApi("listAllItems");
+    if (data.error) { showToast("error", "Couldn't load stock from Xero — try again in a minute."); return; }
+    setXeroCompareItems(data.items || []);
+  };
+
+  const matchStockToXero = async (rows) => {
+    const { offPerBatch, backPerBatch } = planXeroStockMatch({ rows, availableStock, batches });
+    const when = new Date().toISOString();
+    const who = user?.name || "Someone";
+    const offId = uid();
+    const backId = uid();
+    const ids = new Set([...Object.keys(offPerBatch), ...Object.keys(backPerBatch)]);
+    const changes = [...ids].map((id) => {
+      const b = batches.find((x) => x.id === id);
+      const list = [...(b?.stockCleared || [])];
+      if (offPerBatch[id]) list.push({ id: offId, kind: "xero-match", date: when, user: who, reason: "Brewpoint had more than Xero — written off to match Xero", counts: offPerBatch[id] });
+      if (backPerBatch[id]) {
+        const neg = Object.fromEntries(Object.entries(backPerBatch[id]).map(([k, v]) => [k, -v]));
+        list.push({ id: backId, kind: "xero-match", date: when, user: who, reason: "Xero had more than Brewpoint — put back to match Xero", counts: neg });
+      }
+      return { id, stockCleared: list };
+    });
+    const done = await updateStockCleared(changes);
+    const doneIds = new Set(changes.slice(0, done).map((c) => c.id));
+    setBatches((prev) => prev.map((b) => (doneIds.has(b.id) ? { ...b, stockCleared: changes.find((c) => c.id === b.id).stockCleared } : b)));
+    if (done < changes.length) {
+      showToast("error", `Only part of the stock was updated (${done} of ${changes.length} batches) — check your connection and try again.`);
+      return false;
+    }
+    logActivity("synced", "stock", "Packaged stock", `Matched ${rows.length} product${rows.length === 1 ? "" : "s"} to Xero's stock on hand`);
+    showToast("success", `Brewpoint now matches Xero for ${rows.length} product${rows.length === 1 ? "" : "s"}.`);
     return true;
   };
 
@@ -29544,6 +29761,7 @@ function TankLogApp() {
                 batches={batches}
                 onClearStock={() => setShowClearStock(true)}
                 onUndoClear={undoStockClear}
+                onCompareXero={xeroConnection ? openXeroStockCompare : undefined}
               />
             )}
             {showClearStock && (
@@ -30188,6 +30406,12 @@ function TankLogApp() {
                                   style={{ flex: "1 1 140px", background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: xeroSalesSyncing ? "default" : "pointer", opacity: xeroSalesSyncing ? 0.6 : 1 }}
                                 >
                                   {xeroSalesSyncing ? "Checking…" : "Check Xero now"}
+                                </button>
+                                <button
+                                  onClick={openXeroStockCompare}
+                                  style={{ flex: "1 1 140px", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                                >
+                                  Compare stock with Xero
                                 </button>
                                 <button
                                   onClick={openXeroItemMatch}
@@ -31090,6 +31314,20 @@ function TankLogApp() {
           staffName={viewingStaffTraining}
           records={foodSafetyRecords}
           onClose={() => setViewingStaffTraining(null)}
+        />
+      )}
+      {xeroCompareItems && (
+        <XeroStockCompareModal
+          xeroItems={xeroCompareItems}
+          salesMap={xeroSalesMap}
+          itemMappings={xeroItemMappings}
+          availableStock={availableStock}
+          onClose={() => setXeroCompareItems(null)}
+          onMatch={matchStockToXero}
+          onMatchItems={() => {
+            setXeroCompareItems(null);
+            openXeroItemMatch();
+          }}
         />
       )}
       {xeroMatchItems && (
