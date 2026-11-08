@@ -98,3 +98,9 @@ alter table public.excise_returns add column if not exists declared_lines jsonb 
 
 -- Packaged stock cleared outside of sales orders (see Finished stock → Clear stock).
 alter table public.batches add column if not exists stock_cleared jsonb not null default '[]'::jsonb;
+
+-- ─── Two-way stock with Xero (applied as migration xero_two_way_stock) ─────
+-- xero_sales_item_map: which Xero item is which beer/container (+ units per Xero unit).
+-- xero_stock_sales: every Xero sale line counted once, so nothing comes off twice.
+-- xero_settings: sales_sync_enabled, sales_sync_from, last_sales_sync.
+alter table public.batches add column if not exists xero_sold jsonb not null default '[]'::jsonb;

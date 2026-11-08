@@ -246,6 +246,8 @@ function availableStockList(batches, salesOrders, mixedPackAssemblies) {
     // so the excise records behind it never change.
     const cleared = {};
     (b.stockCleared || []).forEach((e) => Object.entries(e.counts || {}).forEach(([k, v]) => (cleared[k] = (cleared[k] || 0) + v)));
+    // Sold on invoices raised straight in Xero (see planXeroSales).
+    (b.xeroSold || []).forEach((e) => (cleared[e.containerKey] = (cleared[e.containerKey] || 0) + (Number(e.qty) || 0)));
     CONTAINERS.forEach((c) => {
       if ((packaged[c.key] || 0) > 0) {
         list.push({
@@ -261,6 +263,169 @@ function availableStockList(batches, salesOrders, mixedPackAssemblies) {
     });
   });
   return list;
+}
+
+// ─── Two-way stock with Xero: sales invoiced in Xero take stock off ─────────
+// Works out what a batch of Xero invoices/credit notes means for Brewpoint's
+// stock, without touching anything — the caller saves the result. Every
+// Xero line is recorded once (by its line id) so nothing is counted twice,
+// and a voided invoice gives its stock back.
+//
+//  - Invoices for Brewpoint's own orders (reference = a Brewpoint order
+//    number) are skipped — those orders already took the stock off.
+//  - Each Xero item is matched to a beer + container, with how many
+//    Brewpoint units one Xero unit holds (a case of 24 = 24 cans).
+//  - Stock comes off the oldest batch first; a credit note puts it back on
+//    the newest batch of that beer.
+function planXeroSales({ docs, ledger, salesMap, itemMappings, batches, available, brewpointOrderNumbers }) {
+  const ledgerByLine = {};
+  (ledger || []).forEach((r) => (ledgerByLine[r.xero_line_id] = r));
+  const orderNos = new Set((brewpointOrderNumbers || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean));
+  const mapByCode = {};
+  (salesMap || []).forEach((m) => (mapByCode[String(m.xero_item_code).toLowerCase()] = m));
+
+  const resolve = (code) => {
+    const m = mapByCode[String(code).toLowerCase()];
+    if (m) {
+      if (m.ignore) return { ignore: true };
+      if (m.product_key) return { productKey: m.product_key, containerKey: m.container_key || m.product_key.split("::")[1], units: Number(m.units_per_xero_unit) || 1 };
+    }
+    const fm = (itemMappings || []).find((x) => String(x.xero_item_code).toLowerCase() === String(code).toLowerCase());
+    if (fm) return { productKey: fm.product_key, containerKey: fm.product_key.split("::")[1], units: 1 };
+    return null;
+  };
+
+  const packedOn = {};
+  batches.forEach((b) => (packedOn[b.id] = packagingEvents(b).reduce((mx, e) => (e.date && e.date > mx ? e.date : mx), "")));
+  const avail = {};
+  (available || []).forEach((s) => (avail[`${s.batchId}::${s.containerKey}`] = s.available));
+  const batchesFor = (productKey, containerKey) =>
+    batches.filter((b) => productKeyFor(b.name, containerKey) === productKey && packagingEvents(b).length > 0);
+
+  const soldChanges = {}; // batchId -> new xeroSold array
+  const soldOf = (b) => soldChanges[b.id] || (soldChanges[b.id] = [...(b.xeroSold || [])]);
+  const batchById = Object.fromEntries(batches.map((b) => [b.id, b]));
+  const rows = [];
+  const unmatched = {};
+  const summary = { applied: 0, units: 0, returned: 0, reversed: 0, short: 0, skipped: 0, unmapped: 0 };
+
+  const sorted = [...(docs || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  sorted.forEach((doc) => {
+    const active = doc.status === "AUTHORISED" || doc.status === "PAID";
+    const ownOrder = doc.docType === "invoice" && doc.reference && orderNos.has(String(doc.reference).trim().toLowerCase());
+    doc.lines.forEach((line) => {
+      const prev = ledgerByLine[line.lineId];
+      const base = {
+        xero_line_id: line.lineId,
+        xero_doc_id: doc.docId,
+        doc_type: doc.docType,
+        doc_number: doc.number,
+        doc_date: doc.date,
+        contact_name: doc.contactName,
+        item_code: line.itemCode,
+        xero_qty: line.qty,
+      };
+
+      if (!active) {
+        // Voided or deleted in Xero: give back whatever it took.
+        if (prev && (prev.status === "applied" || prev.status === "short")) {
+          (prev.allocations || []).forEach((a) => {
+            const b = batchById[a.batchId];
+            if (!b) return;
+            soldChanges[b.id] = soldOf(b).filter((x) => x.lineId !== line.lineId);
+            avail[`${a.batchId}::${a.containerKey}`] = (avail[`${a.batchId}::${a.containerKey}`] || 0) + a.qty;
+          });
+          rows.push({ ...prev, ...base, status: "reversed", allocations: [] });
+          summary.reversed += 1;
+        }
+        return;
+      }
+      if (prev && prev.status !== "unmapped") return; // already dealt with
+
+      if (ownOrder) {
+        rows.push({ ...base, units: 0, status: "skipped", allocations: [] });
+        summary.skipped += 1;
+        return;
+      }
+      const map = resolve(line.itemCode);
+      if (!map || map.ignore) {
+        if (map && map.ignore) {
+          rows.push({ ...base, units: 0, status: "skipped", allocations: [] });
+          summary.skipped += 1;
+        } else {
+          rows.push({ ...base, units: 0, status: "unmapped", allocations: [] });
+          unmatched[line.itemCode] = (unmatched[line.itemCode] || 0) + 1;
+          summary.unmapped += 1;
+        }
+        return;
+      }
+
+      const units = Math.round(line.qty * map.units * 1000) / 1000;
+      const candidates = batchesFor(map.productKey, map.containerKey);
+      const allocations = [];
+      if (doc.docType === "invoice") {
+        let need = units;
+        [...candidates]
+          .sort((a, b) => packedOn[a.id].localeCompare(packedOn[b.id]))
+          .forEach((b) => {
+            if (need <= 0) return;
+            const key = `${b.id}::${map.containerKey}`;
+            const take = Math.min(need, Math.max(0, avail[key] || 0));
+            if (take <= 0) return;
+            avail[key] = (avail[key] || 0) - take;
+            need -= take;
+            allocations.push({ batchId: b.id, containerKey: map.containerKey, qty: take });
+          });
+        allocations.forEach((a) => soldOf(batchById[a.batchId]).push({ lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: a.containerKey, qty: a.qty }));
+        const status = need > 0.0005 ? "short" : "applied";
+        if (status === "short") summary.short += 1;
+        summary.applied += 1;
+        summary.units += units - Math.max(0, need);
+        rows.push({ ...base, units, status, allocations });
+      } else {
+        // Customer credit note: the stock comes back on the newest batch.
+        const newest = [...candidates].sort((a, b) => packedOn[b.id].localeCompare(packedOn[a.id]))[0];
+        if (newest) {
+          soldOf(newest).push({ lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: map.containerKey, qty: -units });
+          avail[`${newest.id}::${map.containerKey}`] = (avail[`${newest.id}::${map.containerKey}`] || 0) + units;
+          allocations.push({ batchId: newest.id, containerKey: map.containerKey, qty: -units });
+          summary.returned += units;
+        }
+        rows.push({ ...base, units, status: newest ? "applied" : "short", allocations });
+        if (!newest) summary.short += 1;
+      }
+    });
+  });
+
+  const batchChanges = Object.entries(soldChanges)
+    .filter(([id, list]) => JSON.stringify(list) !== JSON.stringify(batchById[id].xeroSold || []))
+    .map(([id, xeroSold]) => ({ id, xeroSold }));
+  return { rows, batchChanges, unmatched, summary };
+}
+
+// A first guess at which beer and container a Xero item is, from its code
+// and name — "BC50" / "Base Camp Hazy IPA 50L keg" → Base Camp Hazy, 50L
+// keg; anything mentioning 24, case or 330ml → cans, 24 to a unit.
+function guessXeroItemMatch(item, beerNames) {
+  const text = `${item.code} ${item.name}`.toLowerCase();
+  let containerKey = "";
+  let units = 1;
+  if (/\b50\s*l|50l|50$|\b50\b/.test(text)) containerKey = "kegs50";
+  else if (/\b30\s*l|30l|\b30\b/.test(text)) containerKey = "kegs30";
+  else if (/\b20\s*l|20l|\b20\b/.test(text)) containerKey = "kegs20";
+  if (/1x24|24\s*x|\bcase\b|\b24\b|24$|330/.test(text)) {
+    containerKey = "cans330";
+    units = /4\s*pack|4pk/.test(text) ? 4 : /6\s*pack|6pk/.test(text) ? 6 : /\bsingle\b|1x330/.test(text) ? 1 : 24;
+  }
+  const words = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !["beer", "keg", "kegs", "case", "cans", "can", "the", "and", "ipa", "330ml", "50l", "20l", "30l"].includes(w));
+  const itemWords = new Set(words(item.name));
+  let best = "";
+  let bestScore = 0;
+  (beerNames || []).forEach((n) => {
+    const score = words(n).filter((w) => itemWords.has(w)).length;
+    if (score > bestScore) { best = n; bestScore = score; }
+  });
+  return { beerName: best, containerKey, units };
 }
 
 // A mixed pack's own available-to-sell count — how many have been put
@@ -5775,6 +5940,105 @@ function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
         </div>
       </div>
     </div>
+    </>,
+    document.body
+  );
+}
+
+// Matches every Xero item to the Brewpoint beer and container it is, so a
+// sale invoiced in Xero takes the right stock off. Several Xero items can
+// be the same beer (Craftys / Gents / Moon Juice labels), and "units"
+// handles cases: a case-of-24 item takes 24 cans off per case sold.
+function XeroItemMatchModal({ xeroItems, beerNames, existing, highlightCodes, onClose, onSave }) {
+  const byCode = useMemo(() => Object.fromEntries((existing || []).map((m) => [String(m.xero_item_code).toLowerCase(), m])), [existing]);
+  const [rows, setRows] = useState(() =>
+    (xeroItems || []).map((it) => {
+      const m = byCode[String(it.code).toLowerCase()];
+      if (m) {
+        return { code: it.code, name: it.name, beerName: m.ignore ? "__ignore" : m.beer_name || "", containerKey: m.container_key || "", units: String(m.units_per_xero_unit ?? 1), saved: true };
+      }
+      const g = guessXeroItemMatch(it, beerNames);
+      return { code: it.code, name: it.name, beerName: g.beerName, containerKey: g.containerKey, units: String(g.units), saved: false };
+    })
+  );
+  const [filter, setFilter] = useState("todo");
+  const [saving, setSaving] = useState(false);
+  const highlight = new Set((highlightCodes || []).map((c) => String(c).toLowerCase()));
+  const update = (code, patch) => setRows((prev) => prev.map((r) => (r.code === code ? { ...r, ...patch } : r)));
+  const complete = (r) => r.beerName === "__ignore" || (r.beerName && r.containerKey && Number(r.units) > 0);
+  const shown = rows
+    .filter((r) => (filter === "todo" ? !r.saved || highlight.has(String(r.code).toLowerCase()) : true))
+    .sort((a, b) => (highlight.has(String(b.code).toLowerCase()) - highlight.has(String(a.code).toLowerCase())) || a.code.localeCompare(b.code));
+  const toSave = rows.filter((r) => complete(r));
+  const selectStyle = { background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", fontSize: 13, color: "#2A3324", minWidth: 0 };
+
+  const save = async () => {
+    setSaving(true);
+    const ok = await onSave(
+      toSave.map((r) => ({
+        xero_item_code: r.code,
+        xero_item_name: r.name,
+        ignore: r.beerName === "__ignore",
+        beer_name: r.beerName === "__ignore" ? null : r.beerName,
+        container_key: r.beerName === "__ignore" ? null : r.containerKey,
+        product_key: r.beerName === "__ignore" ? null : productKeyFor(r.beerName, r.containerKey),
+        units_per_xero_unit: r.beerName === "__ignore" ? 1 : Number(r.units) || 1,
+      }))
+    );
+    setSaving(false);
+    if (ok) onClose();
+  };
+
+  return createPortal(
+    <>
+      <div style={SHEET_BACKDROP_STYLE} />
+      <div style={SHEET_PANEL_STYLE}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #DDE0C8", flexShrink: 0 }}>
+          <h2 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 20, color: "#2A3324", margin: 0, fontWeight: 500 }}>Match Xero items to beers</h2>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "#5C6B54", cursor: "pointer", padding: 10 }}>
+            <X size={20} />
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ padding: "14px 18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
+              Pick the beer and container each Xero item is. <strong>Units</strong> is how many Brewpoint units one Xero unit holds — 24 for a case of 24 cans, 1 for a keg. Items that aren't beer (hops, consulting, equipment) can be set to "Not stock". Best guesses are filled in — check them.
+            </div>
+            <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
+              {[["todo", `To check (${rows.filter((r) => !r.saved || highlight.has(String(r.code).toLowerCase())).length})`], ["all", `All items (${rows.length})`]].map(([k, l]) => (
+                <button key={k} onClick={() => setFilter(k)} style={{ flex: 1, background: filter === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: filter === k ? "#16191A" : "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>{l}</button>
+              ))}
+            </div>
+            {shown.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13, padding: "8px 0" }}>Everything's matched.</div>}
+            {shown.map((r) => (
+              <div key={r.code} style={{ background: "#FFFFFF", border: `1px solid ${highlight.has(String(r.code).toLowerCase()) ? "#D9A441" : "#DDE0C8"}`, borderRadius: 6, padding: "9px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
+                <div style={{ fontSize: 13, color: "#2A3324" }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C6B54" }}>{r.code}</span> · {r.name}
+                  {highlight.has(String(r.code).toLowerCase()) && <span style={{ color: "#8A6D0B", fontSize: 11.5 }}> — sold recently, not matched yet</span>}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1.3fr 0.7fr", gap: 6 }}>
+                  <select value={r.beerName} onChange={(e) => update(r.code, { beerName: e.target.value })} style={selectStyle}>
+                    <option value="">Choose beer…</option>
+                    <option value="__ignore">Not stock — ignore</option>
+                    {beerNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <select value={r.containerKey} disabled={r.beerName === "__ignore"} onChange={(e) => update(r.code, { containerKey: e.target.value, units: e.target.value === "cans330" ? (r.units === "1" ? "24" : r.units) : "1" })} style={selectStyle}>
+                    <option value="">Container…</option>
+                    {CONTAINERS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                  <input type="number" inputMode="numeric" min="1" disabled={r.beerName === "__ignore"} value={r.units} onChange={(e) => update(r.code, { units: e.target.value })} aria-label="Units per Xero unit" style={{ ...selectStyle, width: "100%", boxSizing: "border-box", fontFamily: "'JetBrains Mono', monospace" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ flexShrink: 0, borderTop: "1px solid #DDE0C8", padding: "12px 18px", display: "flex", gap: 10 }}>
+          <button onClick={save} disabled={saving || toSave.length === 0} style={{ ...auditPrimaryBtn(!saving && toSave.length > 0), flex: 2 }}>
+            {saving ? "Saving…" : `Save ${toSave.length} match${toSave.length === 1 ? "" : "es"}`}
+          </button>
+          <button onClick={onClose} style={{ ...auditSecondaryBtn, flex: 1 }}>Cancel</button>
+        </div>
+      </div>
     </>,
     document.body
   );
@@ -23842,7 +24106,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-08-285";
+const APP_VERSION = "2026-11-09-286";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -24637,6 +24901,10 @@ function TankLogApp() {
   const [xeroConnecting, setXeroConnecting] = useState(false);
   const [xeroSettings, setXeroSettings] = useState(null);
   const [xeroItemMappings, setXeroItemMappings] = useState([]);
+  const [xeroSalesMap, setXeroSalesMap] = useState([]);
+  const [xeroSalesSyncing, setXeroSalesSyncing] = useState(false);
+  const [xeroUnmatched, setXeroUnmatched] = useState([]);
+  const [xeroMatchItems, setXeroMatchItems] = useState(null);
   const [xeroAccounts, setXeroAccounts] = useState([]);
   const [xeroItems, setXeroItems] = useState([]);
   const [xeroContacts, setXeroContacts] = useState([]);
@@ -24891,6 +25159,10 @@ function TankLogApp() {
       // rest of the app still loads normally.
       if (exciseReturnsRes.error) console.error(exciseReturnsRes.error);
       else setExciseReturns(exciseReturnsRes.data.map(rowToExciseReturn));
+      // Which Xero item is which beer — optional, like the self-audit.
+      const salesMapRes = await supabase.from("xero_sales_item_map").select("*").eq("company_id", myProfile.companyId);
+      if (salesMapRes.error) console.error(salesMapRes.error);
+      else if (!cancelled) setXeroSalesMap(salesMapRes.data || []);
       } catch (err) {
         // Whatever went wrong, never leave the app stuck on the loading
         // skeleton forever — surface it and let the user try again.
@@ -25740,9 +26012,9 @@ function TankLogApp() {
   const saveXeroAdjustmentAccount = async (code, name) => {
     const { error } = await supabase
       .from("xero_settings")
-      .upsert({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
+      .upsert({ ...(xeroSettings || {}), company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setXeroSettings({ company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name });
+    setXeroSettings((prev) => ({ ...(prev || {}), company_id: profile.companyId, adjustment_account_code: code, adjustment_account_name: name }));
   };
 
   // productKeyFor moved to a global, top-level function so it can also be
@@ -25750,9 +26022,13 @@ function TankLogApp() {
   // component — see near CONTAINERS.
 
   const postPackagingLineToXero = async (batch, mapping, qty) => {
+    // If the Xero item is a case (say 24 cans), send cases, not cans.
+    const sales = xeroSalesMap.find((m) => String(m.xero_item_code).toLowerCase() === String(mapping.xero_item_code).toLowerCase() && !m.ignore);
+    const per = Number(sales?.units_per_xero_unit) || 1;
+    const quantity = Math.round((qty / per) * 10000) / 10000;
     const result = await callXeroApi("postStock", {
       itemCode: mapping.xero_item_code,
-      quantity: qty,
+      quantity,
       direction: "increase",
       unitCost: mapping.unit_cost,
       adjustmentAccountCode: xeroSettings.adjustment_account_code,
@@ -25965,6 +26241,135 @@ function TankLogApp() {
     }
     logActivity("restored", "stock", "Packaged stock", "Undid a packaged stock clear-out");
     showToast("success", "Clear-out undone.");
+  };
+
+  // ─── Xero → Brewpoint: sales invoiced in Xero take stock off ─────────────
+  const updateXeroSold = async (changes) => {
+    for (let i = 0; i < changes.length; i += 15) {
+      const slice = changes.slice(i, i + 15);
+      const results = await Promise.all(slice.map(({ id, xeroSold }) => supabase.from("batches").update({ xero_sold: xeroSold }).eq("id", id)));
+      if (results.some((r) => r.error)) {
+        console.error(results.find((r) => r.error).error);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const xeroSalesSyncRunning = useRef(false);
+  const syncSalesFromXero = async (quiet = false) => {
+    if (!xeroConnection || !xeroSettings?.sales_sync_enabled || xeroSalesSyncRunning.current) return;
+    xeroSalesSyncRunning.current = true;
+    setXeroSalesSyncing(true);
+    try {
+      const since = xeroSettings.sales_sync_from || today();
+      const data = await callXeroApi("listSales", { since });
+      if (data.error) {
+        console.error("Xero sales check failed:", data.error, data.detail);
+        if (!quiet) showToast("error", "Couldn't read sales from Xero just now — try again in a minute.");
+        return;
+      }
+      const ledgerRes = await supabase.from("xero_stock_sales").select("*").eq("company_id", profile.companyId);
+      if (ledgerRes.error) {
+        console.error(ledgerRes.error);
+        if (!quiet) showToast("error", "Something didn't load — check your connection and try again.");
+        return;
+      }
+      const plan = planXeroSales({
+        docs: data.docs || [],
+        ledger: ledgerRes.data || [],
+        salesMap: xeroSalesMap,
+        itemMappings: xeroItemMappings,
+        batches,
+        available: availableStock,
+        brewpointOrderNumbers: salesOrders.map((o) => o.orderNumber),
+      });
+      // Ledger first, so a half-finished run can't take the same stock twice.
+      if (plan.rows.length > 0) {
+        const rows = plan.rows.map((r) => {
+          const { id: _id, created_at: _c, ...rest } = r;
+          return { ...rest, company_id: profile.companyId };
+        });
+        const ledgerSave = await supabase.from("xero_stock_sales").upsert(rows, { onConflict: "company_id,xero_line_id" });
+        if (ledgerSave.error) {
+          console.error(ledgerSave.error);
+          if (!quiet) showToast("error", "Something didn't save — check your connection and try again.");
+          return;
+        }
+      }
+      if (plan.batchChanges.length > 0) {
+        const ok = await updateXeroSold(plan.batchChanges);
+        if (!ok && !quiet) showToast("error", "Some stock didn't update — check your connection and try again.");
+        const byId = Object.fromEntries(plan.batchChanges.map((c) => [c.id, c.xeroSold]));
+        setBatches((prev) => prev.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)));
+      }
+      const unmatchedLedger = (ledgerRes.data || []).filter((r) => r.status === "unmapped" && !plan.rows.some((x) => x.xero_line_id === r.xero_line_id)).map((r) => r.item_code);
+      setXeroUnmatched([...new Set([...Object.keys(plan.unmatched), ...unmatchedLedger])].filter(Boolean));
+      const now = new Date().toISOString();
+      await supabase.from("xero_settings").update({ last_sales_sync: now }).eq("company_id", profile.companyId);
+      setXeroSettings((prev) => ({ ...(prev || {}), last_sales_sync: now }));
+      const { summary } = plan;
+      if (summary.applied > 0 || summary.reversed > 0) {
+        logActivity("synced", "stock", "Xero sales", `Took ${Math.round(summary.units)} units off for ${summary.applied} Xero sale line${summary.applied === 1 ? "" : "s"}${summary.reversed ? `, gave back ${summary.reversed} voided` : ""}`);
+      }
+      if (!quiet || summary.applied > 0 || summary.reversed > 0) {
+        const parts = [];
+        if (summary.applied > 0) parts.push(`${Math.round(summary.units).toLocaleString("en-NZ")} units taken off for ${summary.applied} Xero sale line${summary.applied === 1 ? "" : "s"}`);
+        if (summary.reversed > 0) parts.push(`${summary.reversed} voided line${summary.reversed === 1 ? "" : "s"} put back`);
+        if (summary.short > 0) parts.push(`${summary.short} sold more than Brewpoint had on hand`);
+        if (summary.unmapped > 0) parts.push(`${summary.unmapped} line${summary.unmapped === 1 ? "" : "s"} for items not matched yet`);
+        showToast(summary.short > 0 || summary.unmapped > 0 ? "error" : "success", parts.length ? `Xero sales: ${parts.join(" · ")}.` : "Xero sales checked — nothing new.");
+      }
+    } catch (err) {
+      console.error(err);
+      if (!quiet) showToast("error", "Couldn't read sales from Xero just now — try again in a minute.");
+    } finally {
+      xeroSalesSyncRunning.current = false;
+      setXeroSalesSyncing(false);
+    }
+  };
+
+  // Check Xero when the app opens and every 10 minutes while it's open.
+  const syncSalesRef = useRef(syncSalesFromXero);
+  syncSalesRef.current = syncSalesFromXero;
+  const salesSyncOn = !loadingData && !!xeroConnection && !!xeroSettings?.sales_sync_enabled;
+  useEffect(() => {
+    if (!salesSyncOn) return undefined;
+    const first = setTimeout(() => syncSalesRef.current(true), 3000);
+    const every = setInterval(() => syncSalesRef.current(true), 10 * 60 * 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+    };
+  }, [salesSyncOn]);
+
+  const setXeroSalesSync = async (enabled) => {
+    const patch = enabled ? { sales_sync_enabled: true, sales_sync_from: xeroSettings?.sales_sync_from || today() } : { sales_sync_enabled: false };
+    const { error } = await supabase.from("xero_settings").upsert({ ...(xeroSettings || {}), company_id: profile.companyId, ...patch });
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setXeroSettings((prev) => ({ ...(prev || {}), company_id: profile.companyId, ...patch }));
+    showToast("success", enabled ? "Xero sales will now take stock off Brewpoint." : "Stopped reading sales from Xero.");
+  };
+
+  const openXeroItemMatch = async () => {
+    const data = await callXeroApi("listAllItems");
+    if (data.error) { showToast("error", "Couldn't load your Xero items — try again in a minute."); return; }
+    setXeroMatchItems(data.items || []);
+  };
+
+  const saveXeroSalesMap = async (records) => {
+    const rows = records.map((r) => ({ ...r, company_id: profile.companyId }));
+    const { data, error } = await supabase.from("xero_sales_item_map").upsert(rows, { onConflict: "company_id,xero_item_code" }).select();
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    setXeroSalesMap((prev) => {
+      const byCode = Object.fromEntries(prev.map((m) => [String(m.xero_item_code).toLowerCase(), m]));
+      (data || []).forEach((m) => (byCode[String(m.xero_item_code).toLowerCase()] = m));
+      return Object.values(byCode);
+    });
+    const savedCodes = new Set(records.map((r) => String(r.xero_item_code).toLowerCase()));
+    setXeroUnmatched((prev) => prev.filter((c) => !savedCodes.has(String(c).toLowerCase())));
+    showToast("success", `Saved ${records.length} Xero item match${records.length === 1 ? "" : "es"}.`);
+    return true;
   };
 
   // Finished stock isn't a single stored number the way ingredients or
@@ -29754,6 +30159,68 @@ function TankLogApp() {
                           )}
                         </div>
 
+                        <div style={{ borderTop: "1px solid #DDE0C8", paddingTop: 12, marginBottom: 12 }}>
+                          <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
+                            Sales from Xero
+                          </div>
+                          <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+                            Invoices you raise in Xero take the beer off Brewpoint's stock, and voiding one puts it back. Brewpoint checks every 10 minutes while it's open.
+                            Invoices made from Brewpoint orders are skipped — those orders already took the stock off.
+                          </div>
+                          {xeroSettings?.sales_sync_enabled ? (
+                            <>
+                              <div style={{ color: "#D9A441", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                <CheckCircle2 size={13} /> On — counting invoices dated from {xeroSettings.sales_sync_from ? new Date(`${xeroSettings.sales_sync_from}T00:00:00`).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) : "today"}
+                              </div>
+                              <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 10 }}>
+                                {xeroSettings.last_sales_sync ? `Last checked ${new Date(xeroSettings.last_sales_sync).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : "Not checked yet"}
+                                {` · ${xeroSalesMap.filter((m) => !m.ignore).length} Xero item${xeroSalesMap.filter((m) => !m.ignore).length === 1 ? "" : "s"} matched`}
+                              </div>
+                              {xeroUnmatched.length > 0 && (
+                                <div style={{ background: "#FBF3DC", border: "1px solid #E3D3A0", borderRadius: 5, padding: "8px 10px", color: "#8A6D0B", fontSize: 12, marginBottom: 10, lineHeight: 1.45 }}>
+                                  Sold in Xero but not matched to a beer yet: {xeroUnmatched.join(", ")}. Match them and they'll come off stock on the next check.
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                <button
+                                  onClick={() => syncSalesFromXero(false)}
+                                  disabled={xeroSalesSyncing}
+                                  style={{ flex: "1 1 140px", background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: xeroSalesSyncing ? "default" : "pointer", opacity: xeroSalesSyncing ? 0.6 : 1 }}
+                                >
+                                  {xeroSalesSyncing ? "Checking…" : "Check Xero now"}
+                                </button>
+                                <button
+                                  onClick={openXeroItemMatch}
+                                  style={{ flex: "1 1 140px", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                                >
+                                  Match Xero items
+                                </button>
+                                <button
+                                  onClick={() => setXeroSalesSync(false)}
+                                  style={{ flex: "1 1 100%", background: "none", border: "none", padding: "6px", color: "#9BA88A", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
+                                >
+                                  Turn off
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button
+                                onClick={openXeroItemMatch}
+                                style={{ flex: "1 1 140px", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                              >
+                                1. Match Xero items
+                              </button>
+                              <button
+                                onClick={() => setXeroSalesSync(true)}
+                                style={{ flex: "1 1 140px", background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px", color: "#16191A", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                              >
+                                2. Turn on from today
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
                         <button
                           onClick={disconnectXero}
                           style={{ background: "none", border: "1px solid #E3D3A0", borderRadius: 5, padding: "9px", color: "#5C9A3C", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
@@ -30623,6 +31090,20 @@ function TankLogApp() {
           staffName={viewingStaffTraining}
           records={foodSafetyRecords}
           onClose={() => setViewingStaffTraining(null)}
+        />
+      )}
+      {xeroMatchItems && (
+        <XeroItemMatchModal
+          xeroItems={xeroMatchItems}
+          beerNames={[...new Set(batches.filter((b) => b.packaging).map((b) => b.name.trim()))].sort((a, b) => a.localeCompare(b))}
+          existing={xeroSalesMap}
+          highlightCodes={xeroUnmatched}
+          onClose={() => setXeroMatchItems(null)}
+          onSave={async (records) => {
+            const ok = await saveXeroSalesMap(records);
+            if (ok) setTimeout(() => syncSalesRef.current(false), 300);
+            return ok;
+          }}
         />
       )}
       {xeroMappingQueue && (

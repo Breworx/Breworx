@@ -5,6 +5,7 @@
 export function rowToBatch(row) {
   return {
     stockCleared: Array.isArray(row.stock_cleared) ? row.stock_cleared : [],
+    xeroSold: Array.isArray(row.xero_sold) ? row.xero_sold : [],
     id: row.id,
     number: row.number,
     name: row.name,
@@ -65,6 +66,7 @@ export function rowToBatch(row) {
 export function batchToRow(batch, userId, companyId) {
   return {
     stock_cleared: batch.stockCleared || [],
+    xero_sold: batch.xeroSold || [],
     id: batch.id,
     user_id: userId,
     company_id: companyId,
