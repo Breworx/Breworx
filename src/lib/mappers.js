@@ -402,6 +402,9 @@ export function rowToExciseReturn(row) {
     declaredLines: Array.isArray(row.declared_lines) ? row.declared_lines : [],
     reviewedBy: row.reviewed_by || "",
     reviewedAt: row.reviewed_at || null,
+    declaredOnTsw: !!row.declared_on_tsw,
+    declaredOnTswAt: row.declared_on_tsw_at || null,
+    declaredOnTswBy: row.declared_on_tsw_by || "",
     updatedAt: row.updated_at || null,
   };
 }
@@ -424,6 +427,7 @@ export function exciseReturnToRow(r, companyId) {
     declared_lines: (r.declaredLines || []).map(({ source, imageIdx, ...l }) => l),
     reviewed_by: r.reviewedBy || null,
     reviewed_at: r.reviewedAt || null,
+    ...(r.declaredOnTsw !== undefined ? { declared_on_tsw: !!r.declaredOnTsw, declared_on_tsw_at: r.declaredOnTswAt || null, declared_on_tsw_by: r.declaredOnTswBy || null } : {}),
   };
 }
 

@@ -19818,7 +19818,7 @@ function ExciseAuditReport({ months, companyName, abvMethod, onClose }) {
   );
 }
 
-function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, companyName, onSaveReturn, onDeleteReturn, onReviewReturn, onReadScreenshot, onImportGroup, onViewScreenshot }) {
+function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, companyName, onSaveReturn, onDeleteReturn, onReviewReturn, onReadScreenshot, onImportGroup, onViewScreenshot, onSetDeclared }) {
   const [filter, setFilter] = useState("all");
   const [editingMonth, setEditingMonth] = useState(null);
   const [importGroups, setImportGroups] = useState(null);
@@ -19955,6 +19955,11 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
                   <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 16, color: "#2A3324" }}>{monthLabelFromKey(m.period)}</div>
                   <AuditStatusPill status={m.status} />
                 </div>
+                {onSetDeclared && (m.status !== "nil" || m.ret) && (
+                  <div style={{ marginBottom: 10 }}>
+                    <DeclaredOnTswTick period={m.period} ret={m.ret} onSetDeclared={onSetDeclared} />
+                  </div>
+                )}
                 {m.status !== "nil" && <AuditFigures appLitres={m.appLitres} appLal={m.appLal} declaredLitres={m.ret?.declaredLitres} declaredLal={m.ret?.declaredLal} />}
                 {(m.rows.length > 0 || (m.ret?.declaredLines || []).length > 0) && (
                   <div style={{ marginTop: 10 }}>
@@ -20054,7 +20059,38 @@ function tswLinesForRows(rows) {
     .sort((a, b) => a.name.localeCompare(b.name) || a.abv - b.abv);
 }
 
-function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv }) {
+// "Declared on TSW" tick for one month. Ticking it locks the label
+// strengths of everything packaged that month, so a declared figure can't
+// quietly change afterwards; untick to correct something.
+function DeclaredOnTswTick({ period, ret, onSetDeclared }) {
+  const [busy, setBusy] = useState(false);
+  const on = !!ret?.declaredOnTsw;
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: on ? "#EBF3E4" : "#F8F5EA", border: `1px solid ${on ? "#9BC48A" : "#E8DFC0"}`, borderRadius: 6, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+      <input
+        type="checkbox"
+        checked={on}
+        disabled={busy}
+        onChange={async (e) => {
+          setBusy(true);
+          await onSetDeclared(period, e.target.checked);
+          setBusy(false);
+        }}
+        style={{ width: 20, height: 20, accentColor: "#5C9A3C", flexShrink: 0 }}
+      />
+      <span style={{ fontSize: 13, color: "#2A3324", lineHeight: 1.35 }}>
+        Declared on TSW
+        <span style={{ display: "block", fontSize: 11.5, color: "#5C6B54" }}>
+          {on
+            ? `Ticked${ret.declaredOnTswBy ? ` by ${ret.declaredOnTswBy}` : ""}${ret.declaredOnTswAt ? ` on ${String(ret.declaredOnTswAt).slice(0, 10)}` : ""} — label strengths for this month are locked`
+            : "Tick once this month is lodged — it locks the label strengths used"}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv, locked, tick }) {
   const lines = useMemo(() => tswLinesForRows(rows), [rows]);
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState(null);
@@ -20062,7 +20098,7 @@ function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv }) {
   const totalLitres = Math.round(lines.reduce((s, l) => s + l.litres, 0) * 1000) / 1000;
   const totalLal = Math.round(lines.reduce((s, l) => s + l.lal, 0) * 1000) / 1000;
   const totalDuty = Math.round(lines.reduce((s, l) => s + l.duty, 0) * 100) / 100;
-  const canEdit = abvMethod === "label";
+  const canEdit = abvMethod === "label" && !locked;
 
   const saveAbv = async (line) => {
     const raw = drafts[line.key];
@@ -20086,8 +20122,9 @@ function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv }) {
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>TSW lines — {monthLabel}</div>
       <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8, lineHeight: 1.45 }}>
         One line per product and strength, as entered in TSW. LAL is litres × ABV, cut to 3 decimals the way TSW does.
-        {canEdit ? " Change a strength here and it's saved as the label ABV on every batch on that line this month — LAL and duty update straight away." : " Switch the ABV method to Label to edit strengths here."}
+        {locked ? " This month is ticked as declared, so strengths are locked." : canEdit ? " Change a strength here and it's saved as the label ABV on every batch on that line this month — LAL and duty update straight away." : " Switch the ABV method to Label to edit strengths here."}
       </div>
+      {tick && <div style={{ marginBottom: 8 }}>{tick}</div>}
       <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "8px 10px", background: "#F5F1E4" }}>
           <span style={head}>Product</span>
@@ -20138,7 +20175,8 @@ function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv }) {
   );
 }
 
-function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMethod, onSetAbvMethod, onSetLabelAbv }) {
+function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMethod, onSetAbvMethod, onSetLabelAbv, exciseReturns = [], onSetDeclared }) {
+  const lockedPeriods = useMemo(() => new Set(exciseReturns.filter((r) => r.declaredOnTsw).map((r) => r.period)), [exciseReturns]);
   // null = not chosen yet, which shows the latest month; "" = all time.
   const [monthChoice, setMonthFilter] = useState(null);
   const [labelDrafts, setLabelDrafts] = useState({});
@@ -20276,7 +20314,16 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
         </select>
       )}
 
-      {monthFilter && <TswLinesTable rows={rows} monthLabel={monthLabelFromKey(monthFilter)} abvMethod={abvMethod} onSetLabelAbv={onSetLabelAbv} />}
+      {monthFilter && (
+        <TswLinesTable
+          rows={rows}
+          monthLabel={monthLabelFromKey(monthFilter)}
+          abvMethod={abvMethod}
+          onSetLabelAbv={onSetLabelAbv}
+          locked={lockedPeriods.has(monthFilter)}
+          tick={onSetDeclared ? <DeclaredOnTswTick period={monthFilter} ret={exciseReturns.find((r) => r.period === monthFilter)} onSetDeclared={onSetDeclared} /> : null}
+        />
+      )}
 
       {rows.length > 0 && (
         <button
@@ -20385,7 +20432,7 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
                     {r.levy != null && <div style={{ fontSize: 11, color: "#9BA88A" }}>+${r.levy.toFixed(2)} levy</div>}
                   </span>
                 </div>
-                {abvMethod === "label" && r.productType === "Beer" && (
+                {abvMethod === "label" && r.productType === "Beer" && !lockedPeriods.has(monthKeyFromDate(r.date)) && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                     <span style={{ color: "#9BA88A", fontSize: 11.5 }}>Label ABV:</span>
                     <input
@@ -24438,7 +24485,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-10-292";
+const APP_VERSION = "2026-11-10-293";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -27500,6 +27547,12 @@ function TankLogApp() {
   // the measured reading, since Customs recognises label strength as its
   // own valid method for smaller beer producers, under specific conditions.
   const setBatchLabelAbv = async (batchId, labelAbv) => {
+    const b = batches.find((x) => x.id === batchId);
+    const lockedMonth = b && packagingEvents(b).map((e) => monthKeyFromDate(e.date)).find((k) => exciseReturns.some((r) => r.period === k && r.declaredOnTsw));
+    if (lockedMonth) {
+      showToast("error", `${monthLabelFromKey(lockedMonth)} is ticked as declared on TSW — untick it in Excise first to change this strength.`);
+      return false;
+    }
     const { error } = await supabase.from("batches").update({ label_abv: labelAbv }).eq("id", batchId);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, labelAbv } : b)));
@@ -28570,6 +28623,18 @@ function TankLogApp() {
     logActivity("deleted", "excise_return", ret.period, `Excise return for ${monthLabelFromKey(ret.period)} deleted`);
   };
 
+  const setExciseDeclared = async (period, declared) => {
+    const patch = declared
+      ? { declared_on_tsw: true, declared_on_tsw_at: new Date().toISOString(), declared_on_tsw_by: profile.name || "Owner" }
+      : { declared_on_tsw: false, declared_on_tsw_at: null, declared_on_tsw_by: null };
+    const { data, error } = await supabase.from("excise_returns").upsert({ company_id: profile.companyId, period, ...patch }, { onConflict: "company_id,period" }).select().single();
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    const saved = rowToExciseReturn(data);
+    setExciseReturns((prev) => [saved, ...prev.filter((r) => r.period !== period)]);
+    logActivity(declared ? "declared" : "undeclared", "excise_return", period, `${monthLabelFromKey(period)} ${declared ? "ticked as declared on TSW — label strengths locked" : "unticked — label strengths unlocked"}`);
+    return true;
+  };
+
   const reviewExciseReturn = async (ret) => {
     const reviewedAt = new Date().toISOString();
     const reviewedBy = profile.name || "Owner";
@@ -29369,6 +29434,7 @@ function TankLogApp() {
                 abvMethod={exciseAbvMethod}
                 onSetAbvMethod={updateExciseAbvMethod}
                 onSetLabelAbv={setBatchLabelAbv}
+                onSetDeclared={setExciseDeclared}
                 exciseReturns={exciseReturns}
                 companyName={companyName}
                 onSaveReturn={saveExciseReturn}

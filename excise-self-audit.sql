@@ -127,3 +127,8 @@ begin
     execute format('create trigger fill_default_site_id before insert on public.%I for each row execute function public.fill_default_site_id()', t);
   end loop;
 end $$;
+
+-- "Declared on TSW" tick per month (locks label strengths for that month).
+alter table public.excise_returns add column if not exists declared_on_tsw boolean not null default false;
+alter table public.excise_returns add column if not exists declared_on_tsw_at timestamptz;
+alter table public.excise_returns add column if not exists declared_on_tsw_by text;
