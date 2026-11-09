@@ -4042,18 +4042,20 @@ function SensoryScoreModal({ onClose, onSave }) {
 function LabMeasurementModal({ onClose, onSave }) {
   const [date, setDate] = useState(today());
   const [measuredBy, setMeasuredBy] = useState("");
+  const [gravity, setGravity] = useState("");
   const [ph, setPh] = useState("");
   const [dissolvedOxygen, setDissolvedOxygen] = useState("");
   const [co2Volumes, setCo2Volumes] = useState("");
   const [notes, setNotes] = useState("");
 
-  const canSubmit = measuredBy.trim() && (ph !== "" || dissolvedOxygen !== "" || co2Volumes !== "");
+  const canSubmit = measuredBy.trim() && (gravity !== "" || ph !== "" || dissolvedOxygen !== "" || co2Volumes !== "");
 
   const submit = () => {
     if (!canSubmit) return;
     onSave({
       date,
       measuredBy: measuredBy.trim(),
+      gravity: gravity === "" ? null : Number(gravity),
       ph: ph === "" ? null : Number(ph),
       dissolvedOxygen: dissolvedOxygen === "" ? null : Number(dissolvedOxygen),
       co2Volumes: co2Volumes === "" ? null : Number(co2Volumes),
@@ -4068,6 +4070,7 @@ function LabMeasurementModal({ onClose, onSave }) {
         <div style={{ color: "#5C6B54", fontSize: 13 }}>Instrument readings — leave anything not measured blank.</div>
         <TextField label="Date" type="date" value={date} onChange={setDate} />
         <TextField label="Measured by (required)" value={measuredBy} onChange={setMeasuredBy} placeholder="Your name" />
+        <NumberField label="Gravity (SG)" value={gravity} onChange={setGravity} step="0.001" />
         <NumberField label="pH" value={ph} onChange={setPh} step="0.01" />
         <NumberField label="Dissolved oxygen (ppb)" value={dissolvedOxygen} onChange={setDissolvedOxygen} step="1" />
         <NumberField label="CO2 (volumes)" value={co2Volumes} onChange={setCo2Volumes} step="0.1" />
@@ -17431,7 +17434,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
           </button>
         </div>
         {(batch.labMeasurements || []).length === 0 ? (
-          <div style={{ color: "#9BA88A", fontSize: 13 }}>No lab measurements yet — pH, dissolved oxygen, or CO2 volumes, tracked separately from sensory scores.</div>
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>No lab measurements yet — gravity, pH, dissolved oxygen, or CO2 volumes, tracked separately from sensory scores.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {[...batch.labMeasurements].reverse().map((m) => (
@@ -17441,6 +17444,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#9BA88A" }}>{m.date}</span>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, color: "#5C6B54", fontSize: 12 }}>
+                  {m.gravity != null && <span>SG: {Number(m.gravity).toFixed(3)}</span>}
                   {m.ph != null && <span>pH: {m.ph}</span>}
                   {m.dissolvedOxygen != null && <span>DO: {m.dissolvedOxygen} ppb</span>}
                   {m.co2Volumes != null && <span>CO2: {m.co2Volumes} vol</span>}
@@ -24287,7 +24291,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-09-287";
+const APP_VERSION = "2026-11-10-288";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -28305,9 +28309,16 @@ function TankLogApp() {
     if (!batch) return;
     const newEntry = { id: uid(), ...entry };
     const labMeasurements = [...(batch.labMeasurements || []), newEntry];
-    const { error } = await supabase.from("batches").update({ lab_measurements: labMeasurements }).eq("id", id);
+    // A gravity measured here is a gravity reading too, so Current SG and
+    // attenuation pick it up.
+    const readings =
+      entry.gravity != null
+        ? [...(batch.readings || []), { id: uid(), date: entry.date, gravity: entry.gravity, temp: latestReading(batch).temp ?? null, ph: entry.ph ?? null, note: "Lab measurement" }].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+        : batch.readings;
+    const update = entry.gravity != null ? { lab_measurements: labMeasurements, readings } : { lab_measurements: labMeasurements };
+    const { error } = await supabase.from("batches").update(update).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, labMeasurements } : b)));
+    setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, labMeasurements, readings } : b)));
     showToast("success", "Measurement saved.");
   };
 
