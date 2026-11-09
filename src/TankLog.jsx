@@ -129,6 +129,7 @@ const CONTAINERS = [
 // identified by for Xero item mapping — shared globally so the mapping
 // modal (outside the main app component) computes the exact same key a
 // real packaged batch will use when it's actually sold.
+const CANS_PER_CASE = 24;
 const productKeyFor = (name, containerKey) => `${name.trim().toLowerCase()}::${containerKey}`;
 
 // The actual point of a triangle test — a raw "8/12 correct" tells a
@@ -14760,18 +14761,24 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
     CONTAINERS.forEach((c) => (init[c.key] = 0));
     return init;
   });
+  // Cans go in as full cases of 24 plus any loose cans; saved as a can count.
+  const [canCases, setCanCases] = useState(0);
+  const [looseCans, setLooseCans] = useState(0);
+  const caseCans = (Number(canCases) || 0) * CANS_PER_CASE;
+  const totalCans = caseCans + (Number(looseCans) || 0);
+  const effective = { ...counts, cans330: totalCans };
   const [packageTypeSelections, setPackageTypeSelections] = useState({});
   const [date, setDate] = useState(today());
   const activeFaults = currentFaults(batch);
 
   const remaining = remainingVolume(batch);
-  const sessionVolume = CONTAINERS.reduce((sum, c) => sum + (Number(counts[c.key]) || 0) * c.volumeL, 0);
+  const sessionVolume = CONTAINERS.reduce((sum, c) => sum + (Number(effective[c.key]) || 0) * c.volumeL, 0);
   const diff = Math.round((sessionVolume - remaining) * 100) / 100;
   const leftAfter = Math.max(0, Math.round((remaining - sessionVolume) * 100) / 100);
 
   const submit = () => {
     const session = {};
-    CONTAINERS.forEach((c) => (session[c.key] = Number(counts[c.key]) || 0));
+    CONTAINERS.forEach((c) => (session[c.key] = Number(effective[c.key]) || 0));
     onSave(batch.id, session, packageTypeSelections, date);
     onClose();
   };
@@ -14830,19 +14837,32 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
           This packaging run
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {relevantContainers.map((c) => (
-            <NumberField
-              key={c.key}
-              label={c.label}
-              value={counts[c.key]}
-              onChange={(v) => setCounts((prev) => ({ ...prev, [c.key]: v }))}
-              step="1"
-            />
-          ))}
+          {relevantContainers.map((c) =>
+            c.key === "cans330" ? (
+              <React.Fragment key={c.key}>
+                <NumberField label={`Cases (${CANS_PER_CASE} × 330ml)`} value={canCases} onChange={setCanCases} step="1" />
+                <NumberField label="Loose cans (330ml)" value={looseCans} onChange={setLooseCans} step="1" />
+              </React.Fragment>
+            ) : (
+              <NumberField
+                key={c.key}
+                label={c.label}
+                value={counts[c.key]}
+                onChange={(v) => setCounts((prev) => ({ ...prev, [c.key]: v }))}
+                step="1"
+              />
+            )
+          )}
         </div>
+        {totalCans > 0 && (
+          <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: -6 }}>
+            = <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>{totalCans}</span> cans
+            {Number(canCases) > 0 && Number(looseCans) > 0 ? ` (${caseCans} in cases + ${Number(looseCans)} loose)` : ""}
+          </div>
+        )}
 
         {packageTypes.length > 0 &&
-          relevantContainers.filter((c) => Number(counts[c.key]) > 0).map((c) => (
+          relevantContainers.filter((c) => Number(effective[c.key]) > 0).map((c) => (
             <label key={c.key} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
                 Package type for {c.label} (optional — deducts consumables)
@@ -24291,7 +24311,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-10-288";
+const APP_VERSION = "2026-11-10-289";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
