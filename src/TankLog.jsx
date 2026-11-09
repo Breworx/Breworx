@@ -530,6 +530,21 @@ const NZ_EXCISE_BANDS = [
   { min: 23, max: Infinity, rate: 71.034, basis: "alcohol" },
 ];
 
+// The 2.5–6% beer rate (per litre of alcohol) changes every 1 July, so
+// each packaging date is charged at the rate in force on that day.
+const BEER_LAL_RATE_HISTORY = [
+  { from: "2026-07-01", rate: 38.999 },
+  { from: "2025-07-01", rate: 37.836 },
+  { from: "2024-07-01", rate: 36.905 },
+  { from: "0000-01-01", rate: 35.4505 },
+];
+function exciseRateOn(band, date) {
+  if (band.basis === "alcohol" && band.min === 2.5 && date) {
+    return (BEER_LAL_RATE_HISTORY.find((r) => String(date) >= r.from) || BEER_LAL_RATE_HISTORY[0]).rate;
+  }
+  return band.rate;
+}
+
 function exciseBandForAbv(abv) {
   return NZ_EXCISE_BANDS.find((b) => abv > b.min && abv <= b.max) || NZ_EXCISE_BANDS[0];
 }
@@ -551,10 +566,10 @@ const GST_RATE = 0.15;
 function exciseRowsForBatches(batches, abvMethod) {
   const rows = [];
   batches.forEach((b) => {
-    if (!b.og) return;
-    const latest = latestReading(b);
-    const measuredAbv = latest ? calcABV(b.og, latest.gravity) : null;
-    if (measuredAbv == null || measuredAbv <= 0) return;
+    if (b.mergedIntoBatchId) return;
+    const latest = b.og ? latestReading(b) : null;
+    const measured = b.og && latest && latest.gravity != null ? calcABV(b.og, latest.gravity) : null;
+    const measuredAbv = measured != null && measured > 0 ? measured : null;
     // Label strength is a genuine Customs-recognised method for smaller
     // beer producers (≤2 million L/year, with conditions) — falls back to
     // measured and flags it if no label ABV has been recorded for a batch.
@@ -566,12 +581,16 @@ function exciseRowsForBatches(batches, abvMethod) {
     const eligibleForLabel = abvMethod === "label" && (b.productType || "Beer") === "Beer";
     const usedLabel = eligibleForLabel && !!b.labelAbv;
     const usedFallback = eligibleForLabel && !b.labelAbv;
-    const abv = usedLabel ? b.labelAbv : measuredAbv;
+    const abv = usedLabel ? Number(b.labelAbv) : measuredAbv;
+    // No label strength and no gravity to measure from — left out here and
+    // flagged by the self-audit instead.
+    if (abv == null || abv <= 0) return;
     const band = exciseBandForAbv(abv);
     packagingEvents(b).forEach((e) => {
       const volumeL = packagedVolume(e);
       if (volumeL <= 0) return;
-      const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * band.rate : band.basis === "beverage" ? volumeL * band.rate : 0;
+      const rate = exciseRateOn(band, e.date);
+      const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * rate : band.basis === "beverage" ? volumeL * rate : 0;
       const levyRate = ALCOHOL_LEVY_RATE_PER_LITRE_BEVERAGE[b.productType || "Beer"];
       const levy = levyRate != null ? Math.round(volumeL * levyRate * 100) / 100 : null;
       const levyGst = levy != null ? Math.round(levy * GST_RATE * 100) / 100 : null;
@@ -590,7 +609,8 @@ function exciseRowsForBatches(batches, abvMethod) {
 
 // TSW truncates LAL to 3 decimals rather than rounding (confirmed against
 // a real entry), so the expected figure has to be built the same way.
-const exciseLal = (volumeL, abv) => Math.floor(volumeL * (abv / 100) * 1000) / 1000;
+// The tiny nudge stops floating-point error (4.6079999…) cutting a whole 0.001 off.
+const exciseLal = (volumeL, abv) => Math.floor(volumeL * (abv / 100) * 1000 + 1e-6) / 1000;
 const round3 = (n) => Math.round((n || 0) * 1000) / 1000;
 
 function addMonthsToKey(key, n) {
@@ -20010,8 +20030,117 @@ function ExciseReportView(props) {
   );
 }
 
+// The lines to type into TSW for one month: one per product and strength,
+// litres added up, LAL worked out on the line total and cut (not rounded)
+// to 3 decimals, which is how TSW does it.
+function tswLinesForRows(rows) {
+  const lines = {};
+  rows.forEach((r) => {
+    const abv = Math.round(r.abv * 100) / 100;
+    const key = `${r.productType}::${r.batchName.trim().toLowerCase()}::${abv}`;
+    if (!lines[key]) lines[key] = { key, name: r.batchName.trim(), productType: r.productType, abv, litres: 0, batchIds: new Set(), usedLabel: true, band: r.band, rate: exciseRateOn(r.band, r.date) };
+    const l = lines[key];
+    l.litres += r.volumeL;
+    l.batchIds.add(r.batchId);
+    if (!r.usedLabel) l.usedLabel = false;
+  });
+  return Object.values(lines)
+    .map((l) => {
+      const litres = Math.round(l.litres * 1000) / 1000;
+      const lal = exciseLal(litres, l.abv);
+      const duty = l.band.basis === "alcohol" ? Math.round(lal * l.rate * 100) / 100 : l.band.basis === "beverage" ? Math.round(litres * l.rate * 100) / 100 : 0;
+      return { ...l, litres, lal, duty, batchIds: [...l.batchIds] };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name) || a.abv - b.abv);
+}
+
+function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv }) {
+  const lines = useMemo(() => tswLinesForRows(rows), [rows]);
+  const [drafts, setDrafts] = useState({});
+  const [saving, setSaving] = useState(null);
+  if (lines.length === 0) return null;
+  const totalLitres = Math.round(lines.reduce((s, l) => s + l.litres, 0) * 1000) / 1000;
+  const totalLal = Math.round(lines.reduce((s, l) => s + l.lal, 0) * 1000) / 1000;
+  const totalDuty = Math.round(lines.reduce((s, l) => s + l.duty, 0) * 100) / 100;
+  const canEdit = abvMethod === "label";
+
+  const saveAbv = async (line) => {
+    const raw = drafts[line.key];
+    if (raw === undefined) return;
+    const v = raw === "" ? null : Number(raw);
+    if (v === line.abv || (v != null && (Number.isNaN(v) || v <= 0 || v > 70))) {
+      setDrafts((p) => { const n = { ...p }; delete n[line.key]; return n; });
+      return;
+    }
+    setSaving(line.key);
+    for (const id of line.batchIds) await onSetLabelAbv(id, v);
+    setSaving(null);
+    setDrafts((p) => { const n = { ...p }; delete n[line.key]; return n; });
+  };
+
+  const cell = { fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "right", whiteSpace: "nowrap" };
+  const head = { fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" };
+  const cols = "minmax(0,1fr) 78px 74px 70px 74px";
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>TSW lines — {monthLabel}</div>
+      <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8, lineHeight: 1.45 }}>
+        One line per product and strength, as entered in TSW. LAL is litres × ABV, cut to 3 decimals the way TSW does.
+        {canEdit ? " Change a strength here and it's saved as the label ABV on every batch on that line this month — LAL and duty update straight away." : " Switch the ABV method to Label to edit strengths here."}
+      </div>
+      <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "8px 10px", background: "#F5F1E4" }}>
+          <span style={head}>Product</span>
+          <span style={{ ...head, textAlign: "right" }}>ABV %</span>
+          <span style={{ ...head, textAlign: "right" }}>Litres</span>
+          <span style={{ ...head, textAlign: "right" }}>LAL</span>
+          <span style={{ ...head, textAlign: "right" }}>Duty</span>
+        </div>
+        {lines.map((l) => (
+          <div key={l.key} style={{ display: "grid", gridTemplateColumns: cols, gap: 6, alignItems: "center", padding: "8px 10px", borderTop: "1px solid #EEF0E2", opacity: saving === l.key ? 0.5 : 1 }}>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ fontSize: 13, color: "#2A3324" }}>{l.name}</span>
+              <span style={{ display: "block", fontSize: 11, color: l.usedLabel ? "#9BA88A" : "#B5502F" }}>
+                {l.productType} · {l.batchIds.length} batch{l.batchIds.length === 1 ? "" : "es"}{l.usedLabel ? "" : " · measured ABV, no label set"}
+              </span>
+            </span>
+            <span style={{ textAlign: "right" }}>
+              {canEdit && l.productType === "Beer" ? (
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  value={drafts[l.key] ?? l.abv}
+                  onChange={(e) => setDrafts((p) => ({ ...p, [l.key]: e.target.value }))}
+                  onBlur={() => saveAbv(l)}
+                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                  aria-label={`Label ABV for ${l.name}`}
+                  style={{ width: 64, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "5px 6px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13, textAlign: "right" }}
+                />
+              ) : (
+                <span style={cell}>{l.abv.toFixed(1)}</span>
+              )}
+            </span>
+            <span style={cell}>{l.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 })}</span>
+            <span style={cell}>{l.lal.toFixed(3)}</span>
+            <span style={cell}>${l.duty.toFixed(2)}</span>
+          </div>
+        ))}
+        <div style={{ display: "grid", gridTemplateColumns: cols, gap: 6, padding: "9px 10px", borderTop: "1px solid #DDE0C8", background: "#F8F5EA", fontWeight: 600 }}>
+          <span style={{ fontSize: 13, color: "#2A3324" }}>Total</span>
+          <span />
+          <span style={cell}>{totalLitres.toLocaleString("en-NZ", { maximumFractionDigits: 3 })}</span>
+          <span style={cell}>{totalLal.toFixed(3)}</span>
+          <span style={cell}>${totalDuty.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMethod, onSetAbvMethod, onSetLabelAbv }) {
-  const [monthFilter, setMonthFilter] = useState("");
+  // null = not chosen yet, which shows the latest month; "" = all time.
+  const [monthChoice, setMonthFilter] = useState(null);
   const [labelDrafts, setLabelDrafts] = useState({});
   const [codeDrafts, setCodeDrafts] = useState(() => {
     const initial = {};
@@ -20025,6 +20154,7 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
     const keys = [...new Set(allRows.map((r) => monthKeyFromDate(r.date)))];
     return keys.sort().reverse();
   }, [allRows]);
+  const monthFilter = monthChoice === null ? months[0] || "" : monthChoice;
   const rows = monthFilter ? allRows.filter((r) => monthKeyFromDate(r.date) === monthFilter) : allRows;
   const totalDuty = rows.reduce((s, r) => s + r.duty, 0);
   const totalVolume = Math.round(rows.reduce((s, r) => s + r.volumeL, 0) * 100) / 100;
@@ -20146,6 +20276,8 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
         </select>
       )}
 
+      {monthFilter && <TswLinesTable rows={rows} monthLabel={monthLabelFromKey(monthFilter)} abvMethod={abvMethod} onSetLabelAbv={onSetLabelAbv} />}
+
       {rows.length > 0 && (
         <button
           onClick={() =>
@@ -20161,7 +20293,7 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
                 // TSW truncates this figure rather than rounding it —
                 // confirmed against a real entry (273.360L @ 6% shows as
                 // 16.401, not 16.402 which straight rounding would give).
-                const lal = Math.floor(r.volumeL * (r.abv / 100) * 1000) / 1000;
+                const lal = exciseLal(r.volumeL, r.abv);
                 return [
                   `${r.productType} - ${r.batchName} ${r.abv.toFixed(1)}%`,
                   itemCode,
@@ -24306,7 +24438,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-10-291";
+const APP_VERSION = "2026-11-10-292";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
