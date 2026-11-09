@@ -104,3 +104,26 @@ alter table public.batches add column if not exists stock_cleared jsonb not null
 -- xero_stock_sales: every Xero sale line counted once, so nothing comes off twice.
 -- xero_settings: sales_sync_enabled, sales_sync_from, last_sales_sync.
 alter table public.batches add column if not exists xero_sold jsonb not null default '[]'::jsonb;
+
+-- ─── New rows get the company's main site (applied as migration default_site_on_insert) ───
+-- The site-based access rules (added 24 Aug) hide rows with no site, and the app
+-- doesn't send one, so inserts were rejected. This fills it in on the server.
+create or replace function public.fill_default_site_id()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.site_id is null and new.company_id is not null then
+    select s.id into new.site_id from public.sites s
+     where s.company_id = new.company_id
+     order by s.is_default desc nulls last, s.created_at limit 1;
+  end if;
+  return new;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['batches','tanks','purchase_orders','inventory_items','stock_takes','food_safety_records','kegs','consumables']
+  loop
+    execute format('drop trigger if exists fill_default_site_id on public.%I', t);
+    execute format('create trigger fill_default_site_id before insert on public.%I for each row execute function public.fill_default_site_id()', t);
+  end loop;
+end $$;
