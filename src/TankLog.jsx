@@ -1,18 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Package, Minus, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, RotateCcw, Menu, QrCode, Thermometer, Gauge, Pencil, Sparkles } from "lucide-react";
-// Charts are lazy-loaded — recharts is one of the heaviest dependencies in
-// the app and most people never open a screen with a chart on it in a given
-// session, so there's no reason to make everyone download it upfront.
-const LineChart = React.lazy(() => import("recharts").then((m) => ({ default: m.LineChart })));
-const Line = React.lazy(() => import("recharts").then((m) => ({ default: m.Line })));
-const BarChart = React.lazy(() => import("recharts").then((m) => ({ default: m.BarChart })));
-const Bar = React.lazy(() => import("recharts").then((m) => ({ default: m.Bar })));
-const XAxis = React.lazy(() => import("recharts").then((m) => ({ default: m.XAxis })));
-const YAxis = React.lazy(() => import("recharts").then((m) => ({ default: m.YAxis })));
-const CartesianGrid = React.lazy(() => import("recharts").then((m) => ({ default: m.CartesianGrid })));
-const Tooltip = React.lazy(() => import("recharts").then((m) => ({ default: m.Tooltip })));
-const ResponsiveContainer = React.lazy(() => import("recharts").then((m) => ({ default: m.ResponsiveContainer })));
+// Charts: recharts is imported directly. Lazy-loading each piece separately
+// (as this used to) breaks recharts — a chart only draws children it
+// recognises by type, so lazy-wrapped bars, lines and axes were skipped and
+// every chart rendered as an empty frame.
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
   rowToBatch,
@@ -24313,7 +24306,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-10-290";
+const APP_VERSION = "2026-11-10-291";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
