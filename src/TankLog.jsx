@@ -23602,7 +23602,8 @@ function HomeView({
 
       {(() => {
         const groups = {};
-        batches.forEach((b) => {
+        // A second brew day merged into its batch isn't a batch of its own.
+        batches.filter((b) => !b.mergedIntoBatchId && b.startDate).forEach((b) => {
           const key = monthKeyFromDate(b.startDate);
           if (!groups[key]) groups[key] = { batches: 0, cost: 0 };
           groups[key].batches += 1;
@@ -23635,7 +23636,8 @@ function HomeView({
 
       {(() => {
         const groups = {};
-        batches.forEach((b) => {
+        // Only batches with a cost worked out count towards the average.
+        batches.filter((b) => !b.mergedIntoBatchId && b.startDate && (b.ingredientCost || 0) > 0).forEach((b) => {
           const key = monthKeyFromDate(b.startDate);
           if (!groups[key]) groups[key] = { cost: 0, count: 0 };
           groups[key].cost += b.ingredientCost || 0;
@@ -24311,7 +24313,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-10-289";
+const APP_VERSION = "2026-11-10-290";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
