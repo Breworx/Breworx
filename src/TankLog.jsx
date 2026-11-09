@@ -594,7 +594,7 @@ function exciseRowsForBatches(batches, abvMethod) {
       const levyRate = ALCOHOL_LEVY_RATE_PER_LITRE_BEVERAGE[b.productType || "Beer"];
       const levy = levyRate != null ? Math.round(volumeL * levyRate * 100) / 100 : null;
       const levyGst = levy != null ? Math.round(levy * GST_RATE * 100) / 100 : null;
-      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, abv, measuredAbv, labelAbv: b.labelAbv, usedLabel, usedFallback, volumeL, band, duty, levy, levyGst });
+      rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, event: e, abv, measuredAbv, labelAbv: b.labelAbv, usedLabel, usedFallback, volumeL, band, duty, levy, levyGst });
     });
   });
   return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -19745,37 +19745,156 @@ function AbvComparisonTable({ rows, hasDeclaredLines }) {
   );
 }
 
-function ExciseAuditReport({ months, companyName, abvMethod, onClose }) {
-  const checked = months.filter((m) => m.status !== "nil");
-  const periodRange = checked.length ? `${monthLabelFromKey(checked[checked.length - 1].period)} – ${monthLabelFromKey(checked[0].period)}` : "No periods";
+// What went into a packaging run, e.g. "2 × 50L keg, 30 × 330ml can".
+const containersLabel = (e) =>
+  CONTAINERS.filter((c) => Number(e?.[c.key]) > 0)
+    .map((c) => {
+      const n = Number(e[c.key]);
+      if (c.key !== "cans330") return `${n} × ${c.shortLabel || c.label}`;
+      const cases = Math.floor(n / CANS_PER_CASE);
+      const loose = n % CANS_PER_CASE;
+      return `${n} cans${cases ? ` (${cases} case${cases === 1 ? "" : "s"}${loose ? ` + ${loose}` : ""})` : ""}`;
+    })
+    .join(", ");
+
+function auditRunDetail(r, batchById) {
+  const b = batchById[r.batchId] || {};
+  const brewed = Number(b.volume) || null;
+  const loss = b.packaging && b.packaging.discarded != null ? Number(b.packaging.discarded) : null;
+  return {
+    date: r.date,
+    batch: `#${r.batchNumber}`,
+    beer: r.batchName,
+    containers: containersLabel(r.event),
+    litres: round3(r.volumeL),
+    abv: r.abv,
+    abvSource: r.usedLabel ? "label" : "measured",
+    lal: exciseLal(r.volumeL, r.abv),
+    brewDate: b.startDate || "",
+    tank: b.tankName || "",
+    brewedL: brewed,
+    lossL: loss,
+    og: b.og || null,
+  };
+}
+
+function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClose }) {
+  const active = months.filter((m) => m.status !== "nil" || m.ret);
+  const keys = active.map((m) => m.period).sort();
+  const [from, setFrom] = useState(keys[0] || "");
+  const [to, setTo] = useState(keys[keys.length - 1] || "");
+  const [full, setFull] = useState(true);
+  const batchById = useMemo(() => Object.fromEntries(batches.map((b) => [b.id, b])), [batches]);
+  const lo = from <= to ? from : to;
+  const hi = from <= to ? to : from;
+  const checked = active.filter((m) => m.period >= lo && m.period <= hi);
+  const ordered = [...checked].sort((a, b) => a.period.localeCompare(b.period));
+  const periodRange = ordered.length ? `${monthLabelFromKey(ordered[0].period)} – ${monthLabelFromKey(ordered[ordered.length - 1].period)}` : "No periods";
   const count = (st) => checked.filter((m) => m.status === st).length;
-  const ordered = [...checked].reverse();
+  const sum = (f) => ordered.reduce((s, m) => s + (Number(f(m)) || 0), 0);
+  const totals = {
+    litres: round3(sum((m) => m.appLitres)),
+    lal: round3(sum((m) => m.appLal)),
+    declaredLitres: round3(sum((m) => m.ret?.declaredLitres)),
+    declaredLal: round3(sum((m) => m.ret?.declaredLal)),
+    duty: Math.round(sum((m) => m.ret?.declaredDuty) * 100) / 100,
+    ticked: ordered.filter((m) => m.ret?.declaredOnTsw).length,
+  };
+  const fileTag = ordered.length ? `${ordered[0].period}_to_${ordered[ordered.length - 1].period}` : "none";
+
+  const exportSummary = () =>
+    downloadCSV(
+      `excise-audit-summary-${fileTag}.csv`,
+      ["Month", "Status", "Declared on TSW", "Entry number", "Filed", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Declared duty ($)", "Estimated duty ($)", "Screenshots", "Reviewed by", "Notes / issues"],
+      ordered.map((m) => {
+        const est = tswLinesForRows(m.rows).reduce((s2, l) => s2 + l.duty, 0);
+        return [
+          monthLabelFromKey(m.period),
+          AUDIT_STATUS[m.status]?.label || m.status,
+          m.ret?.declaredOnTsw ? `Yes${m.ret.declaredOnTswAt ? ` (${String(m.ret.declaredOnTswAt).slice(0, 10)})` : ""}` : "No",
+          m.ret?.entryNumber || "",
+          m.ret?.filedDate || "",
+          round3(m.appLitres),
+          round3(m.appLal),
+          m.ret?.declaredLitres ?? "",
+          m.ret?.declaredLal ?? "",
+          m.ret?.declaredLitres != null ? round3(m.ret.declaredLitres - m.appLitres) : "",
+          m.ret?.declaredLal != null ? round3(m.ret.declaredLal - m.appLal) : "",
+          m.ret?.declaredDuty != null ? Number(m.ret.declaredDuty).toFixed(2) : "",
+          est.toFixed(2),
+          (m.ret?.screenshotPaths || []).length,
+          m.ret?.reviewedBy || "",
+          [...m.issues.map((i) => i.text), m.ret?.varianceExplanation ? `Explanation: ${m.ret.varianceExplanation}` : ""].filter(Boolean).join(" | "),
+        ];
+      })
+    );
+
+  const exportRuns = () =>
+    downloadCSV(
+      `excise-audit-packaging-runs-${fileTag}.csv`,
+      ["Month", "Packaged on", "Batch", "Beer", "Containers", "Litres", "ABV %", "ABV source", "LAL", "Brew date", "Tank", "Brewed (L)", "Loss (L)", "OG", "Month declared on TSW"],
+      ordered.flatMap((m) =>
+        [...m.rows]
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+          .map((r) => {
+            const d = auditRunDetail(r, batchById);
+            return [monthLabelFromKey(m.period), d.date, d.batch, d.beer, d.containers, d.litres, d.abv.toFixed(2), d.abvSource, d.lal.toFixed(3), d.brewDate, d.tank, d.brewedL ?? "", d.lossL ?? "", d.og ?? "", m.ret?.declaredOnTsw ? "Yes" : "No"];
+          })
+      )
+    );
+
+  const sel = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", fontSize: 13, color: "#2A3324" };
+  const th = { textAlign: "left", fontWeight: 600, padding: "4px 6px", borderBottom: "1px solid #C9D1AC", fontSize: 11, color: "#5C6B54", whiteSpace: "nowrap" };
+  const td = { padding: "3px 6px", borderBottom: "1px solid #EEF0E2", fontSize: 11.5, verticalAlign: "top" };
+  const num = { ...td, textAlign: "right", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" };
+
   return (
-    <div id="excise-audit-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto" }}>
+    <div id="excise-audit-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <style>{`
         @media print {
           body * { visibility: hidden; }
           #excise-audit-print, #excise-audit-print * { visibility: visible; }
-          #excise-audit-print { position: absolute; top: 0; left: 0; width: 100%; background: #FFFFFF; }
+          #excise-audit-print { position: absolute; top: 0; left: 0; width: 100%; background: #FFFFFF; overflow: visible; }
           .no-print { display: none !important; }
+          .audit-month { page-break-inside: avoid; }
         }
       `}</style>
-      <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
-        <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5 }}>
-          <X size={16} /> Close
-        </button>
-        <button onClick={() => window.print()} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}>
-          Print / Save as PDF
-        </button>
+      <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "calc(10px + env(safe-area-inset-top)) 16px 10px", zIndex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5, padding: 6 }}>
+            <X size={16} /> Close
+          </button>
+          <button onClick={() => window.print()} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}>
+            Print / Save as PDF
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: "#5C6B54" }}>
+          <span>From</span>
+          <select value={from} onChange={(e) => setFrom(e.target.value)} style={sel}>
+            {keys.map((k) => <option key={k} value={k}>{monthLabelFromKey(k)}</option>)}
+          </select>
+          <span>to</span>
+          <select value={to} onChange={(e) => setTo(e.target.value)} style={sel}>
+            {keys.map((k) => <option key={k} value={k}>{monthLabelFromKey(k)}</option>)}
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
+            <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#5C9A3C" }} />
+            Full breakdown
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={exportSummary} disabled={!ordered.length} style={{ ...auditSecondaryBtn, padding: "8px 12px", flex: "1 1 180px" }}>Spreadsheet — monthly summary</button>
+          <button onClick={exportRuns} disabled={!ordered.length} style={{ ...auditSecondaryBtn, padding: "8px 12px", flex: "1 1 180px" }}>Spreadsheet — every packaging run</button>
+        </div>
       </div>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "36px 28px 60px", color: "#1A1F16" }}>
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "30px 24px 60px", color: "#1A1F16" }}>
         <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5C6B54" }}>{companyName || "Brewery"}</div>
         <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 500, margin: "4px 0 6px" }}>Excise Self-Audit Report</h1>
-        <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 18 }}>Period: {periodRange} · Generated {today()}</div>
-        <div style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 22, color: "#2A3324" }}>
-          Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
+        <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 16 }}>Period: {periodRange} · Generated {today()}</div>
+        <div style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 18, color: "#2A3324" }}>
+          Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. LAL is litres × ABV cut to 3 decimals, as TSW calculates it. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 26, pageBreakInside: "avoid" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10, pageBreakInside: "avoid" }}>
           {[["Months", checked.length], ["Matching", count("ok")], ["Notes", count("check")], ["Attention", count("attention") + count("missing")]].map(([l, n]) => (
             <div key={l} style={{ border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
               <div style={{ fontSize: 20, fontFamily: "'JetBrains Mono', monospace" }}>{n}</div>
@@ -19783,36 +19902,101 @@ function ExciseAuditReport({ months, companyName, abvMethod, onClose }) {
             </div>
           ))}
         </div>
-        {ordered.map((m) => (
-          <div key={m.period} style={{ borderTop: "1px solid #DDE0C8", padding: "12px 0", fontSize: 12.5, pageBreakInside: "avoid" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <strong style={{ fontSize: 14 }}>{monthLabelFromKey(m.period)}</strong>
-              <AuditStatusPill status={m.status} />
-            </div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>
-              Packaged {fmtL(m.appLitres)} / {fmtLal(m.appLal)} · Declared {fmtL(m.ret?.declaredLitres)} / {fmtLal(m.ret?.declaredLal)}
-            </div>
-            {m.ret && (
-              <div style={{ color: "#5C6B54", marginTop: 3 }}>
-                Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{m.ret.declaredDuty != null ? ` · Duty $${Number(m.ret.declaredDuty).toFixed(2)}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
+        <div style={{ fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", marginBottom: 22, lineHeight: 1.6 }}>
+          Packaged {fmtL(totals.litres)} / {totals.lal.toFixed(3)} LAL · Declared {fmtL(totals.declaredLitres)} / {totals.declaredLal.toFixed(3)} LAL
+          {totals.duty ? ` · Declared duty $${totals.duty.toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} · {totals.ticked} of {ordered.length} months ticked as declared on TSW
+        </div>
+
+        {ordered.map((m) => {
+          const lines = tswLinesForRows(m.rows);
+          const runs = [...m.rows].sort((a, b) => String(a.date).localeCompare(String(b.date))).map((r) => auditRunDetail(r, batchById));
+          return (
+            <div key={m.period} className="audit-month" style={{ borderTop: "1px solid #DDE0C8", padding: "14px 0", fontSize: 12.5 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+                <strong style={{ fontSize: 15 }}>{monthLabelFromKey(m.period)}</strong>
+                <span style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {m.ret?.declaredOnTsw && <span style={{ background: "#E4F0DA", color: "#3F7A28", borderRadius: 999, padding: "3px 9px", fontSize: 11.5, fontWeight: 600 }}>✓ Declared on TSW</span>}
+                  <AuditStatusPill status={m.status} />
+                </span>
               </div>
-            )}
-            {(m.ret?.declaredLines || []).length > 0 && (
-              <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#2A3324" }}>
-                {exciseAbvComparison(m.rows, m.ret.declaredLines).map((r) => (
-                  <div key={r.abv} style={{ color: r.off ? "#B5502F" : "#2A3324" }}>
-                    {r.abv === "?" ? "Unknown ABV" : `${r.abv}%`}: packaged {fmtL(r.packedL)} · declared {fmtL(r.declaredL)}{r.off ? ` (${fmtDiffL(r.diff)})` : " ✓"}{r.beers.length ? ` — ${r.beers.join(", ")}` : ""}
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>
+                Packaged {fmtL(m.appLitres)} / {round3(m.appLal).toFixed(3)} LAL · Declared {fmtL(m.ret?.declaredLitres)} / {m.ret?.declaredLal != null ? Number(m.ret.declaredLal).toFixed(3) : "—"} LAL
+              </div>
+              {m.ret && (
+                <div style={{ color: "#5C6B54", marginTop: 3 }}>
+                  Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{m.ret.declaredDuty != null ? ` · Duty $${Number(m.ret.declaredDuty).toFixed(2)}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
+                  {m.ret.declaredOnTsw && m.ret.declaredOnTswAt ? ` · Ticked declared ${String(m.ret.declaredOnTswAt).slice(0, 10)}${m.ret.declaredOnTswBy ? ` by ${m.ret.declaredOnTswBy}` : ""}` : ""}
+                </div>
+              )}
+              {m.issues.map((iss, j) => (
+                <div key={j} style={{ color: iss.level === "red" ? "#B5502F" : "#8A6D0B", marginTop: 3 }}>• {iss.text}</div>
+              ))}
+              {m.ret?.varianceExplanation && <div style={{ marginTop: 3 }}>Explanation: {m.ret.varianceExplanation}</div>}
+              {m.ret?.reviewedBy && <div style={{ color: "#3F7A28", marginTop: 3 }}>Reviewed by {m.ret.reviewedBy} on {String(m.ret.reviewedAt || "").slice(0, 10)}</div>}
+
+              {full && lines.length > 0 && (
+                <>
+                  <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>TSW lines (from records)</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4 }}>
+                    <thead><tr><th style={th}>Product</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th><th style={{ ...th, textAlign: "right" }}>Rate</th><th style={{ ...th, textAlign: "right" }}>Duty</th></tr></thead>
+                    <tbody>
+                      {lines.map((l) => (
+                        <tr key={l.key}>
+                          <td style={td}>{l.name}</td>
+                          <td style={num}>{l.abv.toFixed(1)}</td>
+                          <td style={num}>{l.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 })}</td>
+                          <td style={num}>{l.lal.toFixed(3)}</td>
+                          <td style={num}>{l.band.basis === "alcohol" ? `$${l.rate}/LAL` : l.band.basis === "beverage" ? `$${l.rate}/L` : "—"}</td>
+                          <td style={num}>${l.duty.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              {(m.ret?.declaredLines || []).length > 0 && (
+                <>
+                  <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>Declared vs packaged, by strength</div>
+                  <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: "#2A3324" }}>
+                    {exciseAbvComparison(m.rows, m.ret.declaredLines).map((r) => (
+                      <div key={r.abv} style={{ color: r.off ? "#B5502F" : "#2A3324" }}>
+                        {r.abv === "?" ? "Unknown ABV" : `${r.abv}%`}: packaged {fmtL(r.packedL)} · declared {fmtL(r.declaredL)}{r.off ? ` (${fmtDiffL(r.diff)})` : " ✓"}{r.beers.length ? ` — ${r.beers.join(", ")}` : ""}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-            {m.issues.map((iss, j) => (
-              <div key={j} style={{ color: iss.level === "red" ? "#B5502F" : "#8A6D0B", marginTop: 3 }}>• {iss.text}</div>
-            ))}
-            {m.ret?.varianceExplanation && <div style={{ marginTop: 3 }}>Explanation: {m.ret.varianceExplanation}</div>}
-            {m.ret?.reviewedBy && <div style={{ color: "#3F7A28", marginTop: 3 }}>Reviewed by {m.ret.reviewedBy} on {String(m.ret.reviewedAt || "").slice(0, 10)}</div>}
-          </div>
-        ))}
+                </>
+              )}
+
+              {full && runs.length > 0 && (
+                <>
+                  <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>Packaging runs</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4 }}>
+                    <thead><tr><th style={th}>Date</th><th style={th}>Batch</th><th style={th}>Packaged as</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>ABV</th><th style={{ ...th, textAlign: "right" }}>LAL</th></tr></thead>
+                    <tbody>
+                      {runs.map((d, j) => (
+                        <tr key={j}>
+                          <td style={{ ...td, whiteSpace: "nowrap" }}>{d.date}</td>
+                          <td style={td}>
+                            {d.batch} {d.beer}
+                            <div style={{ fontSize: 10.5, color: "#5C6B54" }}>
+                              {[d.brewDate && `brewed ${d.brewDate}`, d.tank, d.brewedL && `${d.brewedL} L brewed`, d.lossL != null && `${d.lossL} L loss`, d.og && `OG ${Number(d.og).toFixed(3)}`].filter(Boolean).join(" · ")}
+                            </div>
+                          </td>
+                          <td style={td}>{d.containers}</td>
+                          <td style={num}>{d.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 })}</td>
+                          <td style={num}>{d.abv.toFixed(1)}%{d.abvSource === "measured" ? "*" : ""}</td>
+                          <td style={num}>{d.lal.toFixed(3)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {runs.some((d) => d.abvSource === "measured") && <div style={{ fontSize: 10.5, color: "#8A6D0B", marginTop: 3 }}>* measured ABV — no label strength recorded</div>}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -19938,7 +20122,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
             ))}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-            <button onClick={() => setShowReport(true)} style={auditSecondaryBtn}>Audit report (PDF)</button>
+            <button onClick={() => setShowReport(true)} style={auditSecondaryBtn}>Audit report &amp; export</button>
             <button onClick={exportCsv} style={auditSecondaryBtn}>Export audit pack (CSV)</button>
           </div>
           <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden", marginBottom: 12 }}>
@@ -20016,7 +20200,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
           onSaveGroup={(g, opts) => onImportGroup(g, monthsByPeriod[g.period] || { period: g.period, appLitres: 0, appLal: 0 }, opts)}
         />
       )}
-      {showReport && <ExciseAuditReport months={months} companyName={companyName} abvMethod={abvMethod} onClose={() => setShowReport(false)} />}
+      {showReport && <ExciseAuditReport months={months} batches={batches} companyName={companyName} abvMethod={abvMethod} onClose={() => setShowReport(false)} />}
     </div>
   );
 }
@@ -24485,7 +24669,7 @@ function OfflineBanner() {
   );
 }
 
-const APP_VERSION = "2026-11-10-293";
+const APP_VERSION = "2026-11-10-294";
 
 function UpdateBanner({ onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
