@@ -1309,6 +1309,19 @@ function compareScheduleItems(a, b) {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
+// Inventory items are matched by name. Ignore case, stray spaces and
+// doubled-up spaces, so "Citra " and "citra" don't become two items.
+const normItemName = (n) => String(n || "").trim().replace(/\s+/g, " ").toLowerCase();
+const sameItemName = (a, b) => normItemName(a) === normItemName(b);
+// How to turn a quantity in one unit into another (only within weight or volume).
+const UNIT_TO_BASE = { kg: ["mass", 1000], g: ["mass", 1], L: ["vol", 1000], mL: ["vol", 1], ml: ["vol", 1] };
+function unitFactor(from, to) {
+  if (from === to) return 1;
+  const a = UNIT_TO_BASE[from];
+  const b = UNIT_TO_BASE[to];
+  if (!a || !b || a[0] !== b[0]) return null;
+  return a[1] / b[1];
+}
 
 const HELP_ARTICLES = [
   {
@@ -3521,7 +3534,7 @@ function findMissingIngredients(ingredientLines, inventory) {
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    const exists = inventory.some((it) => it.name.trim().toLowerCase() === key);
+    const exists = inventory.some((it) => sameItemName(it.name, name));
     if (!exists) missing.push({ name, category: l.category, unit: l.unit });
   });
   return missing;
@@ -8067,7 +8080,90 @@ function RenameModal({ title, currentName, onClose, onSave }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails, onDeleteHistoryEntry }) {
+// Words in a name, for spotting likely duplicates ("Gladfield Pilsner Malt" / "Pilsner Malt").
+const nameWords = (n) => new Set(normItemName(n).replace(/[^a-z0-9 ]/g, " ").split(" ").filter((w) => w.length > 2 && !["malt", "the", "bag", "kg"].includes(w)));
+function nameSimilarity(a, b) {
+  const A = nameWords(a);
+  const B = nameWords(b);
+  if (!A.size || !B.size) return 0;
+  let common = 0;
+  A.forEach((w) => B.has(w) && common++);
+  return common / Math.min(A.size, B.size);
+}
+
+function MergeInventoryModal({ item, candidates, onClose, onMerge }) {
+  const [query, setQuery] = useState("");
+  const [targetId, setTargetId] = useState("");
+  const [keep, setKeep] = useState("other"); // which name survives: "other" keeps the chosen item, "this" keeps this one
+  const [busy, setBusy] = useState(false);
+  const scored = candidates
+    .map((c) => ({ c, score: nameSimilarity(item.name, c.name) + (c.category === item.category ? 0.2 : 0) }))
+    .filter(({ c }) => !query.trim() || normItemName(c.name).includes(normItemName(query)))
+    .sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name));
+  const shown = query.trim() ? scored : scored.slice(0, 12);
+  const target = candidates.find((c) => c.id === targetId) || null;
+  const source = target ? (keep === "other" ? item : target) : null;
+  const kept = target ? (keep === "other" ? target : item) : null;
+  const factor = target ? unitFactor(source.unit, kept.unit) : 1;
+  const row = (selected) => ({ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: selected ? "#EBF3E4" : "#FFFFFF", border: `1px solid ${selected ? "#9BC48A" : "#DDE0C8"}`, borderRadius: 5, padding: "9px 11px", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#2A3324" });
+  return (
+    <Modal title={`Merge ${item.name}`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
+          Pick the item this is a duplicate of. Stock, lots and history are combined into one item, recipes, batches and purchase orders are switched to the kept name, and the other item is removed.
+        </div>
+        <TextField label="Search" value={query} onChange={setQuery} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+          {shown.map(({ c, score }) => (
+            <button key={c.id} type="button" onClick={() => setTargetId(c.id)} style={row(c.id === targetId)}>
+              <span>
+                {c.name}
+                <span style={{ display: "block", fontSize: 11, color: "#9BA88A" }}>{c.category}{score >= 0.7 ? " · looks like a match" : ""}</span>
+              </span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5C6B54", whiteSpace: "nowrap" }}>{c.qty}{c.unit}</span>
+            </button>
+          ))}
+          {shown.length === 0 && <div style={{ fontSize: 12.5, color: "#9BA88A" }}>No items match.</div>}
+        </div>
+        {target && (
+          <>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>Name to keep</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[["other", target.name], ["this", item.name]].map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setKeep(k)} style={{ ...row(keep === k), justifyContent: "center", flex: 1 }}>{label}</button>
+              ))}
+            </div>
+            {factor == null ? (
+              <div style={{ fontSize: 12.5, color: "#B5502F", lineHeight: 1.5 }}>
+                These can't be merged: {source.name} is counted in {source.unit} and {kept.name} in {kept.unit}. Change one item's unit first.
+              </div>
+            ) : (
+              <div style={{ fontSize: 12.5, color: "#2A3324", lineHeight: 1.5, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+                {source.name} ({source.qty}{source.unit}) goes into <strong>{kept.name}</strong>, which ends up with{" "}
+                <strong>{Math.round((Number(kept.qty) + Number(source.qty || 0) * factor) * 1000) / 1000}{kept.unit}</strong>. {source.name} is then removed. This can't be undone.
+              </div>
+            )}
+          </>
+        )}
+        <button
+          disabled={!target || factor == null || busy}
+          onClick={async () => {
+            setBusy(true);
+            const ok = await onMerge(source, kept);
+            setBusy(false);
+            if (ok) onClose();
+          }}
+          style={{ background: !target || factor == null ? "#DDE0C8" : "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: !target || factor == null ? "default" : "pointer" }}
+        >
+          {busy ? "Merging…" : target ? `Merge into ${kept.name}` : "Pick an item to merge with"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails, onDeleteHistoryEntry, mergeCandidates, onMerge }) {
+  const [showMerge, setShowMerge] = useState(false);
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
     const history = [...(item.history || [])].reverse();
@@ -8326,6 +8422,15 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
         )}
       </div>
 
+      {onMerge && mergeCandidates && mergeCandidates.length > 0 && (
+        <button
+          onClick={() => setShowMerge(true)}
+          style={{ width: "100%", background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "11px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer", marginTop: 26 }}
+        >
+          Merge with another item…
+        </button>
+      )}
+      {showMerge && <MergeInventoryModal item={item} candidates={mergeCandidates} onClose={() => setShowMerge(false)} onMerge={onMerge} />}
       {onDelete && (
         <button
           onClick={() => onDelete(item)}
@@ -11513,7 +11618,7 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
 function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple, inventory, onDelete, onExtractDocument, onEdit, allPOs }) {
   const [showReceive, setShowReceive] = useState(false);
   const batchesForLine = (lineName, lotNumber) => {
-    const item = inventory.find((it) => it.name.toLowerCase() === lineName.toLowerCase());
+    const item = inventory.find((it) => sameItemName(it.name, lineName));
     if (!item || !item.history) return [];
     const targetLot = lotNumber || "no lot #";
     const notes = item.history
@@ -12342,7 +12447,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
                     </>
                   )}
                   {line.name.trim().length > 0 &&
-                    !inventory.some((it) => it.name.toLowerCase() === line.name.trim().toLowerCase()) && (
+                    !inventory.some((it) => sameItemName(it.name, line.name)) && (
                       <button
                         onMouseDown={() => {
                           const newName = line.name.trim();
@@ -12866,7 +12971,7 @@ function MissingIngredientsModal({ missing, sourceLabel, inventory, onClose, onA
 
 function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, onSwitchVersion, onEdit, onSetActive, onScale, onCheckIngredients }) {
   const shortages = recipe.ingredients.filter((ing) => {
-    const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+    const stock = inventory.find((it) => sameItemName(it.name, ing.name));
     return !stock || stock.qty < ing.qty;
   });
 
@@ -12982,7 +13087,7 @@ function RecipeDetail({ recipe, inventory, onBack, onBrew, onDelete, versions, o
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
         {recipe.ingredients.map((ing) => {
-          const stock = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+          const stock = inventory.find((it) => sameItemName(it.name, ing.name));
           const short = !stock || stock.qty < ing.qty;
           return (
             <div
@@ -13621,7 +13726,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       : inventory.filter((it) => it.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   const stockFor = (ingName) => {
-    const item = inventory.find((it) => it.name.toLowerCase() === ingName.toLowerCase());
+    const item = inventory.find((it) => sameItemName(it.name, ingName));
     return item ? item.qty : null;
   };
 
@@ -14269,7 +14374,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                             </button>
                           ))}
                           {ing.name.trim().length > 0 &&
-                            !inventory.some((it) => it.name.toLowerCase() === ing.name.trim().toLowerCase()) && (
+                            !inventory.some((it) => sameItemName(it.name, ing.name)) && (
                               <button
                                 onMouseDown={() => {
                                   const newName = ing.name.trim();
@@ -14332,7 +14437,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
                     </div>
                   )}
                   {(() => {
-                    const matchedItem = inventory.find((it) => it.name.toLowerCase() === ing.name.trim().toLowerCase());
+                    const matchedItem = inventory.find((it) => sameItemName(it.name, ing.name));
                     const availableLots = matchedItem ? (matchedItem.lots || []).filter((l) => (l.remainingQty ?? l.qty) > 0) : [];
                     if (availableLots.length <= 1) return null;
                     return (
@@ -19092,7 +19197,7 @@ function ingredientsNeededForScheduled(batches, recipes, inventory) {
   });
   return Object.values(needed)
     .map((n) => {
-      const item = inventory.find((it) => it.name.toLowerCase() === n.name.toLowerCase());
+      const item = inventory.find((it) => sameItemName(it.name, n.name));
       const available = item ? item.qty : 0;
       const shortfall = Math.max(0, Math.round((n.totalQty - available) * 100) / 100);
       return { ...n, totalQty: Math.round(n.totalQty * 100) / 100, available, shortfall, inStock: !!item };
@@ -26808,7 +26913,7 @@ function TankLogApp() {
     const plannedUpdates = [];
     if (b.ingredients && b.ingredients.length > 0) {
       for (const ing of b.ingredients) {
-        const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+        const item = inventory.find((it) => sameItemName(it.name, ing.name));
         if (!item) continue;
 
         const { updatedLots, lotsUsed, cost } = deductFromLotsFIFO(item.lots, ing.qty, ing.preferredLotId);
@@ -26831,7 +26936,7 @@ function TankLogApp() {
     (b.splitTanks || []).forEach((t) => resetTankClean(t.tankId, b));
 
     for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
-      const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => i.name.toLowerCase() === item.name.toLowerCase())?.qty || 0)) * 100) / 100);
+      const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => sameItemName(i.name, item.name))?.qty || 0)) * 100) / 100);
       const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
       const historyEntry = {
         id: uid(),
@@ -28428,7 +28533,7 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, splitTanks: newSplitTanks } : b)));
 
-    const item = inventory.find((it) => it.name.toLowerCase() === entry.name.toLowerCase());
+    const item = inventory.find((it) => sameItemName(it.name, entry.name));
     if (item) {
       const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
       const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
@@ -28453,7 +28558,7 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, batchAdditions: newAdditions } : b)));
 
-    const item = inventory.find((it) => it.name.toLowerCase() === entry.name.toLowerCase());
+    const item = inventory.find((it) => sameItemName(it.name, entry.name));
     if (item) {
       const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
       const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
@@ -28523,7 +28628,7 @@ function TankLogApp() {
     let addedCost = 0;
     const inventoryUpdates = [];
     for (const ing of entry.ingredients) {
-      const item = inventory.find((it) => it.name.toLowerCase() === ing.name.toLowerCase());
+      const item = inventory.find((it) => sameItemName(it.name, ing.name));
       if (!item) continue;
       const { updatedLots, cost } = deductFromLotsFIFO(item.lots, ing.qty);
       addedCost += cost;
@@ -28599,7 +28704,7 @@ function TankLogApp() {
     let nextInventory = [...inventory];
     let successCount = 0;
     for (const line of lines) {
-      let item = nextInventory.find((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      let item = nextInventory.find((it) => sameItemName(it.name, line.name));
       if (!item) {
         const newItemPayload = { id: uid(), name: line.name, category: line.category, qty: 0, unit: line.unit, threshold: 0 };
         const { data, error } = await supabase.from("inventory_items").insert(inventoryItemToRow(newItemPayload, user.id, profile.companyId)).select().single();
@@ -28625,7 +28730,7 @@ function TankLogApp() {
     let nextConsumables = [...consumables];
     let successCount = 0;
     for (const line of lines) {
-      let item = nextConsumables.find((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      let item = nextConsumables.find((it) => sameItemName(it.name, line.name));
       if (!item) {
         const newItemPayload = { id: uid(), name: line.name, category: line.category, qty: 0, unit: line.unit, threshold: 0 };
         const { data, error } = await supabase.from("consumables").insert(consumableToRow(newItemPayload, user.id, profile.companyId)).select().single();
@@ -28659,6 +28764,65 @@ function TankLogApp() {
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
     setInventory((prev) => prev.map((it) => (it.id === itemId ? { ...it, qty: newQty, lots: newLots, history: newHistory } : it)));
     showToast("success", `Lot ${entry.lotNumber} added.`);
+  };
+
+  // Folds a duplicate item into the one you're keeping: its stock, lots and
+  // history move across (converted if one is kg and the other g, etc.),
+  // every recipe, batch and purchase order line that used its name is
+  // pointed at the kept item, then the duplicate is removed.
+  const mergeInventoryItems = async (source, target) => {
+    const factor = unitFactor(source.unit, target.unit);
+    if (factor == null || source.id === target.id) return false;
+    const conv = (n) => (n == null || n === "" ? n : Math.round(Number(n) * factor * 1000) / 1000);
+    const movedLots = (source.lots || []).map((l) => ({
+      ...l,
+      qty: conv(l.qty),
+      remainingQty: conv(l.remainingQty),
+      ...(l.unitCost != null ? { unitCost: Number(l.unitCost) / factor } : {}),
+    }));
+    const movedHistory = (source.history || []).map((h) => ({ ...h, delta: conv(h.delta), note: [h.note, `from ${source.name}`].filter(Boolean).join(" · ") }));
+    const mergeEntry = { id: uid(), date: new Date().toISOString(), user: user.name, type: "manual", delta: 0, note: `Merged ${source.name} (${source.qty}${source.unit}) into this item` };
+    const qty = Math.round((Number(target.qty) + Number(source.qty || 0) * factor) * 1000) / 1000;
+    const lots = [...(target.lots || []), ...movedLots];
+    const history = [...(target.history || []), ...movedHistory, mergeEntry].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const supplierId = target.supplierId || source.supplierId || null;
+    const { error } = await supabase.from("inventory_items").update({ qty, lots, history, supplier_id: supplierId }).eq("id", target.id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+
+    // Point every line that used the duplicate's name at the kept item.
+    const fixLines = (lines) => {
+      let changed = false;
+      const next = (lines || []).map((l) => {
+        if (!l || !sameItemName(l.name, source.name)) return l;
+        changed = true;
+        const f = l.unit ? unitFactor(l.unit, target.unit) : null;
+        return f != null && l.unit === source.unit && source.unit !== target.unit
+          ? { ...l, name: target.name, qty: Math.round(Number(l.qty || 0) * f * 1000) / 1000, unit: target.unit }
+          : { ...l, name: target.name };
+      });
+      return changed ? next : null;
+    };
+    const recipeUpdates = recipes.map((r) => ({ r, ing: fixLines(r.ingredients) })).filter((x) => x.ing);
+    const batchUpdates = batches.map((b) => ({ b, ing: fixLines(b.ingredients) })).filter((x) => x.ing);
+    const poUpdates = purchaseOrders.map((po) => ({ po, lines: fixLines(po.lines) })).filter((x) => x.lines);
+    for (const { r, ing } of recipeUpdates) await supabase.from("recipes").update({ ingredients: ing }).eq("id", r.id);
+    for (const { b, ing } of batchUpdates) await supabase.from("batches").update({ ingredients: ing }).eq("id", b.id);
+    for (const { po, lines } of poUpdates) await supabase.from("purchase_orders").update({ lines }).eq("id", po.id);
+    const { error: delError } = await supabase.from("inventory_items").delete().eq("id", source.id);
+    if (delError) showToast("error", `Stock moved across, but ${source.name} couldn't be removed — delete it by hand.`);
+
+    const rMap = Object.fromEntries(recipeUpdates.map((x) => [x.r.id, x.ing]));
+    const bMap = Object.fromEntries(batchUpdates.map((x) => [x.b.id, x.ing]));
+    const pMap = Object.fromEntries(poUpdates.map((x) => [x.po.id, x.lines]));
+    setRecipes((prev) => prev.map((r) => (rMap[r.id] ? { ...r, ingredients: rMap[r.id] } : r)));
+    setBatches((prev) => prev.map((b) => (bMap[b.id] ? { ...b, ingredients: bMap[b.id] } : b)));
+    setPurchaseOrders((prev) => prev.map((po) => (pMap[po.id] ? { ...po, lines: pMap[po.id] } : po)));
+    setInventory((prev) => prev.filter((it) => delError || it.id !== source.id).map((it) => (it.id === target.id ? { ...it, qty, lots, history, supplierId } : it)));
+    setSelectedInventoryId(target.id);
+    const refs = recipeUpdates.length + batchUpdates.length + poUpdates.length;
+    logActivity("updated", "inventory", target.name, `Merged ${source.name} into ${target.name}`);
+    showToast("success", `Merged ${source.name} into ${target.name}${refs ? ` — ${refs} recipe/batch/PO record${refs === 1 ? "" : "s"} updated` : ""}.`);
+    return true;
   };
 
   const deleteInventoryItem = (item) => {
@@ -28988,7 +29152,7 @@ function TankLogApp() {
       const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
       const costPerUnit = effectiveCost(line);
       finalizedLines.push({ ...line, lotNumber, costPerUnit });
-      const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      const idx = nextInventory.findIndex((it) => sameItemName(it.name, line.name));
       const lineValue = (line.qty || 0) * (costPerUnit || 0);
       const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
       const unitCost = costPerUnit != null ? costPerUnit + (line.qty > 0 ? deliveryShare / line.qty : 0) : null;
@@ -29059,7 +29223,7 @@ function TankLogApp() {
       const costPerUnit = effectiveCost(line);
       const { _poId, ...cleanLine } = line;
       finalizedLinesByPO[line._poId].push({ ...cleanLine, lotNumber, costPerUnit });
-      const idx = nextInventory.findIndex((it) => it.name.toLowerCase() === line.name.toLowerCase());
+      const idx = nextInventory.findIndex((it) => sameItemName(it.name, line.name));
       const lineValue = (line.qty || 0) * (costPerUnit || 0);
       const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
       deliverySharesByPO[line._poId] += deliveryShare;
@@ -32161,6 +32325,8 @@ function TankLogApp() {
             onChangeSupplier={updateInventorySupplier}
             onDelete={isOwner ? deleteInventoryItem : undefined}
             onRename={renameInventoryItem}
+            mergeCandidates={inventory.filter((it) => it.id !== selectedInventoryItem.id)}
+            onMerge={mergeInventoryItems}
             onAddLot={addManualLot}
             categories={CATEGORIES}
             onEditDetails={updateInventoryItemDetails}
