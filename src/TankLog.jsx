@@ -13369,12 +13369,33 @@ function StageDateModal({ title, confirmLabel, onClose, onConfirm }) {
   );
 }
 
+// Counts open modals so stacked ones (e.g. a confirm over a form) only
+// unlock page scrolling once the last one closes.
+let openModalCount = 0;
+let savedBodyOverflow = "";
+
 function Modal({ title, onClose, children }) {
+  // Stop the page behind from scrolling while a modal is open. On iPhone
+  // the swipe otherwise gets shared between the page and the modal, which
+  // makes long modals (like checklists) feel sticky to scroll.
+  useEffect(() => {
+    if (openModalCount === 0) {
+      savedBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    openModalCount += 1;
+    return () => {
+      openModalCount -= 1;
+      if (openModalCount === 0) document.body.style.overflow = savedBodyOverflow;
+    };
+  }, []);
+
   return (
     <div
       style={{
         position: "fixed",
         inset: 0,
+        overscrollBehavior: "contain",
         background: "rgba(10,12,11,0.7)",
         display: "flex",
         alignItems: "center",
@@ -13397,8 +13418,11 @@ function Modal({ title, onClose, children }) {
           borderRadius: 10,
           width: "100%",
           maxWidth: 480,
-          maxHeight: "88vh",
+          maxHeight: "88dvh",
           overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+          touchAction: "pan-y",
           padding: "20px 22px 26px",
           animation: "bp-modal-panel-in 180ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
