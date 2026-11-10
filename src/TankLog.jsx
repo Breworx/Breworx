@@ -13568,6 +13568,23 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
 
   const activeRecipe = recipes.find((r) => r.id === recipeId) || null;
 
+  // How far the ingredients and hop schedule have been scaled from the
+  // recipe's own amounts. Scaling multiplies what's in the form now, so
+  // any edits or extra rows are kept and scaled along with everything else.
+  const [scaleFactor, setScaleFactor] = useState(1);
+  const recipeVolume = activeRecipe ? Number(activeRecipe.volume) || 0 : 0;
+  const scaleTo = (targetVolume) => {
+    const target = Number(targetVolume);
+    if (!recipeVolume || !(target > 0)) return;
+    const next = target / recipeVolume;
+    const step = next / scaleFactor;
+    const r3 = (n) => Math.round(n * 1000) / 1000;
+    setBatchIngredients((prev) => prev.map((ing) => ({ ...ing, qty: r3((Number(ing.qty) || 0) * step) })));
+    setBatchSchedule((prev) => prev.map((s) => (s.amount == null || s.amount === "" ? s : { ...s, amount: r3((Number(s.amount) || 0) * step) })));
+    setScaleFactor(next);
+    setVolume(target);
+  };
+
   const applyRecipe = (id) => {
     setRecipeId(id);
     const r = recipes.find((rec) => rec.id === id);
@@ -13580,6 +13597,7 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
       setFg(r.fg);
       setBatchIngredients(r.ingredients.map((i) => ({ ...i })));
       setBatchSchedule((r.schedule || []).map((s) => ({ ...s, done: false, doneAt: null })));
+      setScaleFactor(1);
     }
   };
 
@@ -14083,6 +14101,42 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           <NumberField label="Original gravity" value={og} onChange={setOg} step="0.001" />
           <NumberField label="Target FG" value={fg} onChange={setFg} step="0.001" />
         </div>
+        {activeRecipe && recipeVolume > 0 && (() => {
+          const vol = Number(volume) || 0;
+          const scaledVol = Math.round(recipeVolume * scaleFactor * 1000) / 1000;
+          const inStep = Math.abs(vol - scaledVol) < 0.001;
+          const factorText = (f) => `×${Math.round(f * 100) / 100}`;
+          const chip = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 999, padding: "6px 12px", fontSize: 12.5, color: "#2A3324", cursor: "pointer", fontFamily: "'Inter', sans-serif" };
+          return (
+            <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+              <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>Scale batch</div>
+              <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.45, marginBottom: 8 }}>
+                {inStep
+                  ? scaleFactor === 1
+                    ? `Recipe amounts, for ${recipeVolume}L. Change the volume above or pick a size to scale ingredients and hop additions.`
+                    : `Ingredients and hop additions scaled to ${scaledVol}L (${factorText(scaleFactor)} the recipe's ${recipeVolume}L).`
+                  : `Volume is ${vol}L but ingredients are still for ${scaledVol}L.`}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {!inStep && vol > 0 && (
+                  <button type="button" onClick={() => scaleTo(vol)} style={{ ...chip, background: "#5C9A3C", border: "1px solid #5C9A3C", color: "#16191A", fontWeight: 500 }}>
+                    Scale to {vol}L ({factorText(vol / recipeVolume)})
+                  </button>
+                )}
+                {[0.5, 2].map((f) => (
+                  <button key={f} type="button" onClick={() => scaleTo(recipeVolume * f)} style={chip}>
+                    {factorText(f)} · {Math.round(recipeVolume * f * 10) / 10}L
+                  </button>
+                ))}
+                {scaleFactor !== 1 && (
+                  <button type="button" onClick={() => scaleTo(recipeVolume)} style={chip}>
+                    Back to recipe ({recipeVolume}L)
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {(yeastHarvests || []).filter((h) => !h.used).length > 0 && (
           <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
             <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
