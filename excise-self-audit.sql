@@ -138,3 +138,8 @@ alter table public.excise_returns add column if not exists declared_on_tsw_by te
 -- force for that period), since TSW charges both on top of the duty.
 alter table public.excise_returns add column if not exists declared_levy numeric;
 alter table public.excise_returns add column if not exists declared_levy_gst numeric;
+
+-- Cider page: juice intake and blend records per batch (back_sweetenings already existed).
+alter table public.batches add column if not exists juice_intake jsonb not null default '[]'::jsonb;
+alter table public.batches add column if not exists blend_log jsonb not null default '[]'::jsonb;
+alter table public.batches alter column split_group_id type text using split_group_id::text;
