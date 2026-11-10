@@ -129,7 +129,8 @@ export function planBrews({ batches, stockByKey, tanks, settings, todayStr }) {
     const learnedCover = Math.round(Math.min(s.baseCoverWeeks * 2, s.baseCoverWeeks * (1 + 0.5 * cv)) * 2) / 2;
     const ratePerDay = p.soldInPeriod / periodDays;
     const leadDays = Math.round(ps.leadDays ?? learnedLead ?? latest?.plannedDays ?? 14);
-    const batchL = ps.batchL ?? learnedBatch ?? s.kitLitres;
+    // One brew size for every beer when set; a beer's own size still wins.
+    const batchL = ps.batchL ?? s.defaultBatchL ?? learnedBatch ?? s.kitLitres;
     const coverWeeks = ps.coverWeeks ?? learnedCover;
 
     // What's coming: in tank now, and already scheduled.

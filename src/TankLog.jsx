@@ -14490,6 +14490,7 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
               {[2, 3, 4, 5, 6, 8].map((w) => <option key={w} value={w}>{w} weeks</option>)}
             </select>
           </label>
+          <PlannerNumber label="Brew size, every beer (L)" value={s.defaultBatchL ?? null} onCommit={(v) => save({ defaultBatchL: v })} step="10" />
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Brews per day</span>
             <select value={s.brewsPerDay} onChange={(e) => save({ brewsPerDay: Number(e.target.value) })} style={sel}>
@@ -14582,7 +14583,7 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
                       <PlannerNumber label="Brew L" value={ps.batchL ?? p.batchL} onCommit={(v) => (v == null ? clearProduct(p.key, "batchL") : saveProduct(p.key, { batchL: v }))} step="10" />
                     </div>
                     <div style={note}>
-                      From history: cover {p.learnedCover} wk{p.cv ? ` (sales vary ${Math.round(p.cv * 100)}% month to month)` : ""}, lead {p.learnedLead != null ? `${Math.round(p.learnedLead)} days brew to packaged` : "not enough history (using 14)"}, brew {p.learnedBatch != null ? `${p.learnedBatch}L` : "—"}, {Math.round(p.yieldF * 100)}% of tank volume ends up packaged.
+                      {s.defaultBatchL ? `Brew size follows the ${s.defaultBatchL}L setting unless you change it here. ` : ""}From history: cover {p.learnedCover} wk{p.cv ? ` (sales vary ${Math.round(p.cv * 100)}% month to month)` : ""}, lead {p.learnedLead != null ? `${Math.round(p.learnedLead)} days brew to packaged` : "not enough history (using 14)"}, brew {p.learnedBatch != null ? `${p.learnedBatch}L` : "—"}, {Math.round(p.yieldF * 100)}% of tank volume ends up packaged.
                       {(ps.coverWeeks != null || ps.leadDays != null || ps.batchL != null) && (
                         <button type="button" onClick={() => save({ products: { ...s.products, [p.key]: { include: ps.include, combineInto: ps.combineInto } } })} style={{ background: "none", border: "none", color: "#5C9A3C", textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 6 }}>
                           Use history again
