@@ -14348,8 +14348,12 @@ function brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies) {
         volume: Number(b.volume) || 0,
         stage: b.stage,
         remainingL: remainingVolume(b),
-        packagedEvents: packagingEvents(b).map((e) => ({ date: e.date || b.startDate, litres: packagedVolume(e) })),
-        xeroSold: (b.xeroSold || []).map((e) => ({ date: e.date, litres: litresOf(e.containerKey, e.qty) })),
+        packagedEvents: packagingEvents(b).map((e) => ({
+          date: e.date || b.startDate,
+          litres: packagedVolume(e),
+          byContainer: Object.fromEntries(CONTAINERS.filter((c) => e[c.key] > 0).map((c) => [c.key, e[c.key] * c.volumeL])),
+        })),
+        xeroSold: (b.xeroSold || []).map((e) => ({ date: e.date, litres: litresOf(e.containerKey, e.qty), containerKey: e.containerKey })),
         plannedDays: b.plannedDays || null,
         tankIds: batchTankIds(b),
         recipeId: b.recipeId || null,
@@ -14357,12 +14361,16 @@ function brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies) {
       };
     });
   const stockByKey = {};
+  const stockByKeyContainer = {};
   availableStockList(batches, salesOrders, mixedPackAssemblies).forEach((s) => {
     const key = keyById[s.batchId];
     if (!key || !(s.available > 0)) return;
-    stockByKey[key] = (stockByKey[key] || 0) + litresOf(s.containerKey, s.available);
+    const l = litresOf(s.containerKey, s.available);
+    stockByKey[key] = (stockByKey[key] || 0) + l;
+    const by = stockByKeyContainer[key] || (stockByKeyContainer[key] = {});
+    by[s.containerKey] = (by[s.containerKey] || 0) + l;
   });
-  return { list, stockByKey };
+  return { list, stockByKey, stockByKeyContainer };
 }
 
 const fmtWeeks = (w) => (w == null ? "—" : w >= 52 ? "52+ wk" : `${Math.round(w * 10) / 10} wk`);
@@ -14396,8 +14404,8 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
   const [added, setAdded] = useState({}); // suggestion id -> true
   const [busy, setBusy] = useState(false);
   const plan = useMemo(() => {
-    const { list, stockByKey } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
-    return planBrews({ batches: list, stockByKey, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
+    const { list, stockByKey, stockByKeyContainer } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
+    return planBrews({ batches: list, stockByKey, stockByKeyContainer, containers: CONTAINERS, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
   }, [batches, recipes, tanks, salesOrders, mixedPackAssemblies, JSON.stringify(settings || {})]);
   const save = (patch) => onSaveSettings({ ...s, ...patch });
   const saveProduct = (key, patch) => save({ products: { ...s.products, [key]: { ...(s.products[key] || {}), ...patch } } });
@@ -14533,6 +14541,11 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
                   <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 2, lineHeight: 1.45 }}>
                     {sug.volume}L{sug.brewDays > 1 ? ` (${sug.brewDays} brew days)` : ""} → {sug.tanks.length ? sug.tanks.map((t) => (sug.tanks.length > 1 ? `${t.tankName} ${t.volume}L` : t.tankName)).join(" + ") : "no free tank"} · ready {fmtDay(sug.readyDate)}
                   </div>
+                  {sug.split && sug.split.length > 0 && (
+                    <div style={{ fontSize: 12, color: "#2A3324", marginTop: 3 }}>
+                      Pack: {sug.split.map((x) => (x.containerKey === "cans330" ? `${x.units} cans (${x.units / 24} cases)` : `${x.units} × ${x.label}`)).join(" · ")}
+                    </div>
+                  )}
                   {sug.delayDays > 0 && <div style={{ fontSize: 11.5, color: "#8A6D0B", marginTop: 2 }}>Wanted {fmtDay(sug.needDate)} — {sug.delayDays} day{sug.delayDays > 1 ? "s" : ""} later for a free tank or brew day.</div>}
                   {sug.runOut && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>Packaged stock runs out around {fmtDay(sug.runOut)}, before this is ready.</div>}
                   {sug.noTank && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>No fermenter is free for {sug.leadDays} days within 2 months of {fmtDay(sug.needDate)}.</div>}
@@ -14564,6 +14577,13 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
                     {p.name}
                     <span style={{ display: "block", fontSize: 11.5, color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>
                       {Math.round(p.ratePerWeek)} L/wk · {Math.round(p.stockL)}L packaged · {Math.round(p.inTankL + p.scheduledL)}L in tank/scheduled
+                      {(() => {
+                        const sold = p.soldByContainer || {};
+                        const t = Object.values(sold).reduce((a, b) => a + b, 0);
+                        if (!t) return null;
+                        const cans = Math.round(((sold.cans330 || 0) / t) * 100);
+                        return <span style={{ display: "block" }}>Sold {cans}% cans · {100 - cans}% kegs</span>;
+                      })()}
                     </span>
                   </span>
                   <span style={{ fontSize: 12.5, color: low ? "#B5502F" : "#3F7A28", whiteSpace: "nowrap", textAlign: "right" }}>
