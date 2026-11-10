@@ -13781,13 +13781,559 @@ function ConfirmDialogModal({ title = "Are you sure?", message, confirmLabel = "
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, presetName, yeastHarvests, onUseHarvest }) {
+// ─── Cider ──────────────────────────────────────────────────────────────────
+// Juice intake, additions, blending and back-sweetening for Cider/Perry
+// batches. The maths is standard cider-making practice; every figure is a
+// starting point to check against your own measurements and product labels.
+
+const CIDER_TYPE = "Cider/Perry";
+const cnum = (v) => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+const r1 = (n) => Math.round(n * 10) / 10;
+const r3c = (n) => Math.round(n * 1000) / 1000;
+const brixToSg = (brix) => 1 + brix / (258.6 - (brix / 258.2) * 227.1);
+const sgToBrix = (sg) => -616.868 + 1111.14 * sg - 630.272 * sg * sg + 135.997 * sg * sg * sg;
+const abvFrom = (og, fg) => (og - fg) * 131.25;
+// Sucrose raises gravity by about 0.384 points for each g/L added.
+const SUGAR_POINTS_PER_G_L = 0.384;
+// Free SO2 needed to give a molecular SO2 level at a given pH; K-meta is 57.6% SO2.
+const freeSo2For = (ph, molecular) => molecular * (1 + Math.pow(10, ph - 1.81));
+const kmetaGrams = (freeSo2MgL, litres) => (freeSo2MgL * litres) / 576;
+// pH doesn't average linearly — blend by hydrogen-ion concentration instead.
+const blendPh = (parts) => {
+  const v = parts.reduce((s, p) => s + p.litres, 0);
+  if (!v) return null;
+  const h = parts.reduce((s, p) => s + p.litres * Math.pow(10, -p.ph), 0) / v;
+  return -Math.log10(h);
+};
+const weighted = (parts, key) => {
+  const withVal = parts.filter((p) => p[key] != null && p.litres > 0);
+  const v = withVal.reduce((s, p) => s + p.litres, 0);
+  return v ? withVal.reduce((s, p) => s + p.litres * p[key], 0) / v : null;
+};
+const fmtSg = (sg) => (sg == null ? "—" : sg.toFixed(3));
+
+function juiceLotSg(l) {
+  if (cnum(l.sg) != null) return Number(l.sg);
+  if (cnum(l.brix) != null) return brixToSg(Number(l.brix));
+  return null;
+}
+
+function juiceSummary(lots) {
+  const parts = (lots || []).map((l) => ({ litres: Number(l.litres) || 0, sg: juiceLotSg(l), ph: cnum(l.ph), ta: cnum(l.ta) }));
+  const litres = parts.reduce((s, p) => s + p.litres, 0);
+  const sg = weighted(parts, "sg");
+  const phParts = parts.filter((p) => p.ph != null && p.litres > 0);
+  return { litres, sg, brix: sg != null ? sgToBrix(sg) : null, ph: phParts.length ? blendPh(phParts) : null, ta: weighted(parts, "ta") };
+}
+
+const ciderCard = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 14px", marginBottom: 14 };
+const ciderHead = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 };
+const ciderNote = { fontSize: 12, color: "#5C6B54", lineHeight: 1.5 };
+const ciderWarn = { fontSize: 12.5, color: "#7A3E1D", background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "9px 11px", lineHeight: 1.5 };
+const ciderBtn = { background: "#5C9A3C", border: "none", borderRadius: 5, padding: "10px 14px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" };
+const ciderBtn2 = { background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" };
+const grid2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
+
+function CiderStat({ label, value }) {
+  return (
+    <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 10px" }}>
+      <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: "#2A3324", marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+// A calculated dose with a "Log on batch" action that records it as a batch
+// addition and takes it out of stock (converted into the item's own unit).
+function DoseRow({ label, grams, detail, batch, inventory, onLogAddition, guess }) {
+  const [itemId, setItemId] = useState(() => inventory.find((it) => guess && guess.test(it.name))?.id || "");
+  const [done, setDone] = useState(false);
+  if (grams == null || !(grams > 0)) return null;
+  const item = inventory.find((it) => it.id === itemId);
+  const f = item ? unitFactor("g", item.unit) : null;
+  return (
+    <div style={{ borderTop: "1px solid #EEF0E2", padding: "10px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+        <span style={{ fontSize: 13.5, color: "#2A3324" }}>{label}</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: "#2A3324", whiteSpace: "nowrap" }}>
+          {grams >= 1000 ? `${r3c(grams / 1000)} kg` : `${r1(grams)} g`}
+        </span>
+      </div>
+      {detail && <div style={{ ...ciderNote, marginTop: 2 }}>{detail}</div>}
+      {batch && onLogAddition && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+          <select value={itemId} onChange={(e) => setItemId(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", fontSize: 12.5, color: "#2A3324" }}>
+            <option value="">Pick the stock item…</option>
+            {inventory.map((it) => (
+              <option key={it.id} value={it.id}>{it.name} ({it.qty}{it.unit})</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!item || f == null || done}
+            onClick={async () => {
+              await onLogAddition(batch.id, { name: item.name, qty: r3c(grams * f), unit: item.unit, note: label, date: today() });
+              setDone(true);
+            }}
+            style={{ ...ciderBtn2, opacity: !item || f == null || done ? 0.5 : 1, whiteSpace: "nowrap" }}
+          >
+            {done ? "Logged ✓" : "Log on batch"}
+          </button>
+        </div>
+      )}
+      {item && f == null && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 4 }}>{item.name} is counted in {item.unit}, so it can't be logged in grams.</div>}
+    </div>
+  );
+}
+
+function CiderJuiceTab({ batch, onSaveCider, onSetBatchFigures }) {
+  const blank = { date: today(), variety: "", orchard: "", litres: "", mode: "brix", value: "", ph: "", ta: "" };
+  const [draft, setDraft] = useState(blank);
+  const [fg, setFg] = useState("1.000");
+  const lots = batch?.juiceIntake || [];
+  const sum = juiceSummary(lots);
+  const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  const add = async () => {
+    if (!batch || !(Number(draft.litres) > 0)) return;
+    const lot = {
+      id: uid(),
+      date: draft.date || today(),
+      variety: draft.variety.trim(),
+      orchard: draft.orchard.trim(),
+      litres: Number(draft.litres),
+      brix: draft.mode === "brix" ? cnum(draft.value) : null,
+      sg: draft.mode === "sg" ? cnum(draft.value) : null,
+      ph: cnum(draft.ph),
+      ta: cnum(draft.ta),
+    };
+    await onSaveCider(batch.id, { juiceIntake: [...lots, lot] });
+    setDraft({ ...blank, orchard: draft.orchard, date: draft.date });
+  };
+  const remove = (id) => onSaveCider(batch.id, { juiceIntake: lots.filter((l) => l.id !== id) });
+  const potential = sum.sg != null && cnum(fg) != null ? abvFrom(sum.sg, Number(fg)) : null;
+
+  if (!batch) return <div style={ciderNote}>Pick or start a cider batch above to log juice against it.</div>;
+  return (
+    <>
+      <div style={ciderCard}>
+        <div style={ciderHead}>Juice in {batch.name}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
+          <CiderStat label="Litres" value={r1(sum.litres)} />
+          <CiderStat label="SG" value={fmtSg(sum.sg)} />
+          <CiderStat label="Brix" value={sum.brix != null ? r1(sum.brix) : "—"} />
+          <CiderStat label="pH" value={sum.ph != null ? sum.ph.toFixed(2) : "—"} />
+          <CiderStat label="TA g/L" value={sum.ta != null ? r1(sum.ta) : "—"} />
+          <CiderStat label="ABV if dry" value={potential != null ? `${r1(potential)}%` : "—"} />
+        </div>
+        <div style={{ ...grid2, alignItems: "end" }}>
+          <NumberField label="Expected final SG" value={fg} onChange={setFg} step="0.001" />
+          {sum.sg != null && (
+            <button type="button" onClick={() => onSetBatchFigures(batch.id, { og: r3c(sum.sg), fg: cnum(fg) ?? batch.fg, volume: r1(sum.litres) })} style={ciderBtn2}>
+              Set batch OG, FG &amp; volume
+            </button>
+          )}
+        </div>
+        {sum.ph != null && sum.ph > 3.8 && <div style={{ ...ciderWarn, marginTop: 10 }}>pH {sum.ph.toFixed(2)} is high for cider — sulphite works poorly above 3.8. Consider adding malic acid, or blending with a sharper juice.</div>}
+        {lots.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            {lots.map((l) => {
+              const sg = juiceLotSg(l);
+              return (
+                <div key={l.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: "1px solid #EEF0E2", padding: "8px 0", fontSize: 12.5, color: "#2A3324" }}>
+                  <span>
+                    {l.variety || "Juice"}{l.orchard ? ` · ${l.orchard}` : ""}
+                    <span style={{ display: "block", color: "#9BA88A", fontSize: 11.5 }}>
+                      {l.date} · {l.litres}L · SG {fmtSg(sg)}{l.brix != null ? ` (${l.brix}°Bx)` : ""}{l.ph != null ? ` · pH ${l.ph}` : ""}{l.ta != null ? ` · TA ${l.ta}` : ""}
+                    </span>
+                  </span>
+                  <button type="button" onClick={() => remove(l.id)} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer" }}><Trash2 size={14} /></button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div style={ciderCard}>
+        <div style={ciderHead}>Add juice</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={grid2}>
+            <TextField label="Apple / pear variety" value={draft.variety} onChange={(v) => set({ variety: v })} />
+            <TextField label="Orchard" value={draft.orchard} onChange={(v) => set({ orchard: v })} />
+          </div>
+          <div style={grid2}>
+            <NumberField label="Litres" value={draft.litres} onChange={(v) => set({ litres: v })} suffix="L" />
+            <TextField label="Date" type="date" value={draft.date} onChange={(v) => set({ date: v })} />
+          </div>
+          <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
+            {[["brix", "Brix (refractometer)"], ["sg", "SG (hydrometer)"]].map(([m, label]) => (
+              <button key={m} type="button" onClick={() => set({ mode: m })} style={{ flex: 1, background: draft.mode === m ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 8, fontSize: 12.5, color: draft.mode === m ? "#16191A" : "#5C6B54", cursor: "pointer" }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <NumberField label={draft.mode === "brix" ? "Brix" : "SG"} value={draft.value} onChange={(v) => set({ value: v })} step={draft.mode === "brix" ? "0.1" : "0.001"} />
+            <NumberField label="pH" value={draft.ph} onChange={(v) => set({ ph: v })} step="0.01" />
+            <NumberField label="TA g/L" value={draft.ta} onChange={(v) => set({ ta: v })} step="0.1" />
+          </div>
+          <div style={ciderNote}>TA as g/L malic acid. Leave anything you haven't measured blank.</div>
+          <button type="button" onClick={add} disabled={!(Number(draft.litres) > 0)} style={{ ...ciderBtn, opacity: Number(draft.litres) > 0 ? 1 : 0.5 }}>Add juice</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CiderAdditionsTab({ batch, inventory, onLogAddition }) {
+  const sum = juiceSummary(batch?.juiceIntake);
+  const [litres, setLitres] = useState(String(batch ? sum.litres || batch.volume || "" : ""));
+  const [ph, setPh] = useState(sum.ph != null ? sum.ph.toFixed(2) : "");
+  const [sg, setSg] = useState(sum.sg != null ? sum.sg.toFixed(3) : batch?.og ? String(batch.og) : "");
+  const [molecular, setMolecular] = useState("0.8");
+  const [existingFree, setExistingFree] = useState("");
+  const [targetAbv, setTargetAbv] = useState("");
+  const [fg, setFg] = useState("1.000");
+  const [enzymeRate, setEnzymeRate] = useState("");
+  const [nutrientRate, setNutrientRate] = useState("");
+  const L = cnum(litres) || 0;
+  const phN = cnum(ph);
+  const freeNeeded = phN != null && cnum(molecular) != null ? freeSo2For(phN, Number(molecular)) : null;
+  const freeToAdd = freeNeeded != null ? Math.max(0, freeNeeded - (cnum(existingFree) || 0)) : null;
+  const kmeta = freeToAdd != null && L ? kmetaGrams(freeToAdd, L) : null;
+  const sgN = cnum(sg);
+  const targetOg = cnum(targetAbv) != null && cnum(fg) != null ? Number(fg) + Number(targetAbv) / 131.25 : null;
+  const sugarGL = targetOg != null && sgN != null ? ((targetOg - sgN) * 1000) / SUGAR_POINTS_PER_G_L : null;
+  const sugar = sugarGL != null && sugarGL > 0 && L ? sugarGL * L : null;
+  return (
+    <>
+      <div style={ciderCard}>
+        <div style={ciderHead}>Juice to treat</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <NumberField label="Litres" value={litres} onChange={setLitres} suffix="L" />
+          <NumberField label="pH" value={ph} onChange={setPh} step="0.01" />
+          <NumberField label="SG now" value={sg} onChange={setSg} step="0.001" />
+        </div>
+        {batch && sum.litres > 0 && <div style={{ ...ciderNote, marginTop: 8 }}>Filled in from the juice logged on {batch.name}.</div>}
+      </div>
+
+      <div style={ciderCard}>
+        <div style={ciderHead}>Sulphite (potassium metabisulfite)</div>
+        <div style={grid2}>
+          <NumberField label="Molecular SO₂ target" value={molecular} onChange={setMolecular} step="0.1" suffix="mg/L" />
+          <NumberField label="Free SO₂ already in" value={existingFree} onChange={setExistingFree} step="1" suffix="mg/L" />
+        </div>
+        {phN != null && phN > 3.8 && <div style={{ ...ciderWarn, marginTop: 10 }}>At pH {phN.toFixed(2)} you'd need a lot of sulphite to protect the juice. Lower the pH (malic acid or a sharper juice blend) before dosing.</div>}
+        {freeNeeded != null && <div style={{ ...ciderNote, marginTop: 8 }}>At pH {phN.toFixed(2)}, {molecular} mg/L molecular needs {Math.round(freeNeeded)} mg/L free SO₂{cnum(existingFree) ? ` — ${Math.round(freeToAdd)} mg/L to add` : ""}. 0.8 is the usual target; 0.5 is common for low-sulphite cider.</div>}
+        <DoseRow label="Potassium metabisulfite" grams={kmeta} detail={kmeta ? `${r1((kmeta / L) * 100)} g per 100L. Dissolve in a little water first.` : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/metabisul|k-?meta|campden/i} />
+        {phN == null && <div style={ciderNote}>Enter the pH to work out the dose.</div>}
+      </div>
+
+      <div style={ciderCard}>
+        <div style={ciderHead}>Sugar to reach a target ABV</div>
+        <div style={grid2}>
+          <NumberField label="Target ABV" value={targetAbv} onChange={setTargetAbv} step="0.1" suffix="%" />
+          <NumberField label="Expected final SG" value={fg} onChange={setFg} step="0.001" />
+        </div>
+        {targetOg != null && sgN != null && (
+          <div style={{ ...ciderNote, marginTop: 8 }}>
+            Needs a starting SG of {fmtSg(targetOg)}.{" "}
+            {sugarGL > 0 ? `That's ${r1(sugarGL)} g/L of sugar.` : `The juice is already at or above that (would reach about ${r1(abvFrom(sgN, Number(fg)))}% dry).`}
+          </div>
+        )}
+        <DoseRow label="Sugar (sucrose)" grams={sugar} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/^sugar|sucrose|dextrose/i} />
+      </div>
+
+      <div style={ciderCard}>
+        <div style={ciderHead}>Pectic enzyme &amp; yeast nutrient</div>
+        <div style={grid2}>
+          <NumberField label="Enzyme rate" value={enzymeRate} onChange={setEnzymeRate} step="0.1" suffix="g/hL" />
+          <NumberField label="Nutrient rate" value={nutrientRate} onChange={setNutrientRate} step="1" suffix="g/hL" />
+        </div>
+        <div style={{ ...ciderNote, marginTop: 8 }}>Rates vary a lot between products — use the dose on your product's label (g per 100L).</div>
+        <DoseRow label="Pectic enzyme" grams={cnum(enzymeRate) && L ? (Number(enzymeRate) * L) / 100 : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/pectic|pectin|enzyme|lallzyme/i} />
+        <DoseRow label="Yeast nutrient" grams={cnum(nutrientRate) && L ? (Number(nutrientRate) * L) / 100 : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/nutrient|fermaid|yeast vit|dap/i} />
+      </div>
+    </>
+  );
+}
+
+function CiderBlendTab({ ciderBatches, onSaveCider }) {
+  const blankRow = () => ({ id: uid(), batchId: "", name: "", litres: "", abv: "", sg: "", ph: "", ta: "" });
+  const [rows, setRows] = useState([blankRow(), blankRow()]);
+  const [targetAbv, setTargetAbv] = useState("");
+  const [targetLitres, setTargetLitres] = useState("");
+  const [destId, setDestId] = useState("");
+  const [note, setNote] = useState("");
+  const [saved, setSaved] = useState(false);
+  const update = (id, patch) => { setRows((p) => p.map((r) => (r.id === id ? { ...r, ...patch } : r))); setSaved(false); };
+  const fromBatch = (id, batchId) => {
+    const b = ciderBatches.find((x) => x.id === batchId);
+    if (!b) return update(id, { batchId: "" });
+    const latest = b.og ? latestReading(b) : null;
+    const curSg = latest && latest.gravity != null ? latest.gravity : null;
+    const abv = b.labelAbv || (b.og && curSg ? calcABV(b.og, curSg) : null);
+    const j = juiceSummary(b.juiceIntake);
+    update(id, {
+      batchId,
+      name: b.name,
+      litres: String(remainingVolume(b) || b.volume || ""),
+      abv: abv != null ? String(r1(abv)) : "",
+      sg: curSg != null ? String(curSg) : "",
+      ph: j.ph != null ? j.ph.toFixed(2) : "",
+      ta: j.ta != null ? String(r1(j.ta)) : "",
+    });
+  };
+  const parts = rows.map((r) => ({ litres: cnum(r.litres) || 0, abv: cnum(r.abv), sg: cnum(r.sg), ph: cnum(r.ph), ta: cnum(r.ta) })).filter((p) => p.litres > 0);
+  const total = parts.reduce((s, p) => s + p.litres, 0);
+  const res = { litres: total, abv: weighted(parts, "abv"), sg: weighted(parts, "sg"), ph: parts.some((p) => p.ph != null) ? blendPh(parts.filter((p) => p.ph != null)) : null, ta: weighted(parts, "ta") };
+  // Two-part solver: how much of each to hit the target ABV.
+  const two = rows.filter((r) => cnum(r.abv) != null).slice(0, 2);
+  let solve = null;
+  if (two.length === 2 && cnum(targetAbv) != null) {
+    const a = Number(two[0].abv), b = Number(two[1].abv), t = Number(targetAbv);
+    if (a !== b && t >= Math.min(a, b) && t <= Math.max(a, b)) {
+      const fa = (t - b) / (a - b);
+      const vol = cnum(targetLitres) || (cnum(two[0].litres) || 0) + (cnum(two[1].litres) || 0);
+      solve = { fa, a: two[0], b: two[1], la: fa * vol, lb: (1 - fa) * vol, vol };
+    } else if (a !== b) solve = { outOfRange: true, a, b };
+  }
+  const save = async () => {
+    const dest = ciderBatches.find((b) => b.id === destId);
+    if (!dest || !total) return;
+    const entry = {
+      id: uid(),
+      date: today(),
+      components: rows.filter((r) => cnum(r.litres) > 0).map((r) => ({ batchId: r.batchId || null, name: r.name || "Unnamed", litres: cnum(r.litres), abv: cnum(r.abv), sg: cnum(r.sg), ph: cnum(r.ph), ta: cnum(r.ta) })),
+      result: { litres: r1(res.litres), abv: res.abv != null ? r1(res.abv) : null, sg: res.sg != null ? r3c(res.sg) : null, ph: res.ph != null ? Math.round(res.ph * 100) / 100 : null, ta: res.ta != null ? r1(res.ta) : null },
+      note: note.trim(),
+    };
+    await onSaveCider(dest.id, { blendLog: [...(dest.blendLog || []), entry] });
+    setSaved(true);
+  };
+  return (
+    <>
+      <div style={ciderCard}>
+        <div style={ciderHead}>What goes in</div>
+        {rows.map((r, i) => (
+          <div key={r.id} style={{ borderTop: i ? "1px solid #EEF0E2" : "none", paddingTop: i ? 12 : 0, marginTop: i ? 12 : 0, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <select value={r.batchId} onChange={(e) => fromBatch(r.id, e.target.value)} style={{ flex: 1, minWidth: 0, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 13, color: "#2A3324" }}>
+                <option value="">{r.name && !r.batchId ? r.name : "Pick a cider batch, or type figures in"}</option>
+                {ciderBatches.map((b) => <option key={b.id} value={b.id}>{b.name} (#{b.number})</option>)}
+              </select>
+              {rows.length > 2 && <button type="button" onClick={() => setRows((p) => p.filter((x) => x.id !== r.id))} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer" }}><Trash2 size={15} /></button>}
+            </div>
+            {!r.batchId && <TextField label="Name" value={r.name} onChange={(v) => update(r.id, { name: v })} />}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              <NumberField label="Litres" value={r.litres} onChange={(v) => update(r.id, { litres: v })} />
+              <NumberField label="ABV %" value={r.abv} onChange={(v) => update(r.id, { abv: v })} step="0.1" />
+              <NumberField label="SG" value={r.sg} onChange={(v) => update(r.id, { sg: v })} step="0.001" />
+              <NumberField label="pH" value={r.ph} onChange={(v) => update(r.id, { ph: v })} step="0.01" />
+              <NumberField label="TA g/L" value={r.ta} onChange={(v) => update(r.id, { ta: v })} step="0.1" />
+            </div>
+          </div>
+        ))}
+        <button type="button" onClick={() => setRows((p) => [...p, blankRow()])} style={{ ...ciderBtn2, marginTop: 12 }}>+ Add another</button>
+      </div>
+
+      <div style={ciderCard}>
+        <div style={ciderHead}>Blend result</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+          <CiderStat label="Litres" value={r1(res.litres)} />
+          <CiderStat label="ABV" value={res.abv != null ? `${r1(res.abv)}%` : "—"} />
+          <CiderStat label="SG" value={fmtSg(res.sg)} />
+          <CiderStat label="pH" value={res.ph != null ? res.ph.toFixed(2) : "—"} />
+          <CiderStat label="TA g/L" value={res.ta != null ? r1(res.ta) : "—"} />
+        </div>
+        <div style={{ ...ciderNote, marginTop: 8 }}>pH is blended by acidity, not a straight average, but is still an estimate — measure the blend before you rely on it.</div>
+      </div>
+
+      <div style={ciderCard}>
+        <div style={ciderHead}>Hit a target ABV (first two with an ABV)</div>
+        <div style={grid2}>
+          <NumberField label="Target ABV" value={targetAbv} onChange={setTargetAbv} step="0.1" suffix="%" />
+          <NumberField label="Total litres wanted" value={targetLitres} onChange={setTargetLitres} suffix="L" />
+        </div>
+        {solve && !solve.outOfRange && (
+          <div style={{ fontSize: 13, color: "#2A3324", marginTop: 10, lineHeight: 1.6 }}>
+            {r1(solve.la)}L of {solve.a.name || "the first"} ({Math.round(solve.fa * 100)}%) + {r1(solve.lb)}L of {solve.b.name || "the second"} ({Math.round((1 - solve.fa) * 100)}%) = {r1(solve.vol)}L at {targetAbv}%.
+            {(solve.la > (cnum(solve.a.litres) || Infinity) || solve.lb > (cnum(solve.b.litres) || Infinity)) && <div style={{ ...ciderWarn, marginTop: 8 }}>That's more than you've entered for one of them — lower the total litres.</div>}
+          </div>
+        )}
+        {solve && solve.outOfRange && <div style={{ ...ciderWarn, marginTop: 10 }}>The target has to sit between {solve.a}% and {solve.b}%.</div>}
+      </div>
+
+      <div style={ciderCard}>
+        <div style={ciderHead}>Record this blend</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <select value={destId} onChange={(e) => { setDestId(e.target.value); setSaved(false); }} style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 13.5, color: "#2A3324" }}>
+            <option value="">Batch the blend ends up in…</option>
+            {ciderBatches.map((b) => <option key={b.id} value={b.id}>{b.name} (#{b.number})</option>)}
+          </select>
+          <TextField label="Note (optional)" value={note} onChange={(v) => { setNote(v); setSaved(false); }} />
+          <button type="button" onClick={save} disabled={!destId || !total || saved} style={{ ...ciderBtn, opacity: !destId || !total || saved ? 0.5 : 1 }}>{saved ? "Blend recorded ✓" : "Record blend"}</button>
+          <div style={ciderNote}>This keeps a dated record of what went in and the result. It doesn't move litres between batches — update volumes on the batches themselves.</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
+  const latest = batch && batch.og ? latestReading(batch) : null;
+  const curSg = latest && latest.gravity != null ? latest.gravity : null;
+  const j = juiceSummary(batch?.juiceIntake);
+  const [litres, setLitres] = useState(batch ? String(remainingVolume(batch) || batch.volume || "") : "");
+  const [sg, setSg] = useState(curSg != null ? String(curSg) : "");
+  const [abv, setAbv] = useState(batch && batch.og && curSg ? String(r1(calcABV(batch.og, curSg))) : "");
+  const [ph, setPh] = useState(j.ph != null ? j.ph.toFixed(2) : "");
+  const [targetSg, setTargetSg] = useState("1.010");
+  const [method, setMethod] = useState("sugar");
+  const [juiceSg, setJuiceSg] = useState(j.sg != null ? j.sg.toFixed(3) : "1.050");
+  const [sorbateRate, setSorbateRate] = useState("200");
+  const [molecular, setMolecular] = useState("0.8");
+  const [existingFree, setExistingFree] = useState("");
+  const [saved, setSaved] = useState(false);
+  const L = cnum(litres) || 0;
+  const sgN = cnum(sg), tgt = cnum(targetSg), abvN = cnum(abv), phN = cnum(ph), jsg = cnum(juiceSg);
+  const pts = sgN != null && tgt != null ? (tgt - sgN) * 1000 : null;
+  const sugarG = method === "sugar" && pts > 0 && L ? (pts / SUGAR_POINTS_PER_G_L) * L : null;
+  const juiceL = method === "juice" && pts > 0 && jsg != null && jsg > tgt && L ? (L * (tgt - sgN)) / (jsg - tgt) : null;
+  const finalL = L + (juiceL || 0);
+  const finalAbv = abvN != null && finalL ? (abvN * L) / finalL : null;
+  const sorbateG = cnum(sorbateRate) && finalL ? (Number(sorbateRate) * finalL) / 1000 : null;
+  const freeNeeded = phN != null && cnum(molecular) != null ? freeSo2For(phN, Number(molecular)) : null;
+  const freeToAdd = freeNeeded != null ? Math.max(0, freeNeeded - (cnum(existingFree) || 0)) : null;
+  const kmeta = freeToAdd != null && finalL ? kmetaGrams(freeToAdd, finalL) : null;
+  const record = async () => {
+    if (!batch) return;
+    const entry = {
+      id: uid(),
+      date: today(),
+      method,
+      litresBefore: L,
+      sgBefore: sgN,
+      targetSg: tgt,
+      sugarG: sugarG != null ? r1(sugarG) : null,
+      juiceL: juiceL != null ? r1(juiceL) : null,
+      juiceSg: method === "juice" ? jsg : null,
+      litresAfter: r1(finalL),
+      abvAfter: finalAbv != null ? r1(finalAbv) : null,
+      sorbateG: sorbateG != null ? r1(sorbateG) : null,
+      kmetaG: kmeta != null ? r1(kmeta) : null,
+    };
+    await onSaveCider(batch.id, { backSweetenings: [...(batch.backSweetenings || []), entry] });
+    setSaved(true);
+  };
+  const history = batch?.backSweetenings || [];
+  return (
+    <>
+      <div style={ciderCard}>
+        <div style={ciderHead}>Cider now</div>
+        <div style={grid2}>
+          <NumberField label="Litres" value={litres} onChange={setLitres} suffix="L" />
+          <NumberField label="SG now" value={sg} onChange={setSg} step="0.001" />
+          <NumberField label="ABV now" value={abv} onChange={setAbv} step="0.1" suffix="%" />
+          <NumberField label="pH" value={ph} onChange={setPh} step="0.01" />
+        </div>
+      </div>
+      <div style={ciderCard}>
+        <div style={ciderHead}>Back-sweeten</div>
+        <NumberField label="Target SG" value={targetSg} onChange={setTargetSg} step="0.001" />
+        <div style={{ ...ciderNote, margin: "6px 0 10px" }}>Roughly: 1.000–1.005 dry, 1.005–1.012 medium, 1.012+ sweet.</div>
+        <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden", marginBottom: 10 }}>
+          {[["sugar", "With sugar"], ["juice", "With juice"]].map(([m, label]) => (
+            <button key={m} type="button" onClick={() => setMethod(m)} style={{ flex: 1, background: method === m ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 8, fontSize: 12.5, color: method === m ? "#16191A" : "#5C6B54", cursor: "pointer" }}>{label}</button>
+          ))}
+        </div>
+        {method === "juice" && <NumberField label="Juice SG" value={juiceSg} onChange={setJuiceSg} step="0.001" />}
+        {pts != null && pts <= 0 && <div style={{ ...ciderNote, marginTop: 8 }}>It's already at or above the target.</div>}
+        {method === "sugar" && <DoseRow label="Sugar to add" grams={sugarG} detail={sugarG ? `${r1(sugarG / L)} g/L` : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/^sugar|sucrose/i} />}
+        {method === "juice" && juiceL != null && (
+          <div style={{ fontSize: 13.5, color: "#2A3324", marginTop: 10, lineHeight: 1.6 }}>
+            Add <strong>{r1(juiceL)}L</strong> of juice → {r1(finalL)}L{finalAbv != null ? ` at about ${r1(finalAbv)}% ABV` : ""}.
+          </div>
+        )}
+        {method === "juice" && jsg != null && tgt != null && jsg <= tgt && <div style={{ ...ciderWarn, marginTop: 8 }}>The juice has to be sweeter than the target SG.</div>}
+      </div>
+      <div style={ciderCard}>
+        <div style={ciderHead}>Stabilise</div>
+        <div style={ciderWarn}>Sweetened cider will start fermenting again in the bottle or can unless it's stabilised, pasteurised, or kept cold and kegged. Sorbate only works alongside sulphite, and shouldn't be used if the cider has gone through malolactic fermentation (geranium off-flavour).</div>
+        <div style={{ ...grid2, marginTop: 10 }}>
+          <NumberField label="Sorbate rate" value={sorbateRate} onChange={setSorbateRate} step="10" suffix="mg/L" />
+          <NumberField label="Molecular SO₂" value={molecular} onChange={setMolecular} step="0.1" suffix="mg/L" />
+          <NumberField label="Free SO₂ already in" value={existingFree} onChange={setExistingFree} step="1" suffix="mg/L" />
+        </div>
+        <div style={{ ...ciderNote, marginTop: 6 }}>150–250 mg/L sorbate is the usual range; use more at lower ABV.</div>
+        <DoseRow label="Potassium sorbate" grams={sorbateG} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/sorbate/i} />
+        <DoseRow label="Potassium metabisulfite" grams={kmeta} detail={freeNeeded != null ? `For ${Math.round(freeNeeded)} mg/L free SO₂ at pH ${phN.toFixed(2)}` : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/metabisul|k-?meta|campden/i} />
+        {phN == null && <div style={ciderNote}>Enter the pH to work out the sulphite.</div>}
+      </div>
+      {batch && (
+        <div style={ciderCard}>
+          <button type="button" onClick={record} disabled={saved || (sugarG == null && juiceL == null && sorbateG == null)} style={{ ...ciderBtn, width: "100%", opacity: saved ? 0.5 : 1 }}>{saved ? "Recorded ✓" : `Record on ${batch.name}`}</button>
+          <div style={{ ...ciderNote, marginTop: 6 }}>Saves the plan on the batch. Use "Log on batch" above to take each addition out of stock.</div>
+          {history.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              {history.slice().reverse().map((h) => (
+                <div key={h.id} style={{ borderTop: "1px solid #EEF0E2", padding: "8px 0", fontSize: 12.5, color: "#2A3324" }}>
+                  {h.date} · {h.method === "juice" ? `${h.juiceL}L juice` : `${h.sugarG}g sugar`} to SG {h.targetSg}
+                  <span style={{ display: "block", color: "#9BA88A", fontSize: 11.5 }}>
+                    {h.litresAfter}L{h.abvAfter != null ? ` · ${h.abvAfter}%` : ""}{h.sorbateG ? ` · sorbate ${h.sorbateG}g` : ""}{h.kmetaG ? ` · K-meta ${h.kmetaG}g` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function CiderView({ batches, inventory, onSaveCider, onSetBatchFigures, onLogAddition, onStartBatch, onOpenBatch }) {
+  const ciderBatches = useMemo(
+    () => batches.filter((b) => b.productType === CIDER_TYPE && !b.mergedIntoBatchId).sort((a, b) => String(b.startDate).localeCompare(String(a.startDate))),
+    [batches]
+  );
+  const active = ciderBatches.filter((b) => !(b.stage === "Packaged" && remainingVolume(b) === 0));
+  const [batchId, setBatchId] = useState(() => active[0]?.id || "");
+  const [tab, setTab] = useState("juice");
+  const batch = ciderBatches.find((b) => b.id === batchId) || null;
+  const tabs = [["juice", "Juice"], ["additions", "Additions"], ["blend", "Blend"], ["sweeten", "Back-sweeten"]];
+  return (
+    <div>
+      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, color: "#2A3324", margin: "0 0 4px", fontWeight: 500 }}>Cider</h1>
+      <div style={{ ...ciderNote, marginBottom: 16 }}>Juice, additions, blending and back-sweetening for Cider/Perry batches.</div>
+      <div style={{ ...ciderCard, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={batchId} onChange={(e) => setBatchId(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "10px", fontSize: 14, color: "#2A3324" }}>
+            <option value="">{ciderBatches.length ? "No batch — just calculate" : "No cider batches yet"}</option>
+            {active.length > 0 && <optgroup label="In progress">{active.map((b) => <option key={b.id} value={b.id}>{b.name} (#{b.number}) · {b.stage}</option>)}</optgroup>}
+            {ciderBatches.length > active.length && <optgroup label="Finished">{ciderBatches.filter((b) => !active.includes(b)).map((b) => <option key={b.id} value={b.id}>{b.name} (#{b.number})</option>)}</optgroup>}
+          </select>
+          {batch && <button type="button" onClick={() => onOpenBatch(batch.id)} style={ciderBtn2}>Open</button>}
+        </div>
+        <button type="button" onClick={onStartBatch} style={ciderBtn2}>+ Start a cider batch</button>
+      </div>
+      <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 5, overflow: "hidden", marginBottom: 14 }}>
+        {tabs.map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setTab(k)} style={{ flex: 1, background: tab === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: "10px 4px", fontSize: 12.5, color: tab === k ? "#16191A" : "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>{label}</button>
+        ))}
+      </div>
+      {tab === "juice" && <CiderJuiceTab key={batchId} batch={batch} onSaveCider={onSaveCider} onSetBatchFigures={onSetBatchFigures} />}
+      {tab === "additions" && <CiderAdditionsTab key={batchId} batch={batch} inventory={inventory} onLogAddition={onLogAddition} />}
+      {tab === "blend" && <CiderBlendTab ciderBatches={ciderBatches} onSaveCider={onSaveCider} />}
+      {tab === "sweeten" && <CiderSweetenTab key={batchId} batch={batch} inventory={inventory} onSaveCider={onSaveCider} onLogAddition={onLogAddition} />}
+    </div>
+  );
+}
+
+function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, presetName, yeastHarvests, onUseHarvest, presetProductType }) {
   const mashTuns = tanks.filter((t) => t.type === "Mash Tun");
   const tankChoices = mashTuns.length > 0 ? mashTuns : tanks;
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
   const [name, setName] = useState(presetName || (presetRecipe ? presetRecipe.name : ""));
   const [style, setStyle] = useState(presetRecipe ? presetRecipe.style : "");
-  const [productType, setProductType] = useState(presetRecipe ? presetRecipe.productType || "Beer" : "Beer");
+  const [productType, setProductType] = useState(presetRecipe ? presetRecipe.productType || "Beer" : presetProductType || "Beer");
   const [volume, setVolume] = useState(presetRecipe ? presetRecipe.volume : 20);
   const [og, setOg] = useState(presetRecipe ? presetRecipe.og : 1.05);
   const [fg, setFg] = useState(presetRecipe ? presetRecipe.fg : 1.01);
@@ -14343,6 +14889,18 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
           )}
         </div>
         <TextField label="Style" value={style} onChange={setStyle} />
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Product type</span>
+          <select
+            value={productType}
+            onChange={(e) => setProductType(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+          >
+            {PRODUCT_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <NumberField label="Volume" value={volume} onChange={setVolume} step="0.5" suffix="L" />
           <NumberField label="Pitch temp" value={temp} onChange={setTemp} step="0.5" suffix="°C" />
@@ -28689,6 +29247,19 @@ function TankLogApp() {
   // an individual batch (even one that started life as "half" of a brew,
   // tracked as its own separate record) getting a hop or fruit addition
   // mid-fermentation.
+  // Saves cider fields (juice intake, blends, back-sweetening) or the
+  // batch's OG/FG/volume from the Cider page.
+  const CIDER_COLUMNS = { juiceIntake: "juice_intake", blendLog: "blend_log", backSweetenings: "back_sweetenings", og: "og", fg: "fg", volume: "volume" };
+  const saveCiderData = async (batchId, patch) => {
+    const row = {};
+    Object.entries(patch).forEach(([k, v]) => { if (CIDER_COLUMNS[k]) row[CIDER_COLUMNS[k]] = v; });
+    const { error } = await supabase.from("batches").update(row).eq("id", batchId);
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, ...patch } : b)));
+    if (patch.og != null) showToast("success", "Batch OG, FG and volume updated.");
+    return true;
+  };
+
   const addBatchIngredient = async (batchId, entry) => {
     const batch = batches.find((b) => b.id === batchId);
     if (!batch) return;
@@ -30448,6 +31019,10 @@ function TankLogApp() {
                 label: "Quality",
                 items: [["quality", "Quality Control", CheckCircle2]],
               },
+              {
+                label: "Cider",
+                items: [["cider", "Cider", Droplet]],
+              },
               salesModuleEnabled && {
                 label: "Sales",
                 items: [
@@ -30585,7 +31160,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -30757,6 +31332,21 @@ function TankLogApp() {
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
+            )}
+
+            {!loadingData && view === "cider" && (
+              <CiderView
+                batches={batches}
+                inventory={inventory}
+                onSaveCider={saveCiderData}
+                onSetBatchFigures={saveCiderData}
+                onLogAddition={addBatchIngredient}
+                onStartBatch={() => {
+                  setBatchPreset({ productType: "Cider/Perry" });
+                  setShowAdd(true);
+                }}
+                onOpenBatch={setSelectedId}
+              />
             )}
 
             {!loadingData && view === "excise" && (
@@ -32598,6 +33188,7 @@ function TankLogApp() {
           presetTankId={batchPreset ? batchPreset.tankId : null}
           presetStartDate={batchPreset ? batchPreset.startDate : null}
           presetName={batchPreset ? batchPreset.name : null}
+          presetProductType={batchPreset ? batchPreset.productType : null}
           yeastHarvests={yeastHarvests}
           onUseHarvest={markYeastHarvestUsed}
         />
