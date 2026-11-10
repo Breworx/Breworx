@@ -1432,6 +1432,11 @@ const HELP_ARTICLES = [
   },
   {
     category: "Compliance",
+    question: "How do I check a label is legally compliant?",
+    answer: "Food Safety → Checklists → \"Label compliance — packaged beer & cider\". Run it whenever a label is new, changed or reprinted. It covers everything MPI's labelling guide requires (ABV, standard drinks, pregnancy warning, net contents, lot ID, address, Best Before, allergens and so on). It isn't on a schedule, so it never shows as overdue. Each check is saved against the product you name, so it shows up in the audit report.",
+  },
+  {
+    category: "Compliance",
     question: "What's a corrective action?",
     answer: "If you leave a checklist item unchecked, you're asked to record what's being done about it before you can save. That stays as an open item — visible right at the top of Food Safety — until someone marks it resolved.",
   },
@@ -3202,6 +3207,32 @@ const FOOD_SAFETY_CHECKLISTS = {
       "Reviewed any incidents ('something went wrong') and confirmed corrective action taken",
     ],
   },
+  // Not on a schedule: run it whenever a label is new, changed or reprinted.
+  // Drawn from MPI's "A guide to alcoholic drinks — what's in it and how to
+  // label it" (Food Standards Code 1.2 / 2.7.1). Conditional items are worded
+  // so ticking means "done, or doesn't apply to this product".
+  label: {
+    label: "Label compliance — packaged beer & cider",
+    frequency: "label",
+    onDemand: true,
+    requiresProduct: true,
+    items: [
+      "Name or description is accurate (if it doesn't meet the Code's beer/cider definition, it uses a different description, e.g. \"cider with raspberry\")",
+      "Alcohol content shown as X% Alc/Vol, and the beer is within ±0.3% of the label ABV",
+      "Standard drinks correct (0.789 × ABV × litres, to 1 decimal place — 330ml at 5% = 1.3), on each can and the outer pack",
+      "Pregnancy warning label (official FSANZ design) on every container and the outer pack",
+      "Net contents in mL or L, at least 2 mm high, near the product name",
+      "Lot/batch ID on the pack, unique to this batch",
+      "NZ business name and physical address (a PO Box, website or email alone isn't enough)",
+      "Best Before date shown (needed if shelf life is under 2 years)",
+      "Storage instructions included if needed to last to Best Before (e.g. \"Keep refrigerated\") — or not needed",
+      "Allergens declared: added sulphites ≥10 mg/kg and any added allergen (milk/lactose, nuts, egg, etc.) — or none apply (barley/wheat in beer and isinglass are exempt)",
+      "Ingredient list included if the product falls outside the standard beer/cider definition — or not needed",
+      "No nutrition or health claims (e.g. \"low carb\", \"gluten free\") unless a nutrition information panel is included",
+      "No \"low alcohol\" wording (not allowed over 1.15%)",
+      "All text in English, legible and true",
+    ],
+  },
 };
 
 // Xero OAuth — Client ID is safe to expose in the browser (it's public by
@@ -3784,11 +3815,12 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
   const [completedBy, setCompletedBy] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [date, setDate] = useState(today());
+  const [product, setProduct] = useState("");
 
   const toggle = (i) => setChecked((prev) => prev.map((c, idx) => (idx === i ? !c : c)));
   const allChecked = checked.every(Boolean);
   const hasFailures = !allChecked;
-  const canSubmit = completedBy.trim() && (!hasFailures || correctiveAction.trim());
+  const canSubmit = completedBy.trim() && (!template.requiresProduct || product.trim()) && (!hasFailures || correctiveAction.trim());
 
   const submit = () => {
     if (!canSubmit) return;
@@ -3796,6 +3828,9 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
       category: "checklist",
       frequency: template.frequency,
       date,
+      // Label checks record which product/label was checked; topic is the
+      // free-text column already on food_safety_records.
+      topic: template.requiresProduct ? product.trim() : null,
       items: template.items.map((label, i) => ({ label, checked: checked[i] })),
       notes: notes.trim(),
       completedBy: completedBy.trim(),
@@ -3808,6 +3843,14 @@ function FoodSafetyChecklistModal({ template, onClose, onSave }) {
   return (
     <Modal title={template.label} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {template.requiresProduct && (
+          <>
+            <TextField label="Product / label (required)" value={product} onChange={setProduct} placeholder="e.g. Bunny Hop 330ml can, Nov 2026 reprint" />
+            <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
+              Run this whenever a label is new, changed or reprinted. Tick an item if it's on the label, or if it doesn't apply to this product. Based on MPI's labelling guide for alcoholic drinks. Check MPI for anything unusual, and note the energy statement becomes mandatory from 13 August 2028.
+            </div>
+          </>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {template.items.map((label, i) => (
             <button
@@ -18132,7 +18175,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
     if (r.category === "checklist") {
       const total = (r.items || []).length;
       const done = (r.items || []).filter((i) => i.checked).length;
-      return `${done}/${total} items checked${r.completedBy ? ` — completed by ${r.completedBy}` : ""}${r.correctiveAction ? ` — corrective action: ${r.correctiveAction} (${r.correctiveActionResolved ? "resolved" : "OPEN"})` : ""}`;
+      return `${r.frequency === "label" ? `Label check${r.topic ? `: ${r.topic}` : ""} — ` : ""}${done}/${total} items checked${r.completedBy ? ` — completed by ${r.completedBy}` : ""}${r.correctiveAction ? ` — corrective action: ${r.correctiveAction} (${r.correctiveActionResolved ? "resolved" : "OPEN"})` : ""}`;
     }
     if (r.category === "calibration") {
       return `${r.equipmentName || ""} — ${r.result || "no result recorded"}${r.dueDate ? ` — next due ${r.dueDate}` : ""}${r.completedBy ? ` — completed by ${r.completedBy}` : ""}`;
@@ -18289,6 +18332,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
   const CHECKLIST_WINDOW_DAYS = { daily: 1, weekly: 7, monthly: 31 };
   const daysSince = (dateStr) => Math.floor((new Date(today()) - new Date(dateStr)) / 86400000);
   const overdueChecklists = Object.entries(FOOD_SAFETY_CHECKLISTS)
+    .filter(([, template]) => !template.onDemand)
     .map(([key, template]) => {
       const matching = records.filter((r) => r.category === "checklist" && r.frequency === key).sort((a, b) => b.date.localeCompare(a.date));
       const latest = matching[0];
@@ -18749,7 +18793,7 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
                 <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{r.date}</span>
               </div>
               <div style={{ color: "#2A3324", marginTop: 4 }}>
-                {r.category === "checklist" && `${checkedCount}/${r.items.length} items checked${r.notes ? ` — ${r.notes}` : ""}`}
+                {r.category === "checklist" && `${r.frequency === "label" ? `Label check${r.topic ? `: ${r.topic}` : ""} — ` : ""}${checkedCount}/${r.items.length} items checked${r.notes ? ` — ${r.notes}` : ""}`}
                 {r.category === "calibration" && `${r.equipmentName} — ${r.result || "no result noted"}`}
                 {r.category === "training" && (
                   <>
