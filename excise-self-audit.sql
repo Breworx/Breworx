@@ -143,3 +143,14 @@ alter table public.excise_returns add column if not exists declared_levy_gst num
 alter table public.batches add column if not exists juice_intake jsonb not null default '[]'::jsonb;
 alter table public.batches add column if not exists blend_log jsonb not null default '[]'::jsonb;
 alter table public.batches alter column split_group_id type text using split_group_id::text;
+
+-- Brew planner settings, one row per company.
+create table if not exists public.brew_plan_settings (
+  company_id uuid primary key references public.companies(id) on delete cascade,
+  settings jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.brew_plan_settings enable row level security;
+drop policy if exists "own company brew plan settings" on public.brew_plan_settings;
+create policy "own company brew plan settings" on public.brew_plan_settings
+  for all using (company_id = get_my_company_id()) with check (company_id = get_my_company_id());
