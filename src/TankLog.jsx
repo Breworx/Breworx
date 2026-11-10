@@ -7,7 +7,7 @@ import { Plus, Droplet, ChevronLeft, X, TrendingDown, TrendingUp, Beaker, Packag
 // every chart rendered as an empty frame.
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./supabaseClient";
-import { planBrews, productKeyForBatch } from "./lib/brewPlanner";
+import { planBrews, productKeyForBatch, cleanProductName } from "./lib/brewPlanner";
 import {
   rowToBatch,
   batchToRow,
@@ -16049,7 +16049,39 @@ function StartPackagingModal({ batch, onClose, onSave }) {
   );
 }
 
-function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault }) {
+// The other tanks the same brew went into — a split brew is separate
+// batches, linked by splitGroupId (or, for older splits, the same name and
+// brew day) — that still have beer in them.
+function sisterTankBatches(batch, batches) {
+  if (!batch) return [];
+  return batches.filter((b) => {
+    if (b.id === batch.id || b.mergedIntoBatchId || remainingVolume(b) <= 0) return false;
+    if (batch.splitGroupId && b.splitGroupId === batch.splitGroupId) return true;
+    return !!batch.startDate && b.startDate === batch.startDate && cleanProductName(b.name).toLowerCase() === cleanProductName(batch.name).toLowerCase();
+  });
+}
+
+// One packaging run that empties the first tank and carries on from the
+// second: whole containers go to the first tank while it still has (about)
+// a container's worth left, the rest to the second. The container filled
+// from both tanks is counted on the second; whatever was left of the first
+// tank went into it, so the first is closed off with no excise lost overall.
+function splitPackagingRun(counts, firstRemainingL) {
+  const first = {};
+  const second = {};
+  let left = firstRemainingL;
+  [...CONTAINERS].sort((a, b) => b.volumeL - a.volumeL).forEach((c) => {
+    const n = Number(counts[c.key]) || 0;
+    const toFirst = Math.max(0, Math.min(n, Math.floor((left + c.volumeL / 2) / c.volumeL)));
+    first[c.key] = toFirst;
+    second[c.key] = n - toFirst;
+    left -= toFirst * c.volumeL;
+  });
+  return { first, second, firstLeftL: Math.max(0, Math.round(left * 100) / 100) };
+}
+
+function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault, sisters = [] }) {
+  const [carryOnId, setCarryOnId] = useState("");
   const containerFilter = batch.packagingRun?.containerType || null;
   const relevantContainers = containerFilter ? CONTAINERS.filter((c) => c.key.startsWith(containerFilter === "cans" ? "cans" : "kegs")) : CONTAINERS;
   const [counts, setCounts] = useState(() => {
@@ -16067,15 +16099,19 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
   const [date, setDate] = useState(today());
   const activeFaults = currentFaults(batch);
 
-  const remaining = remainingVolume(batch);
+  const sister = sisters.find((b) => b.id === carryOnId) || null;
+  const ownRemaining = remainingVolume(batch);
+  const remaining = sister ? Math.round((ownRemaining + remainingVolume(sister)) * 100) / 100 : ownRemaining;
   const sessionVolume = CONTAINERS.reduce((sum, c) => sum + (Number(effective[c.key]) || 0) * c.volumeL, 0);
   const diff = Math.round((sessionVolume - remaining) * 100) / 100;
   const leftAfter = Math.max(0, Math.round((remaining - sessionVolume) * 100) / 100);
+  const preview = sister ? splitPackagingRun(effective, ownRemaining) : null;
+  const describe = (c) => CONTAINERS.filter((x) => c[x.key] > 0).map((x) => `${c[x.key]} × ${x.shortLabel}`).join(", ") || "nothing";
 
   const submit = () => {
     const session = {};
     CONTAINERS.forEach((c) => (session[c.key] = Number(effective[c.key]) || 0));
-    onSave(batch.id, session, packageTypeSelections, date);
+    onSave(batch.id, session, packageTypeSelections, date, sister ? { sisterId: sister.id } : null);
     onClose();
   };
 
@@ -16126,9 +16162,27 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
           </div>
         )}
         <div style={{ color: "#5C6B54", fontSize: 13 }}>
-          Remaining in tank: <span style={{ color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{remaining} L</span>
+          Remaining in tank: <span style={{ color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{ownRemaining} L</span>
           {" "}of {batch.volume} L batch
         </div>
+        {sisters.length > 0 && (
+          <div style={{ background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#2A3324", cursor: "pointer" }}>
+              <input type="checkbox" checked={!!sister} onChange={(e) => setCarryOnId(e.target.checked ? sisters[0].id : "")} style={{ width: 18, height: 18, accentColor: "#5C9A3C", flexShrink: 0 }} />
+              Carry on from the other tank of this brew when this one runs out
+            </label>
+            {sister && sisters.length > 1 && (
+              <select value={carryOnId} onChange={(e) => setCarryOnId(e.target.value)} style={{ width: "100%", marginTop: 8, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 13, color: "#2A3324" }}>
+                {sisters.map((b) => <option key={b.id} value={b.id}>{b.name} — {b.tankName || "tank"} ({remainingVolume(b)} L)</option>)}
+              </select>
+            )}
+            {sister && (
+              <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 6, lineHeight: 1.5 }}>
+                Enter everything this run filled. {batch.tankName || "This tank"} ({ownRemaining} L) is emptied first, then {sister.name}{sister.tankName ? ` in ${sister.tankName}` : ""} ({remainingVolume(sister)} L).
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>
           This packaging run
         </div>
@@ -16228,6 +16282,12 @@ function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleFault })
                 : "This clears out everything left in the tank."}
             </div>
           )
+        )}
+        {preview && sessionVolume > 0 && (
+          <div style={{ fontSize: 12.5, color: "#2A3324", background: "#EBF3E4", border: "1px solid #9BC48A", borderRadius: 6, padding: "9px 11px", lineHeight: 1.55 }}>
+            <div><strong>{batch.name}</strong>: {describe(preview.first)} — tank emptied{preview.firstLeftL > 0 ? ` (last ${preview.firstLeftL} L went into the shared container)` : ""}</div>
+            <div><strong>{sister.name}</strong>: {describe(preview.second)}</div>
+          </div>
         )}
         <BackdateField value={date} onChange={setDate} label="Packaging date" />
         <button
@@ -30608,9 +30668,35 @@ function TankLogApp() {
     setConsumables(nextConsumables);
   };
 
-  const logPackagingSession = async (id, sessionCounts, packageTypeSelections = {}, date) => {
+  const logPackagingSession = async (id, sessionCounts, packageTypeSelections = {}, date, carryOn = null) => {
     const batch = batches.find((b) => b.id === id);
     if (!batch) return;
+    const sister = carryOn && batches.find((b) => b.id === carryOn.sisterId);
+    if (sister) {
+      // One run across two tanks of the same brew: empty this one, then the other.
+      const { first, second, firstLeftL } = splitPackagingRun(sessionCounts, remainingVolume(batch));
+      const any = (c) => CONTAINERS.some((x) => (c[x.key] || 0) > 0);
+      const saveOne = async (b, counts, closeOff) => {
+        const events = packagingEvents(b);
+        const newEvents = any(counts) ? [...events, { id: uid(), date: date || today(), ...counts, packageTypes: packageTypeSelections }] : events;
+        const discarded = Math.round((packagingDiscarded(b) + (closeOff || 0)) * 100) / 100;
+        const newPackaging = { events: newEvents, discarded };
+        const stageDates = withStageDate(b, "Packaged", date);
+        const { error } = await supabase.from("batches").update({ packaging: newPackaging, stage: "Packaged", packaging_run: null, stage_dates: stageDates }).eq("id", b.id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+        setBatches((prev) => prev.map((x) => (x.id === b.id ? { ...x, packaging: newPackaging, stage: "Packaged", packagingRun: null, stageDates } : x)));
+        if (any(counts)) {
+          syncPackagingToXero(b, counts);
+          await deductConsumablesForPackaging(b, counts, packageTypeSelections, -1, date);
+        }
+        return true;
+      };
+      if (!(await saveOne(batch, first, firstLeftL))) return;
+      if (!(await saveOne(sister, second, 0))) return;
+      logActivity("packaged", "batch", batch.name, `${batch.name} (#${batch.number}) packaged, then carried on from ${sister.name} (#${sister.number})`);
+      showToast("success", `${batch.name} emptied; the rest of the run booked to ${sister.name}.`);
+      return;
+    }
     const events = packagingEvents(batch);
     const newEvent = { id: uid(), date: date || today(), ...sessionCounts, packageTypes: packageTypeSelections };
     const stageDates = withStageDate(batch, "Packaged", date);
@@ -34057,6 +34143,7 @@ function TankLogApp() {
             onSave={logPackagingSession}
             packageTypes={packageTypes}
             onToggleFault={toggleBatchFault}
+            sisters={sisterTankBatches(liveBatch, batches)}
           />
         );
       })()}
