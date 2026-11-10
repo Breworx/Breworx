@@ -38,15 +38,59 @@ export const productKeyForBatch = (b, recipeFamilyById) => {
   return fam ? `recipe:${fam}` : `name:${cleanProductName(b.name).toLowerCase()}`;
 };
 
+// How to package one brew: follows what this beer sold in each container
+// over the period, nudged towards whichever container is running low on
+// stock (up to twice its usual share when it's empty). Kegs come out as
+// whole kegs and cans as whole 24-can cases; leftover litres go to cans if
+// the beer is canned, otherwise to the most-used keg size.
+export function packagingSplit(pr, litresOut, containers, coverDays, override) {
+  const vol = Object.fromEntries(containers.map((c) => [c.key, c.volumeL]));
+  const sold = { ...(override || pr.soldByContainer || {}) };
+  const keys = Object.keys(sold).filter((k) => vol[k] && sold[k] > 0);
+  if (!keys.length || !(litresOut > 0)) return [];
+  const total = keys.reduce((t, k) => t + sold[k], 0);
+  const weights = {};
+  keys.forEach((k) => {
+    const rate = sold[k] / total; // share of sales
+    const target = rate * (pr.ratePerDay || 0) * coverDays;
+    const have = (pr.stockByContainer || {})[k] || 0;
+    const shortfall = target > 0 ? Math.max(0, Math.min(1, (target - have) / target)) : 0;
+    weights[k] = override ? rate : rate * (1 + shortfall);
+  });
+  const wTotal = keys.reduce((t, k) => t + weights[k], 0);
+  const out = {};
+  let left = litresOut;
+  const kegKeys = keys.filter((k) => k !== "cans330").sort((a, b) => vol[b] - vol[a]);
+  kegKeys.forEach((k) => {
+    const n = Math.floor((litresOut * weights[k]) / wTotal / vol[k] + 0.35);
+    const fit = Math.min(n, Math.floor(left / vol[k]));
+    if (fit > 0) { out[k] = fit; left -= fit * vol[k]; }
+  });
+  const canned = keys.includes("cans330");
+  if (canned && vol.cans330) {
+    const cases = Math.floor(left / (vol.cans330 * 24));
+    if (cases > 0) { out.cans330 = cases * 24; left -= cases * 24 * vol.cans330; }
+  } else if (kegKeys.length) {
+    const main = [...kegKeys].sort((a, b) => sold[b] - sold[a])[0];
+    const extra = Math.floor(left / vol[main]);
+    if (extra > 0) { out[main] = (out[main] || 0) + extra; left -= extra * vol[main]; }
+  }
+  return containers
+    .filter((c) => out[c.key])
+    .map((c) => ({ containerKey: c.key, label: c.label, units: out[c.key], litres: Math.round(out[c.key] * c.volumeL * 10) / 10, share: Math.round((weights[c.key] / wTotal) * 100) }));
+}
+
 /**
  * @param {object} p
  * @param {Array} p.batches  normalised: { id, key, name, productType, startDate, volume, stage, remainingL, packagedEvents:[{date,litres}], xeroSold:[{date,litres}], plannedDays, tankIds, recipeId, brewDaysPlanned }
  * @param {object} p.stockByKey  litres packaged and still available, by product key
+ * @param {object} p.stockByKeyContainer  same, split by container: { [key]: { [containerKey]: litres } }
+ * @param {Array} p.containers  [{ key, label, volumeL }] — packagedEvents/xeroSold carry byContainer / containerKey
  * @param {Array} p.tanks  { id, name, type, capacity }
  * @param {object} p.settings  { periodMonths, horizonWeeks, baseCoverWeeks, brewWeekdays:[0-6], brewsPerDay, kitLitres, products: { [key]: { include, coverWeeks, leadDays, batchL, combineInto } } }
  * @param {string} p.todayStr
  */
-export function planBrews({ batches, stockByKey, tanks, settings, todayStr }) {
+export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, containers = [], tanks, settings, todayStr }) {
   const s = {
     periodMonths: 3,
     horizonWeeks: 12,
@@ -72,7 +116,7 @@ export function planBrews({ batches, stockByKey, tanks, settings, todayStr }) {
   const prods = {};
   const P = (key) =>
     prods[key] ||
-    (prods[key] = { key, batches: [], soldInPeriod: 0, monthly: {}, stockL: 0, incoming: [], mergedFrom: {} });
+    (prods[key] = { key, batches: [], soldInPeriod: 0, soldByContainer: {}, monthly: {}, stockL: 0, stockByContainer: {}, incoming: [], mergedFrom: {} });
   batches.forEach((b) => {
     const p = P(finalKey(b.key));
     p.batches.push(b);
@@ -83,12 +127,20 @@ export function planBrews({ batches, stockByKey, tanks, settings, todayStr }) {
     ];
     demandEvents.forEach((e) => {
       if (!e.date || !(e.litres > 0)) return;
-      if (e.date >= periodStart && e.date <= todayStr) p.soldInPeriod += e.litres;
+      if (e.date >= periodStart && e.date <= todayStr) {
+        p.soldInPeriod += e.litres;
+        const by = e.byContainer || (e.containerKey ? { [e.containerKey]: e.litres } : {});
+        Object.entries(by).forEach(([c, l]) => (p.soldByContainer[c] = (p.soldByContainer[c] || 0) + l));
+      }
       if (e.date >= addDaysISO(todayStr, -365) && e.date <= todayStr) p.monthly[monthOf(e.date)] = (p.monthly[monthOf(e.date)] || 0) + e.litres;
     });
   });
   Object.entries(stockByKey || {}).forEach(([k, l]) => {
     if (l > 0) P(finalKey(k)).stockL += l;
+  });
+  Object.entries(stockByKeyContainer || {}).forEach(([k, by]) => {
+    const p = P(finalKey(k));
+    Object.entries(by).forEach(([c, l]) => { if (l > 0) p.stockByContainer[c] = (p.stockByContainer[c] || 0) + l; });
   });
 
   const list = Object.values(prods).map((p) => {
@@ -173,6 +225,8 @@ export function planBrews({ batches, stockByKey, tanks, settings, todayStr }) {
       cv,
       include: ps.include ?? (ratePerDay > 0 && !!recentEnough),
       mergedFrom: p.mergedFrom,
+      soldByContainer: p.soldByContainer,
+      stockByContainer: p.stockByContainer,
     };
   });
 
@@ -281,6 +335,7 @@ export function planBrews({ batches, stockByKey, tanks, settings, todayStr }) {
     }
     suggestions.push({
       id: `${pr.key}::${n.needDate}`,
+      split: packagingSplit(pr, volume * pr.yieldF, containers, pr.coverWeeks * 7, s.packOverrides && s.packOverrides[pr.key]),
       key: pr.key,
       name: pr.name,
       productType: pr.productType,
