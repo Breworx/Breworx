@@ -1315,6 +1315,16 @@ const normItemName = (n) => String(n || "").trim().replace(/\s+/g, " ").toLowerC
 const sameItemName = (a, b) => normItemName(a) === normItemName(b);
 // How to turn a quantity in one unit into another (only within weight or volume).
 const UNIT_TO_BASE = { kg: ["mass", 1000], g: ["mass", 1], L: ["vol", 1000], mL: ["vol", 1], ml: ["vol", 1] };
+// A receive-time choice to put a PO line into an existing inventory item
+// (picked because the names don't quite match): the line takes that item's
+// name and unit, with qty and cost converted to match.
+function applyLineMatch(line, matches) {
+  const m = matches && matches[line.id];
+  if (!m) return line;
+  const f = unitFactor(line.unit, m.unit) ?? 1;
+  const conv = (n) => (n == null || n === "" ? n : Math.round(Number(n) * f * 1000) / 1000);
+  return { ...line, name: m.name, unit: m.unit, category: m.category || line.category, qty: conv(line.qty), costPerUnit: line.costPerUnit != null ? Number(line.costPerUnit) / f : line.costPerUnit, _f: f };
+}
 function unitFactor(from, to) {
   if (from === to) return 1;
   const a = UNIT_TO_BASE[from];
@@ -8081,7 +8091,8 @@ function RenameModal({ title, currentName, onClose, onSave }) {
 }
 
 // Words in a name, for spotting likely duplicates ("Gladfield Pilsner Malt" / "Pilsner Malt").
-const nameWords = (n) => new Set(normItemName(n).replace(/[^a-z0-9 ]/g, " ").split(" ").filter((w) => w.length > 2 && !["malt", "the", "bag", "kg"].includes(w)));
+const NAME_FILLER = ["malt", "the", "bag", "and", "yeast", "hops", "pellets", "pellet"];
+const nameWords = (n) => new Set(normItemName(n).replace(/[^a-z0-9 ]/g, " ").split(" ").filter((w) => w.length > 2 && !/\d/.test(w) && !NAME_FILLER.includes(w)));
 function nameSimilarity(a, b) {
   const A = nameWords(a);
   const B = nameWords(b);
@@ -8091,9 +8102,9 @@ function nameSimilarity(a, b) {
   return common / Math.min(A.size, B.size);
 }
 
-function MergeInventoryModal({ item, candidates, onClose, onMerge }) {
+function MergeInventoryModal({ item, candidates, onClose, onMerge, initialTargetId = "" }) {
   const [query, setQuery] = useState("");
-  const [targetId, setTargetId] = useState("");
+  const [targetId, setTargetId] = useState(initialTargetId);
   const [keep, setKeep] = useState("other"); // which name survives: "other" keeps the chosen item, "this" keeps this one
   const [busy, setBusy] = useState(false);
   const scored = candidates
@@ -8159,6 +8170,92 @@ function MergeInventoryModal({ item, candidates, onClose, onMerge }) {
         </button>
       </div>
     </Modal>
+  );
+}
+
+// Pairs of inventory items whose names look like the same thing, for the
+// "Possible duplicates" box at the top of Inventory.
+function findLikelyDuplicates(inventory, dismissed) {
+  const pairs = [];
+  for (let i = 0; i < inventory.length; i++) {
+    for (let j = i + 1; j < inventory.length; j++) {
+      const a = inventory[i];
+      const b = inventory[j];
+      const key = [a.id, b.id].sort().join("|");
+      if (dismissed.has(key)) continue;
+      const score = sameItemName(a.name, b.name) ? 2 : nameSimilarity(a.name, b.name);
+      if (score >= 0.75) pairs.push({ a, b, key, score });
+    }
+  }
+  return pairs.sort((x, y) => y.score - x.score || x.a.name.localeCompare(y.a.name));
+}
+
+function InventoryDuplicatesPanel({ inventory, onMerge, onOpen }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("brewpoint-not-duplicates") || "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+  const [showAll, setShowAll] = useState(false);
+  const [merging, setMerging] = useState(null);
+  const pairs = useMemo(() => findLikelyDuplicates(inventory, dismissed), [inventory, dismissed]);
+  if (pairs.length === 0) return null;
+  const dismiss = (key) => {
+    const next = new Set(dismissed);
+    next.add(key);
+    setDismissed(next);
+    try {
+      localStorage.setItem("brewpoint-not-duplicates", JSON.stringify([...next]));
+    } catch {}
+  };
+  const shown = showAll ? pairs : pairs.slice(0, 4);
+  const small = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "6px 10px", fontSize: 12, color: "#2A3324", cursor: "pointer", fontFamily: "'Inter', sans-serif" };
+  return (
+    <div style={{ background: "#FBF3DF", border: "1px solid #E8D49A", borderRadius: 6, padding: "11px 12px", marginBottom: 12 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#8A6D0B", marginBottom: 8 }}>
+        Possible duplicates ({pairs.length})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {shown.map(({ a, b, key }) => {
+          const canMerge = unitFactor(a.unit, b.unit) != null;
+          return (
+            <div key={key} style={{ background: "#FFFDF6", border: "1px solid #EFE3BC", borderRadius: 5, padding: "8px 10px" }}>
+              <div style={{ fontSize: 13, color: "#2A3324", lineHeight: 1.45, marginBottom: 6 }}>
+                <button type="button" onClick={() => onOpen(a.id)} style={{ background: "none", border: "none", padding: 0, color: "#2A3324", textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>{a.name}</button>
+                <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}> {a.qty}{a.unit}</span>
+                <span style={{ color: "#9BA88A" }}> and </span>
+                <button type="button" onClick={() => onOpen(b.id)} style={{ background: "none", border: "none", padding: 0, color: "#2A3324", textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>{b.name}</button>
+                <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}> {b.qty}{b.unit}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {canMerge ? (
+                  <button type="button" onClick={() => setMerging({ a, b })} style={{ ...small, background: "#5C9A3C", border: "1px solid #5C9A3C", color: "#16191A" }}>Merge…</button>
+                ) : (
+                  <span style={{ fontSize: 11.5, color: "#B5502F" }}>Different units ({a.unit} / {b.unit}) — change one first</span>
+                )}
+                <button type="button" onClick={() => dismiss(key)} style={small}>Not the same</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {pairs.length > 4 && (
+        <button type="button" onClick={() => setShowAll((v) => !v)} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, padding: 0, marginTop: 8 }}>
+          {showAll ? "Show fewer" : `Show all ${pairs.length}`}
+        </button>
+      )}
+      {merging && (
+        <MergeInventoryModal
+          item={merging.a}
+          candidates={inventory.filter((it) => it.id !== merging.a.id)}
+          initialTargetId={merging.b.id}
+          onClose={() => setMerging(null)}
+          onMerge={onMerge}
+        />
+      )}
+    </div>
   );
 }
 
@@ -11287,7 +11384,18 @@ function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory
   );
 }
 
-function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDocument, otherSentPOs }) {
+function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDocument, otherSentPOs, inventory = [] }) {
+  // lineId → inventory item to put that line into, or "new" to keep it as a new item.
+  const [lineMatches, setLineMatches] = useState({});
+  const lookalikesFor = (line) => {
+    if (inventory.some((it) => sameItemName(it.name, line.name))) return [];
+    return inventory
+      .map((it) => ({ it, score: nameSimilarity(line.name, it.name) + (it.category === line.category ? 0.1 : 0) }))
+      .filter((x) => x.score >= 0.6 && unitFactor(line.unit, x.it.unit) != null)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map((x) => x.it);
+  };
   const [combinedPOs, setCombinedPOs] = useState([]);
   const [combineQuery, setCombineQuery] = useState("");
   const [combineFocused, setCombineFocused] = useState(false);
@@ -11397,10 +11505,14 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
       costs[id] = v === "" ? null : Number(v);
     });
     const deliveryCostOverride = deliveryCostInput === "" ? null : Number(deliveryCostInput);
+    const matches = {};
+    Object.entries(lineMatches).forEach(([id, it]) => {
+      if (it && it !== "new") matches[id] = { name: it.name, unit: it.unit, category: it.category };
+    });
     if (combinedPOs.length > 0) {
-      onConfirmMultiple(allPOs.map((p) => p.id), lotNumbers, costs, deliveryCostOverride, receivedOn);
+      onConfirmMultiple(allPOs.map((p) => p.id), lotNumbers, costs, deliveryCostOverride, receivedOn, matches);
     } else {
-      onConfirm(lotNumbers, costs, deliveryCostOverride, receivedOn);
+      onConfirm(lotNumbers, costs, deliveryCostOverride, receivedOn, matches);
     }
     onClose();
   };
@@ -11560,6 +11672,33 @@ function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onExtractDo
                   <div style={{ color: "#2A3324", fontSize: 13.5, marginBottom: 8 }}>
                     {l.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>({formatQty(l.qty, l.unit)})</span>
                   </div>
+                  {(() => {
+                    const looks = lookalikesFor(l);
+                    const chosen = lineMatches[l.id];
+                    if (looks.length === 0 && !(chosen && chosen !== "new")) return null;
+                    const pill = (on) => ({ background: on ? "#5C9A3C" : "#FFFFFF", border: `1px solid ${on ? "#5C9A3C" : "#DDE0C8"}`, borderRadius: 999, padding: "6px 11px", fontSize: 12.5, color: on ? "#16191A" : "#2A3324", cursor: "pointer", fontFamily: "'Inter', sans-serif" });
+                    return (
+                      <div style={{ background: chosen ? "#EBF3E4" : "#FBE5D2", border: `1px solid ${chosen ? "#9BC48A" : "#E3B37A"}`, borderRadius: 6, padding: "9px 10px", marginBottom: 10 }}>
+                        <div style={{ fontSize: 12.5, color: chosen ? "#3F7A28" : "#7A3E1D", marginBottom: 7, lineHeight: 1.4 }}>
+                          {chosen && chosen !== "new"
+                            ? `Going into ${chosen.name}${chosen.unit !== l.unit ? ` (as ${formatQty(Math.round(l.qty * unitFactor(l.unit, chosen.unit) * 1000) / 1000, chosen.unit)})` : ""}.`
+                            : chosen === "new"
+                            ? `Adding as a new item called "${l.name}".`
+                            : `No inventory item is called "${l.name}", so this would add a new one. Is it one of these?`}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {looks.map((it) => (
+                            <button key={it.id} type="button" onClick={() => setLineMatches((p) => ({ ...p, [l.id]: it }))} style={pill(chosen && chosen.id === it.id)}>
+                              {it.name} · {it.qty}{it.unit}
+                            </button>
+                          ))}
+                          <button type="button" onClick={() => setLineMatches((p) => ({ ...p, [l.id]: "new" }))} style={pill(chosen === "new")}>
+                            Keep as new item
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: "flex", gap: 10 }}>
                     <div style={{ flex: 1 }}>
                       <TextField
@@ -11775,8 +11914,9 @@ function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple, invent
         <ReceivePOModal
           po={po}
           onClose={() => setShowReceive(false)}
-          onConfirm={(lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => onReceive(po.id, lotNumbers, costOverrides, deliveryCostOverride, receivedOn)}
-          onConfirmMultiple={(poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => onReceiveMultiple(poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn)}
+          onConfirm={(lotNumbers, costOverrides, deliveryCostOverride, receivedOn, lineMatches) => onReceive(po.id, lotNumbers, costOverrides, deliveryCostOverride, receivedOn, lineMatches)}
+          onConfirmMultiple={(poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn, lineMatches) => onReceiveMultiple(poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn, lineMatches)}
+          inventory={inventory}
           onExtractDocument={onExtractDocument}
           otherSentPOs={(allPOs || []).filter((p) => p.status === "Sent" && p.id !== po.id)}
         />
@@ -29126,16 +29266,17 @@ function TankLogApp() {
     setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Sent" } : p)));
   };
 
-  const receivePO = async (id, lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => {
-    const po = purchaseOrders.find((p) => p.id === id);
-    if (!po) return;
+  const receivePO = async (id, lotNumbers, costOverrides, deliveryCostOverride, receivedOn, lineMatches) => {
+    const rawPo = purchaseOrders.find((p) => p.id === id);
+    if (!rawPo) return;
+    const po = { ...rawPo, lines: rawPo.lines.map((l) => applyLineMatch(l, lineMatches)) };
 
     // A delivery docket's actual price can differ from what was quoted
     // when the order was placed — costOverrides lets the real, received
     // price win, falling back to the original PO line if nothing changed.
     const effectiveCost = (line) => {
       const override = costOverrides && costOverrides[line.id];
-      return override != null ? override : line.costPerUnit;
+      return override != null ? override / (line._f || 1) : line.costPerUnit;
     };
 
     // Delivery cost is spread across lines in proportion to each line's own
@@ -29151,7 +29292,8 @@ function TankLogApp() {
     for (const line of po.lines) {
       const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
       const costPerUnit = effectiveCost(line);
-      finalizedLines.push({ ...line, lotNumber, costPerUnit });
+      const { _f, ...plainLine } = line;
+      finalizedLines.push({ ...plainLine, lotNumber, costPerUnit });
       const idx = nextInventory.findIndex((it) => sameItemName(it.name, line.name));
       const lineValue = (line.qty || 0) * (costPerUnit || 0);
       const deliveryShare = totalValue > 0 ? (lineValue / totalValue) * deliveryCost : 0;
@@ -29196,14 +29338,14 @@ function TankLogApp() {
   // — the freight charge gets split proportionally across every line from
   // every order combined, not just one PO's lines, and each PO ends up
   // storing its own genuine share of that shared cost.
-  const receiveMultiplePOs = async (poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn) => {
+  const receiveMultiplePOs = async (poIds, lotNumbers, costOverrides, deliveryCostOverride, receivedOn, lineMatches) => {
     const pos = purchaseOrders.filter((p) => poIds.includes(p.id));
     if (pos.length === 0) return;
-    const allLines = pos.flatMap((p) => p.lines.map((l) => ({ ...l, _poId: p.id })));
+    const allLines = pos.flatMap((p) => p.lines.map((l) => ({ ...applyLineMatch(l, lineMatches), _poId: p.id })));
 
     const effectiveCost = (line) => {
       const override = costOverrides && costOverrides[line.id];
-      return override != null ? override : line.costPerUnit;
+      return override != null ? override / (line._f || 1) : line.costPerUnit;
     };
 
     const totalValue = allLines.reduce((sum, l) => sum + (l.qty || 0) * (effectiveCost(l) || 0), 0);
@@ -29221,7 +29363,7 @@ function TankLogApp() {
       const poForLine = pos.find((p) => p.id === line._poId);
       const lotNumber = (lotNumbers && lotNumbers[line.id] && lotNumbers[line.id].trim()) || "no lot #";
       const costPerUnit = effectiveCost(line);
-      const { _poId, ...cleanLine } = line;
+      const { _poId, _f, ...cleanLine } = line;
       finalizedLinesByPO[line._poId].push({ ...cleanLine, lotNumber, costPerUnit });
       const idx = nextInventory.findIndex((it) => sameItemName(it.name, line.name));
       const lineValue = (line.qty || 0) * (costPerUnit || 0);
@@ -30842,6 +30984,7 @@ function TankLogApp() {
                       Suppliers ({suppliers.length})
                     </button>
                   </div>
+                  <InventoryDuplicatesPanel inventory={inventory} onMerge={mergeInventoryItems} onOpen={setSelectedInventoryId} />
                   <input
                     type="text"
                     value={inventoryQuery}
