@@ -18166,7 +18166,7 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
 // A clean, print-ready report — built for handing to an inspector or
 // auditor, not for reading on screen. Uses the browser's own print/Save-as-
 // PDF rather than a PDF library, so there's nothing extra to load or break.
-function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
+function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose, periodLabelOverride, closeLabel = "Close" }) {
   const categoryLabel = {
     checklist: "Checklist",
     calibration: "Calibration",
@@ -18189,7 +18189,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   const enteredLater = (r) => !!r.createdAt && !!r.date && r.createdAt.slice(0, 10) > r.date;
   const transferredCount = records.filter(enteredLater).length;
   const openCorrectiveActions = records.filter((r) => r.correctiveAction && !r.correctiveActionResolved);
-  const periodLabel = monthFilter ? monthLabelFromKey(monthFilter) : "All records";
+  const periodLabel = periodLabelOverride || (monthFilter ? monthLabelFromKey(monthFilter) : "All records");
   const counts = {};
   records.forEach((r) => {
     counts[r.category] = (counts[r.category] || 0) + 1;
@@ -18227,7 +18227,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
           onClick={onClose}
           style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5 }}
         >
-          <X size={16} /> Close
+          <X size={16} /> {closeLabel}
         </button>
         <button
           onClick={() => window.print()}
@@ -18295,7 +18295,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose }) {
   );
 }
 
-function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartMaintenance, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit, onLogVerifierVisit, onLogComplaint }) {
+function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStartMaintenance, onStartTraining, onStartIllness, onStartNote, onOpenStaff, suppliers, onOpenSupplier, onResolveCorrectiveAction, companyName, onLogPestCheck, onManagePestStations, pestStations, onLogContractorVisit, onStartMockRecall, onStartInternalAudit, onLogVerifierVisit, onLogComplaint, onShareWithAuditor }) {
   const [query, setQuery] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [showAuditReport, setShowAuditReport] = useState(false);
@@ -18749,6 +18749,14 @@ function FoodSafetyView({ records, onStartChecklist, onStartCalibration, onStart
           <FileText size={12} /> Export audit report
         </button>
       </div>
+      {onShareWithAuditor && (
+        <button
+          onClick={onShareWithAuditor}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", marginBottom: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer" }}
+        >
+          <Users size={13} /> Share with auditor (read-only link)
+        </button>
+      )}
       <input
         type="text"
         value={query}
@@ -19846,7 +19854,7 @@ function auditRunDetail(r, batchById) {
   };
 }
 
-function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClose }) {
+function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClose, closeLabel = "Close" }) {
   const active = months.filter((m) => m.status !== "nil" || m.ret);
   const keys = active.map((m) => m.period).sort();
   const [from, setFrom] = useState(keys[0] || "");
@@ -19930,7 +19938,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
       <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "calc(10px + env(safe-area-inset-top)) 16px 10px", zIndex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5, padding: 6 }}>
-            <X size={16} /> Close
+            <X size={16} /> {closeLabel}
           </button>
           <button onClick={() => window.print()} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}>
             Print / Save as PDF
@@ -20070,7 +20078,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
   );
 }
 
-function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, companyName, onSaveReturn, onDeleteReturn, onReviewReturn, onReadScreenshot, onImportGroup, onViewScreenshot, onSetDeclared }) {
+function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, companyName, onSaveReturn, onDeleteReturn, onReviewReturn, onReadScreenshot, onImportGroup, onViewScreenshot, onSetDeclared, onShareWithAuditor }) {
   const [filter, setFilter] = useState("all");
   const [editingMonth, setEditingMonth] = useState(null);
   const [importGroups, setImportGroups] = useState(null);
@@ -20193,6 +20201,9 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
             <button onClick={() => setShowReport(true)} style={auditSecondaryBtn}>Audit report &amp; export</button>
             <button onClick={exportCsv} style={auditSecondaryBtn}>Export audit pack (CSV)</button>
           </div>
+          {onShareWithAuditor && (
+            <button onClick={onShareWithAuditor} style={{ ...auditSecondaryBtn, width: "100%", marginBottom: 12 }}>Share with auditor (read-only link)</button>
+          )}
           <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden", marginBottom: 12 }}>
             {[["all", "All months"], ["attention", "Needs a look"]].map(([k, l]) => (
               <button key={k} onClick={() => setFilter(k)} style={{ flex: 1, background: filter === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: filter === k ? "#16191A" : "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>{l}</button>
@@ -24480,6 +24491,315 @@ function AuthScreen({ inviteToken }) {
   );
 }
 
+// ─── Auditor share links ────────────────────────────────────────────────────
+// A read-only link plus a PIN that the owner sends to an auditor. Nothing is
+// read from tables directly: the public page calls get_audit_share, which
+// checks the token, expiry, switch-off and PIN (locking after 5 wrong tries)
+// and returns only what that link includes — never costs or sales.
+const auditShareUrl = (token) => `${window.location.origin}/audit/${token}`;
+const fmtNzDate = (d) => (d ? new Date(d).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }) : "");
+const randomPin = () => String(Math.floor(100000 + Math.random() * 900000));
+const isoDaysAgo = (n) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+};
+
+function AuditSharesModal({ scope, userName, onClose }) {
+  const [shares, setShares] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [label, setLabel] = useState("");
+  const [foodSafety, setFoodSafety] = useState(scope !== "excise");
+  const [excise, setExcise] = useState(scope === "excise");
+  const [dateFrom, setDateFrom] = useState(isoDaysAgo(365));
+  const [dateTo, setDateTo] = useState(today());
+  const [expiresDays, setExpiresDays] = useState(14);
+  const [pin, setPin] = useState(randomPin);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [created, setCreated] = useState(null);
+  const [copied, setCopied] = useState("");
+
+  const load = async () => {
+    const { data, error: err } = await supabase
+      .from("audit_shares")
+      .select("id, token, label, include_food_safety, include_excise, date_from, date_to, expires_at, revoked_at, created_by, created_at, view_count, last_viewed_at")
+      .order("created_at", { ascending: false });
+    if (err) setLoadError(err.message);
+    else setShares(data || []);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const create = async () => {
+    setError("");
+    if (!/^[0-9]{4,8}$/.test(pin)) return setError("PIN must be 4 to 8 digits.");
+    if (!foodSafety && !excise) return setError("Choose Food Safety, Excise or both.");
+    setCreating(true);
+    const { data, error: err } = await supabase.rpc("create_audit_share", {
+      p_label: label,
+      p_food_safety: foodSafety,
+      p_excise: excise,
+      p_date_from: dateFrom,
+      p_date_to: dateTo,
+      p_expires_days: Number(expiresDays),
+      p_pin: pin,
+      p_created_by: userName || "",
+    });
+    setCreating(false);
+    if (err) return setError(err.message);
+    setCreated({ url: auditShareUrl(data.token), pin, label });
+    setLabel("");
+    setPin(randomPin());
+    load();
+  };
+
+  const revoke = async (id) => {
+    const { error: err } = await supabase.rpc("revoke_audit_share", { p_id: id });
+    if (err) setLoadError(err.message);
+    load();
+  };
+
+  const copy = async (text, key) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(""), 1800);
+    } catch {}
+  };
+
+  const shareLink = async () => {
+    if (!created) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Audit records", text: "Read-only audit records. I'll send the PIN separately.", url: created.url });
+      } catch {}
+    } else copy(created.url, "url");
+  };
+
+  const statusOf = (sh) => {
+    if (sh.revoked_at) return { text: "Switched off", color: "#9BA88A" };
+    if (new Date(sh.expires_at) < new Date()) return { text: "Expired", color: "#9BA88A" };
+    return { text: `Active until ${fmtNzDate(sh.expires_at)}`, color: "#3F7A28" };
+  };
+
+  const toggleRow = (on, setOn, text) => (
+    <button
+      onClick={() => setOn(!on)}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 5, fontSize: 13.5, cursor: "pointer", textAlign: "left", color: "#2A3324" }}
+    >
+      <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${on ? "#5C9A3C" : "#C9D1AC"}`, background: on ? "#5C9A3C" : "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        {on && <CheckCircle2 size={13} color="#16191A" />}
+      </div>
+      {text}
+    </button>
+  );
+  const smallBtn = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" };
+  const sectionLabel = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" };
+
+  return (
+    <Modal title="Share with auditor" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {created ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "#EEF3E4", border: "1px solid #C9D9B0", borderRadius: 6, padding: 14 }}>
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 15, color: "#2A3324" }}>Link ready{created.label ? ` — ${created.label}` : ""}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, wordBreak: "break-all", color: "#2A3324", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 10px" }}>{created.url}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={shareLink} style={{ ...smallBtn, flex: 1 }}>Send link</button>
+              <button onClick={() => copy(created.url, "url")} style={{ ...smallBtn, flex: 1 }}>{copied === "url" ? "Copied!" : "Copy link"}</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ fontSize: 13, color: "#2A3324" }}>
+                PIN: <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, letterSpacing: "0.12em" }}>{created.pin}</span>
+              </div>
+              <button onClick={() => copy(created.pin, "pin")} style={smallBtn}>{copied === "pin" ? "Copied!" : "Copy PIN"}</button>
+            </div>
+            <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
+              Send the PIN separately from the link, e.g. text the PIN and email the link. The PIN is only shown now. If it's lost, switch this link off and make a new one.
+            </div>
+            <button onClick={() => setCreated(null)} style={{ ...smallBtn, alignSelf: "flex-start" }}>Make another link</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.45 }}>
+              Makes a read-only link to your audit reports. The auditor needs the link and the PIN, doesn't need to log in, and can't change anything. Costs and sales are never included.
+            </div>
+            <TextField label="Who it's for (optional)" value={label} onChange={setLabel} />
+            <div style={sectionLabel}>Include</div>
+            {toggleRow(foodSafety, setFoodSafety, "Food Safety records")}
+            {toggleRow(excise, setExcise, "Excise returns & packaging")}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <TextField label="Records from" type="date" value={dateFrom} onChange={setDateFrom} />
+              <TextField label="Records to" type="date" value={dateTo} onChange={setDateTo} />
+            </div>
+            <div style={sectionLabel}>Link works for</div>
+            <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 5, overflow: "hidden" }}>
+              {[7, 14, 30].map((d) => (
+                <button key={d} onClick={() => setExpiresDays(d)} style={{ flex: 1, background: expiresDays === d ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: expiresDays === d ? "#16191A" : "#5C6B54", fontSize: 13, cursor: "pointer" }}>
+                  {d} days
+                </button>
+              ))}
+            </div>
+            <TextField label="PIN (4–8 digits)" value={pin} onChange={(v) => setPin(v.replace(/\D/g, "").slice(0, 8))} />
+            {error && <div style={{ fontSize: 12.5, color: "#B5502F" }}>{error}</div>}
+            <button
+              onClick={create}
+              disabled={creating}
+              style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: 12, color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, cursor: creating ? "default" : "pointer", opacity: creating ? 0.6 : 1 }}
+            >
+              {creating ? "Creating…" : "Create link"}
+            </button>
+          </>
+        )}
+
+        <div style={{ ...sectionLabel, marginTop: 6 }}>Your links</div>
+        {loadError && <div style={{ fontSize: 12.5, color: "#B5502F" }}>{loadError}</div>}
+        {shares === null && !loadError && <div style={{ fontSize: 12.5, color: "#9BA88A" }}>Loading…</div>}
+        {shares && shares.length === 0 && <div style={{ fontSize: 12.5, color: "#9BA88A" }}>No links yet.</div>}
+        {shares &&
+          shares.map((sh) => {
+            const st = statusOf(sh);
+            const active = st.color === "#3F7A28";
+            return (
+              <div key={sh.id} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 13.5, color: "#2A3324", fontWeight: 500 }}>{sh.label || "Audit link"}</span>
+                  <span style={{ fontSize: 11.5, color: st.color, whiteSpace: "nowrap" }}>{st.text}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#5C6B54" }}>
+                  {[sh.include_food_safety && "Food Safety", sh.include_excise && "Excise"].filter(Boolean).join(" + ")} · {fmtNzDate(sh.date_from)} – {fmtNzDate(sh.date_to)}
+                </div>
+                <div style={{ fontSize: 12, color: "#5C6B54" }}>
+                  {sh.view_count > 0 ? `Opened ${sh.view_count} time${sh.view_count === 1 ? "" : "s"}, last ${new Date(sh.last_viewed_at).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : "Not opened yet"}
+                </div>
+                {active && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                    <button onClick={() => copy(auditShareUrl(sh.token), sh.id)} style={smallBtn}>{copied === sh.id ? "Copied!" : "Copy link"}</button>
+                    <button onClick={() => revoke(sh.id)} style={{ ...smallBtn, color: "#B5502F", borderColor: "#E3B37A" }}>Switch off</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+      </div>
+    </Modal>
+  );
+}
+
+export function AuditSharePage({ token }) {
+  const [pin, setPin] = useState("");
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(null);
+
+  const submit = async () => {
+    if (!pin) return;
+    setStatus("loading");
+    setError("");
+    const { data: res, error: err } = await supabase.rpc("get_audit_share", { p_token: token, p_pin: pin, p_user_agent: navigator.userAgent });
+    if (err || !res) {
+      setStatus("idle");
+      return setError("Couldn't load the records. Check your connection and try again.");
+    }
+    if (res.error === "bad_pin") {
+      setStatus("idle");
+      return setError("That PIN isn't right. After 5 wrong tries the link locks for 15 minutes.");
+    }
+    if (res.error === "locked") {
+      setStatus("idle");
+      return setError("Too many wrong PINs. This link is locked for 15 minutes.");
+    }
+    if (res.error) return setStatus("unavailable");
+    const abvMethod = res.company?.excise_abv_method || "measured";
+    const batches = (res.batches || []).map(rowToBatch);
+    const exciseReturns = (res.excise_returns || []).map(rowToExciseReturn);
+    const exciseItemCodes = (res.excise_item_codes || []).map(rowToExciseItemCode);
+    const fromKey = String(res.share.date_from).slice(0, 7);
+    const toKey = String(res.share.date_to).slice(0, 7);
+    const months = res.share.include_excise
+      ? exciseAuditMonths({ batches, abvMethod, exciseReturns, exciseItemCodes, todayStr: today() }).months.filter((m) => m.period >= fromKey && m.period <= toKey)
+      : [];
+    setData({
+      companyName: res.company?.name || "",
+      share: res.share,
+      records: (res.food_safety_records || []).map(rowToFoodSafetyRecord),
+      batches,
+      months,
+      abvMethod,
+    });
+    setStatus("ready");
+    setPin("");
+  };
+
+  const shell = (children) => (
+    <div style={{ minHeight: "100vh", background: "#F5F1E4", fontFamily: "'Inter', sans-serif", color: "#2A3324", display: "flex", justifyContent: "center", padding: "48px 18px" }}>
+      <div style={{ width: "100%", maxWidth: 440 }}>{children}</div>
+    </div>
+  );
+  const heading = (t) => <h1 style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 24, margin: "0 0 8px" }}>{t}</h1>;
+
+  if (status === "unavailable") {
+    return shell(
+      <>
+        {heading("Link not available")}
+        <p style={{ color: "#5C6B54", fontSize: 14, lineHeight: 1.5 }}>This audit link has expired or been switched off. Ask the brewery to send you a new one.</p>
+      </>
+    );
+  }
+
+  if (status === "ready" && data) {
+    const period = `${fmtNzDate(data.share.date_from)} – ${fmtNzDate(data.share.date_to)}`;
+    if (open === "foodsafety") return <FoodSafetyAuditReport records={data.records} companyName={data.companyName} periodLabelOverride={period} closeLabel="Back" onClose={() => setOpen(null)} />;
+    if (open === "excise") return <ExciseAuditReport months={data.months} batches={data.batches} companyName={data.companyName} abvMethod={data.abvMethod} closeLabel="Back" onClose={() => setOpen(null)} />;
+    const card = (key, title, sub) => (
+      <button
+        onClick={() => setOpen(key)}
+        style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 8, padding: "16px 18px", cursor: "pointer", marginBottom: 10 }}
+      >
+        <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, color: "#2A3324" }}>{title}</span>
+        <span style={{ fontSize: 12.5, color: "#5C6B54" }}>{sub}</span>
+      </button>
+    );
+    return shell(
+      <>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5C6B54" }}>{data.companyName}</div>
+        {heading("Audit records")}
+        <p style={{ color: "#5C6B54", fontSize: 13.5, lineHeight: 1.5, margin: "0 0 22px" }}>
+          Read-only. Records from {period}. This link works until {fmtNzDate(data.share.expires_at)}. Each report can be printed or saved as a PDF.
+        </p>
+        {data.share.include_food_safety && card("foodsafety", "Food Safety audit report", `${data.records.length} records: checklists, corrective actions, calibration, training, pest control, mock recalls and more`)}
+        {data.share.include_excise && card("excise", "Excise audit report", `${data.months.filter((m) => m.status !== "nil" || m.ret).length} months: TSW returns compared with packaging runs and batch detail`)}
+      </>
+    );
+  }
+
+  return shell(
+    <>
+      {heading("Audit records")}
+      <p style={{ color: "#5C6B54", fontSize: 14, lineHeight: 1.5, margin: "0 0 20px" }}>A brewery has shared read-only records with you. Enter the PIN they sent you.</p>
+      <input
+        value={pin}
+        onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        placeholder="PIN"
+        style={{ width: "100%", boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px", fontFamily: "'JetBrains Mono', monospace", fontSize: 22, letterSpacing: "0.2em", textAlign: "center", color: "#2A3324" }}
+      />
+      {error && <div style={{ fontSize: 13, color: "#B5502F", marginTop: 10, lineHeight: 1.4 }}>{error}</div>}
+      <button
+        onClick={submit}
+        disabled={!pin || status === "loading"}
+        style={{ width: "100%", marginTop: 14, background: pin ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 6, padding: 14, color: pin ? "#16191A" : "#A3AC94", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 16, cursor: pin ? "pointer" : "default" }}
+      >
+        {status === "loading" ? "Opening…" : "Open records"}
+      </button>
+    </>
+  );
+}
+
 export function XeroCallback() {
   const [status, setStatus] = useState("connecting");
   const [message, setMessage] = useState("");
@@ -25464,6 +25784,7 @@ function TankLogApp() {
   // teammates and deleting the company — anyone who isn't specifically
   // the owner is treated as staff for financial and destructive actions.
   const isOwner = profile?.role === "owner";
+  const [auditShareScope, setAuditShareScope] = useState(null);
 
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   useEffect(() => {
@@ -29615,6 +29936,7 @@ function TankLogApp() {
                   onStartInternalAudit={() => setShowInternalAuditModal(true)}
                   onLogVerifierVisit={() => setShowVerifierVisitModal(true)}
                   onLogComplaint={() => setShowComplaintModal(true)}
+                  onShareWithAuditor={isOwner ? () => setAuditShareScope("foodsafety") : undefined}
                 />
               </>
             )}
@@ -29650,6 +29972,7 @@ function TankLogApp() {
                 onUploadPhoto={uploadFoodSafetyPhoto}
               />
             )}
+            {auditShareScope && <AuditSharesModal scope={auditShareScope} userName={profile?.name} onClose={() => setAuditShareScope(null)} />}
             {showComplaintModal && (
               <LogComplaintModal
                 batches={batches}
@@ -29695,6 +30018,7 @@ function TankLogApp() {
                 onReadScreenshot={readTswScreenshot}
                 onImportGroup={importExciseScreenshotGroup}
                 onViewScreenshot={viewExciseScreenshot}
+                onShareWithAuditor={isOwner ? () => setAuditShareScope("excise") : undefined}
               />
             )}
 
