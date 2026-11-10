@@ -1089,6 +1089,9 @@ function currentFaultsList(faultsList) {
 }
 
 function batchTankIds(batch) {
+  // A brew day merged into another batch no longer has a tank of its own —
+  // its wort went into the batch it was merged into.
+  if (batch.mergedIntoBatchId) return [];
   if (batch.splitTanks && batch.splitTanks.length > 0) return batch.splitTanks.map((t) => t.tankId);
   if (batch.tankId) return [batch.tankId];
   return [];
