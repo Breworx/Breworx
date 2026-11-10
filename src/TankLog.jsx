@@ -549,16 +549,61 @@ function exciseBandForAbv(abv) {
   return NZ_EXCISE_BANDS.find((b) => abv > b.min && abv <= b.max) || NZ_EXCISE_BANDS[0];
 }
 
-// Pae Ora (Healthy Futures) Alcohol Levy — unlike excise duty, there's no
-// complete published rate table available for this (2026/27 rates were
-// still pending as of the last Customs notice). This single per-litre
-// figure is derived from one confirmed real TSW calculation (beer,
-// 273.360L @ 6% ABV → $6.69 levy), not an official table — beer only,
-// since that's the only product type actually confirmed. GST at 15% on
-// the levy is well-established and independently confirmed (excise duty
-// itself doesn't attract GST, only the levy does).
-const ALCOHOL_LEVY_RATE_PER_LITRE_BEVERAGE = { Beer: 0.024476 };
+// Pae Ora (Healthy Futures) Alcohol Levy, in dollars per litre of beverage,
+// by strength class, from Customs' published notices. It changes every
+// 1 July. It applies to every product type, charged by strength class.
+// Checked against a real TSW entry: 273.360L @ 6% in June 2026 →
+// 273.360 × 0.024471 = $6.69. Excise duty itself doesn't attract GST;
+// only the levy does, at 15%.
+const LEVY_CLASSES = [
+  { min: 1.15, max: 2.5, cls: "A" },
+  { min: 2.5, max: 6, cls: "B" },
+  { min: 6, max: 9, cls: "C" },
+  { min: 9, max: 14, cls: "D" },
+  { min: 14, max: 23, cls: "E" },
+  { min: 23, max: Infinity, cls: "F" },
+];
+const LEVY_RATE_HISTORY = [
+  { from: "2026-07-01", A: 0.008625, B: 0.02657, C: 0.046003, D: 0.057503, E: 0.095947, F: 0.218047 },
+  { from: "2025-07-01", A: 0.00789, B: 0.024471, C: 0.042078, D: 0.052597, E: 0.093323, F: 0.202587 },
+  { from: "2024-07-01", A: 0.00745, B: 0.023476, C: 0.039732, D: 0.049665, E: 0.086657, F: 0.185936 },
+  { from: "0000-01-01", A: 0.005056, B: 0.015665, C: 0.026967, D: 0.033708, E: 0.056214, F: 0.127345 },
+];
 const GST_RATE = 0.15;
+function levyRateOn(abv, date) {
+  const c = LEVY_CLASSES.find((b) => abv > b.min && abv <= b.max);
+  if (!c) return 0;
+  const year = LEVY_RATE_HISTORY.find((r) => String(date || "9999") >= r.from) || LEVY_RATE_HISTORY[0];
+  return year[c.cls];
+}
+const round2 = (n) => Math.round((n || 0) * 100) / 100;
+// Levy and GST for one TSW line: worked out on the line's litres, then GST on that levy.
+function lineLevy(litres, abv, date) {
+  const levy = round2(litres * levyRateOn(abv, date));
+  return { levy, levyGst: round2(levy * GST_RATE) };
+}
+// Levy and GST for a whole month's declared lines (a saved return).
+function levyForDeclaredLines(lines, period) {
+  let levy = 0;
+  let levyGst = 0;
+  (lines || []).forEach((l) => {
+    if (l.litres == null || l.abv == null) return;
+    const x = lineLevy(Number(l.litres), Number(l.abv), `${period}-01`);
+    levy += x.levy;
+    levyGst += x.levyGst;
+  });
+  return { levy: round2(levy), levyGst: round2(levyGst) };
+}
+// What a saved return actually cost: duty + levy + GST on the levy.
+function returnPayable(ret) {
+  if (!ret || ret.declaredDuty == null) return null;
+  const duty = Number(ret.declaredDuty);
+  const levy = ret.declaredLevy != null ? Number(ret.declaredLevy) : null;
+  const levyGst = ret.declaredLevyGst != null ? Number(ret.declaredLevyGst) : null;
+  return { duty, levy, levyGst, total: round2(duty + (levy || 0) + (levyGst || 0)) };
+}
+const payableText = (p) =>
+  p ? `Duty $${p.duty.toFixed(2)}${p.levy != null ? ` · Levy $${p.levy.toFixed(2)} · GST on levy $${(p.levyGst || 0).toFixed(2)} · Total $${p.total.toFixed(2)}` : ""}` : "";
 
 // One row per packaging event, since excise is calculated on what actually
 // left the licensed area on a given date — a batch packaged across several
@@ -591,9 +636,7 @@ function exciseRowsForBatches(batches, abvMethod) {
       if (volumeL <= 0) return;
       const rate = exciseRateOn(band, e.date);
       const duty = band.basis === "alcohol" ? volumeL * (abv / 100) * rate : band.basis === "beverage" ? volumeL * rate : 0;
-      const levyRate = ALCOHOL_LEVY_RATE_PER_LITRE_BEVERAGE[b.productType || "Beer"];
-      const levy = levyRate != null ? Math.round(volumeL * levyRate * 100) / 100 : null;
-      const levyGst = levy != null ? Math.round(levy * GST_RATE * 100) / 100 : null;
+      const { levy, levyGst } = lineLevy(volumeL, abv, e.date);
       rows.push({ batchId: b.id, batchName: b.name, batchNumber: b.number, productType: b.productType || "Beer", date: e.date, event: e, abv, measuredAbv, labelAbv: b.labelAbv, usedLabel, usedFallback, volumeL, band, duty, levy, levyGst });
     });
   });
@@ -19874,6 +19917,8 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
     declaredLitres: round3(sum((m) => m.ret?.declaredLitres)),
     declaredLal: round3(sum((m) => m.ret?.declaredLal)),
     duty: Math.round(sum((m) => m.ret?.declaredDuty) * 100) / 100,
+    levy: round2(sum((m) => m.ret?.declaredLevy)),
+    levyGst: round2(sum((m) => m.ret?.declaredLevyGst)),
     ticked: ordered.filter((m) => m.ret?.declaredOnTsw).length,
   };
   const fileTag = ordered.length ? `${ordered[0].period}_to_${ordered[ordered.length - 1].period}` : "none";
@@ -19881,7 +19926,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
   const exportSummary = () =>
     downloadCSV(
       `excise-audit-summary-${fileTag}.csv`,
-      ["Month", "Status", "Declared on TSW", "Entry number", "Filed", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Declared duty ($)", "Estimated duty ($)", "Screenshots", "Reviewed by", "Notes / issues"],
+      ["Month", "Status", "Declared on TSW", "Entry number", "Filed", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Declared duty ($)", "Alcohol levy ($)", "GST on levy ($)", "Total payable ($)", "Estimated duty ($)", "Screenshots", "Reviewed by", "Notes / issues"],
       ordered.map((m) => {
         const est = tswLinesForRows(m.rows).reduce((s2, l) => s2 + l.duty, 0);
         return [
@@ -19897,6 +19942,9 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           m.ret?.declaredLitres != null ? round3(m.ret.declaredLitres - m.appLitres) : "",
           m.ret?.declaredLal != null ? round3(m.ret.declaredLal - m.appLal) : "",
           m.ret?.declaredDuty != null ? Number(m.ret.declaredDuty).toFixed(2) : "",
+          m.ret?.declaredLevy != null ? Number(m.ret.declaredLevy).toFixed(2) : "",
+          m.ret?.declaredLevyGst != null ? Number(m.ret.declaredLevyGst).toFixed(2) : "",
+          returnPayable(m.ret) ? returnPayable(m.ret).total.toFixed(2) : "",
           est.toFixed(2),
           (m.ret?.screenshotPaths || []).length,
           m.ret?.reviewedBy || "",
@@ -19980,7 +20028,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
         </div>
         <div style={{ fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", marginBottom: 22, lineHeight: 1.6 }}>
           Packaged {fmtL(totals.litres)} / {totals.lal.toFixed(3)} LAL · Declared {fmtL(totals.declaredLitres)} / {totals.declaredLal.toFixed(3)} LAL
-          {totals.duty ? ` · Declared duty $${totals.duty.toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} · {totals.ticked} of {ordered.length} months ticked as declared on TSW
+          {totals.duty ? ` · Declared duty $${totals.duty.toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · Levy $${totals.levy.toFixed(2)} · GST on levy $${totals.levyGst.toFixed(2)} · Total paid $${round2(totals.duty + totals.levy + totals.levyGst).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} · {totals.ticked} of {ordered.length} months ticked as declared on TSW
         </div>
 
         {ordered.map((m) => {
@@ -20000,7 +20048,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
               </div>
               {m.ret && (
                 <div style={{ color: "#5C6B54", marginTop: 3 }}>
-                  Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{m.ret.declaredDuty != null ? ` · Duty $${Number(m.ret.declaredDuty).toFixed(2)}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
+                  Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{returnPayable(m.ret) ? ` · ${payableText(returnPayable(m.ret))}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
                   {m.ret.declaredOnTsw && m.ret.declaredOnTswAt ? ` · Ticked declared ${String(m.ret.declaredOnTswAt).slice(0, 10)}${m.ret.declaredOnTswBy ? ` by ${m.ret.declaredOnTswBy}` : ""}` : ""}
                 </div>
               )}
@@ -20148,7 +20196,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
   const exportCsv = () =>
     downloadCSV(
       `excise-self-audit-${today()}.csv`,
-      ["Period", "Status", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Duty paid ($)", "TSW entry number", "Filed date", "Usual due date", "Screenshots on file", "Issues", "Explanation", "Reviewed by", "Reviewed on"],
+      ["Period", "Status", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Duty paid ($)", "Alcohol levy ($)", "GST on levy ($)", "Total paid ($)", "TSW entry number", "Filed date", "Usual due date", "Screenshots on file", "Issues", "Explanation", "Reviewed by", "Reviewed on"],
       [...counted].reverse().map((m) => [
         m.period,
         AUDIT_STATUS[m.status].label,
@@ -20159,6 +20207,9 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
         m.litresDiff ?? "",
         m.lalDiff ?? "",
         m.ret?.declaredDuty ?? "",
+        m.ret?.declaredLevy ?? "",
+        m.ret?.declaredLevyGst ?? "",
+        returnPayable(m.ret)?.total ?? "",
         m.ret?.entryNumber || "",
         m.ret?.filedDate || "",
         m.due,
@@ -20224,6 +20275,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
                   </div>
                 )}
                 {m.status !== "nil" && <AuditFigures appLitres={m.appLitres} appLal={m.appLal} declaredLitres={m.ret?.declaredLitres} declaredLal={m.ret?.declaredLal} />}
+                {returnPayable(m.ret) && <div style={{ marginTop: 8, fontSize: 12.5, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }}>{payableText(returnPayable(m.ret))}</div>}
                 {(m.rows.length > 0 || (m.ret?.declaredLines || []).length > 0) && (
                   <div style={{ marginTop: 10 }}>
                     <AbvComparisonTable rows={exciseAbvComparison(m.rows, m.ret?.declaredLines)} hasDeclaredLines={(m.ret?.declaredLines || []).length > 0} />
@@ -20306,7 +20358,7 @@ function tswLinesForRows(rows) {
   rows.forEach((r) => {
     const abv = Math.round(r.abv * 100) / 100;
     const key = `${r.productType}::${r.batchName.trim().toLowerCase()}::${abv}`;
-    if (!lines[key]) lines[key] = { key, name: r.batchName.trim(), productType: r.productType, abv, litres: 0, batchIds: new Set(), usedLabel: true, band: r.band, rate: exciseRateOn(r.band, r.date) };
+    if (!lines[key]) lines[key] = { key, name: r.batchName.trim(), productType: r.productType, abv, litres: 0, batchIds: new Set(), usedLabel: true, band: r.band, rate: exciseRateOn(r.band, r.date), date: r.date };
     const l = lines[key];
     l.litres += r.volumeL;
     l.batchIds.add(r.batchId);
@@ -20317,7 +20369,8 @@ function tswLinesForRows(rows) {
       const litres = Math.round(l.litres * 1000) / 1000;
       const lal = exciseLal(litres, l.abv);
       const duty = l.band.basis === "alcohol" ? Math.round(lal * l.rate * 100) / 100 : l.band.basis === "beverage" ? Math.round(litres * l.rate * 100) / 100 : 0;
-      return { ...l, litres, lal, duty, batchIds: [...l.batchIds] };
+      const { levy, levyGst } = lineLevy(litres, l.abv, l.date);
+      return { ...l, litres, lal, duty, levy, levyGst, batchIds: [...l.batchIds] };
     })
     .sort((a, b) => a.name.localeCompare(b.name) || a.abv - b.abv);
 }
@@ -20361,6 +20414,9 @@ function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv, locked, tic
   const totalLitres = Math.round(lines.reduce((s, l) => s + l.litres, 0) * 1000) / 1000;
   const totalLal = Math.round(lines.reduce((s, l) => s + l.lal, 0) * 1000) / 1000;
   const totalDuty = Math.round(lines.reduce((s, l) => s + l.duty, 0) * 100) / 100;
+  const totalLevy = round2(lines.reduce((s, l) => s + l.levy, 0));
+  const totalLevyGst = round2(lines.reduce((s, l) => s + l.levyGst, 0));
+  const totalPayable = round2(totalDuty + totalLevy + totalLevyGst);
   const canEdit = abvMethod === "label" && !locked;
 
   const saveAbv = async (line) => {
@@ -20433,6 +20489,16 @@ function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv, locked, tic
           <span style={cell}>{totalLal.toFixed(3)}</span>
           <span style={cell}>${totalDuty.toFixed(2)}</span>
         </div>
+        {[
+          ["Alcohol levy", totalLevy, false],
+          ["GST on levy (15%)", totalLevyGst, false],
+          ["Total payable", totalPayable, true],
+        ].map(([label, v, strong]) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 10px", borderTop: "1px solid #EEF0E2", background: strong ? "#EBF3E4" : "#FFFFFF", fontWeight: strong ? 600 : 400 }}>
+            <span style={{ fontSize: 13, color: "#2A3324" }}>{label}</span>
+            <span style={cell}>${v.toFixed(2)}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -20459,9 +20525,9 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
   const rows = monthFilter ? allRows.filter((r) => monthKeyFromDate(r.date) === monthFilter) : allRows;
   const totalDuty = rows.reduce((s, r) => s + r.duty, 0);
   const totalVolume = Math.round(rows.reduce((s, r) => s + r.volumeL, 0) * 100) / 100;
-  const totalLevy = rows.reduce((s, r) => s + (r.levy || 0), 0);
-  const totalLevyGst = rows.reduce((s, r) => s + (r.levyGst || 0), 0);
-  const anyMissingLevy = rows.some((r) => r.levy == null);
+  const totalLevy = round2(rows.reduce((s, r) => s + (r.levy || 0), 0));
+  const totalLevyGst = round2(rows.reduce((s, r) => s + (r.levyGst || 0), 0));
+  const totalPayable = round2(totalDuty + totalLevy + totalLevyGst);
 
   // Grouped by product type first — a real excise entry needs the right
   // item number per type, on top of the duty band — then by band within
@@ -20593,7 +20659,7 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
           onClick={() =>
             downloadCSV(
               `excise-tsw-export-${monthFilter || "all"}.csv`,
-              ["Goods Description", "Excise Item", "Statistical Quantity", "Statistical Unit", "Supplementary Quantity", "Supplementary Unit", "Percentage (%) Volume of Alcohol", "Estimated duty ($) — reference only, TSW calculates the real figure", "Estimated alcohol levy ($) — rough guide only", "Estimated GST on levy ($) — rough guide only"],
+              ["Goods Description", "Excise Item", "Statistical Quantity", "Statistical Unit", "Supplementary Quantity", "Supplementary Unit", "Percentage (%) Volume of Alcohol", "Estimated duty ($) — reference only, TSW calculates the real figure", "Estimated alcohol levy ($)", "Estimated GST on levy ($)"],
               rows.map((r) => {
                 // TSW's own help text: "6 digits + CHECK LETTER... Do not
                 // transmit dots or spaces" — strip whatever punctuation
@@ -20641,7 +20707,7 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 8 }}>
             <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
-              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Alcohol levy (estimated)</div>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Alcohol levy</div>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalLevy.toFixed(2)}</div>
             </div>
             <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
@@ -20649,9 +20715,12 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalLevyGst.toFixed(2)}</div>
             </div>
           </div>
+          <div style={{ background: "#EBF3E4", border: "1px solid #9BC48A", borderRadius: 6, padding: "14px 16px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#3F7A28" }}>Total payable (duty + levy + GST on levy)</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalPayable.toFixed(2)}</div>
+          </div>
           <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 22 }}>
-            The duty figures above are verified against Customs' official published rates. The levy figure is estimated from one confirmed real example, not an official published table — treat it as a rough guide and confirm the actual amount when you calculate the entry in TSW itself.
-            {anyMissingLevy && " Some rows are for a product type where no levy figure could be estimated at all."}
+            Duty and levy use Customs' published rates for the date each batch was packaged. GST is charged on the levy only, not on the duty. TSW works out the final figures, so allow a few cents for rounding.
           </div>
 
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>By product type</div>
@@ -29468,6 +29537,13 @@ function TankLogApp() {
       reviewedBy: evidenceOnly ? existing?.reviewedBy || "" : "",
       reviewedAt: evidenceOnly ? existing?.reviewedAt || null : null,
     };
+    // Levy and the GST on it, worked out from the declared lines — TSW
+    // charges both on top of the duty.
+    if ((record.declaredLines || []).length) {
+      const { levy, levyGst } = levyForDeclaredLines(record.declaredLines, record.period);
+      record.declaredLevy = levy;
+      record.declaredLevyGst = levyGst;
+    }
     const row = exciseReturnToRow(record, profile.companyId);
     delete row.id;
     const { data, error } = await supabase.from("excise_returns").upsert(row, { onConflict: "company_id,period" }).select().single();

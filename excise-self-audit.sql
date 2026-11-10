@@ -132,3 +132,9 @@ end $$;
 alter table public.excise_returns add column if not exists declared_on_tsw boolean not null default false;
 alter table public.excise_returns add column if not exists declared_on_tsw_at timestamptz;
 alter table public.excise_returns add column if not exists declared_on_tsw_by text;
+
+-- Alcohol levy and the GST on it, for each saved return. Worked out from
+-- the declared lines (litres × levy rate for the strength class, rate in
+-- force for that period), since TSW charges both on top of the duty.
+alter table public.excise_returns add column if not exists declared_levy numeric;
+alter table public.excise_returns add column if not exists declared_levy_gst numeric;
