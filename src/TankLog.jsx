@@ -21981,7 +21981,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
         fileName: `${companyName || "Brewery"} excise ${tag}.pdf`,
         intro: "",
         counts: "",
-        summaryLine: `${ordered.length} month${ordered.length === 1 ? "" : "s"} · Packaged ${fmtL(totals.litres)} / ${totals.lal.toFixed(3)} LAL · Declared ${fmtL(totals.declaredLitres)} / ${totals.declaredLal.toFixed(3)} LAL`,
+        summaryLine: "",
         // Kept simple: what was declared and what was packaged, no notes.
         renderMonth: (m, { text, table, ensure }) => {
           ensure(30);
@@ -22124,17 +22124,6 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
         <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 16 }}>Period: {periodRange} · Generated {today()}</div>
         <div style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 18, color: "#2A3324" }}>
           Volumes only — no dollar amounts are included. Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. LAL is litres × ABV cut to 3 decimals, as TSW calculates it. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10, pageBreakInside: "avoid" }}>
-          {[["Months", checked.length], ["Matching", count("ok")], ["Notes", count("check")], ["Attention", count("attention") + count("missing")]].map(([l, n]) => (
-            <div key={l} style={{ border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
-              <div style={{ fontSize: 20, fontFamily: "'JetBrains Mono', monospace" }}>{n}</div>
-              <div style={{ fontSize: 11, color: "#5C6B54" }}>{l}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", marginBottom: 22, lineHeight: 1.6 }}>
-          Packaged {fmtL(totals.litres)} / {totals.lal.toFixed(3)} LAL · Declared {fmtL(totals.declaredLitres)} / {totals.declaredLal.toFixed(3)} LAL · {totals.ticked} of {ordered.length} months ticked as declared on TSW
         </div>
 
         {ordered.map((m) => {
