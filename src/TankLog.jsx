@@ -7969,7 +7969,7 @@ function BulkOpeningStockModal({ inventory, onClose, onSave, categories = CATEGO
                 )}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={categories} />
+                <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v, ...(v === "Juice" ? { unit: "L" } : {}) })} options={categories} />
                 <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={unitOptions} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -8024,15 +8024,18 @@ function BulkOpeningStockModal({ inventory, onClose, onSave, categories = CATEGO
 // For fixing a name or category typed wrong at creation — e.g. an item
 // that was mistakenly filed as Grain when it's actually Yeast. Doesn't
 // touch quantity or cost, those have their own dedicated paths.
-function EditInventoryItemModal({ item, categories, onClose, onSave }) {
+function EditInventoryItemModal({ item, categories, onClose, onSave, canChangeUnit = false, unitOptions = ["kg", "g", "L", "mL", "ea", "pkg"] }) {
   const [name, setName] = useState(item.name);
   const [category, setCategory] = useState(item.category);
+  const [unit, setUnit] = useState(item.unit);
   const [saving, setSaving] = useState(false);
+  const units = unitOptions.includes(item.unit) ? unitOptions : [item.unit, ...unitOptions];
+  const factor = unit !== item.unit ? unitFactor(item.unit, unit) : 1;
 
   const submit = async () => {
     if (!name.trim()) return;
     setSaving(true);
-    await onSave({ name: name.trim(), category });
+    await onSave({ name: name.trim(), category, ...(unit !== item.unit ? { unit, unitFactor: factor } : {}) });
     setSaving(false);
     onClose();
   };
@@ -8041,7 +8044,15 @@ function EditInventoryItemModal({ item, categories, onClose, onSave }) {
     <Modal title="Edit item" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Name" value={name} onChange={setName} />
-        <SelectField label="Category" value={category} onChange={setCategory} options={categories} />
+        <SelectField label="Category" value={category} onChange={(c) => { setCategory(c); if (c === "Juice" && item.unit === "kg") setUnit("L"); }} options={categories} />
+        {canChangeUnit && item.unit != null && <SelectField label="Unit" value={unit} onChange={setUnit} options={units} />}
+        {unit !== item.unit && (
+          <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
+            {factor != null
+              ? `Stock, lots and costs are converted: ${item.qty} ${item.unit} becomes ${Math.round(item.qty * factor * 1000) / 1000} ${unit}.`
+              : `${item.unit} and ${unit} can't be converted, so the numbers stay the same: ${item.qty} ${item.unit} becomes ${item.qty} ${unit}. Recipes and batches that use it in ${item.unit} won't change.`}
+          </div>
+        )}
         <button
           onClick={submit}
           disabled={saving}
@@ -8261,7 +8272,7 @@ function InventoryDuplicatesPanel({ inventory, onMerge, onOpen }) {
   );
 }
 
-function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails, onDeleteHistoryEntry, mergeCandidates, onMerge }) {
+function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, suppliers, onChangeSupplier, backLabel = "All inventory", showCost = false, onChangeCost, onDelete, onRename, onAddLot, categories, onEditDetails, onDeleteHistoryEntry, mergeCandidates, onMerge, canChangeUnit = false }) {
   const [showMerge, setShowMerge] = useState(false);
   const low = item.qty <= item.threshold;
   const step = STEP_FOR_UNIT[item.unit] ?? 1;
@@ -8312,6 +8323,7 @@ function InventoryItemDetail({ item, onBack, onAdjust, onLogAdjustment, supplier
       {showRename && onEditDetails && (
         <EditInventoryItemModal
           item={item}
+          canChangeUnit={canChangeUnit}
           categories={categories}
           onClose={() => setShowRename(false)}
           onSave={(patch) => onEditDetails(item.id, patch)}
@@ -9403,11 +9415,15 @@ function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES,
     }
   });
   const [qty, setQty] = useState(10);
-  const [unit, setUnit] = useState(unitOptions[0]);
+  const [unit, setUnit] = useState(category === "Juice" && unitOptions.includes("L") ? "L" : unitOptions[0]);
   const [threshold, setThreshold] = useState(5);
   const [supplierId, setSupplierId] = useState("");
   const [costPerUnit, setCostPerUnit] = useState("");
   const [saving, setSaving] = useState(false);
+  const pickCategory = (c) => {
+    setCategory(c);
+    if (c === "Juice" && unitOptions.includes("L")) setUnit("L");
+  };
 
   const submit = async () => {
     if (!name.trim()) return;
@@ -9434,7 +9450,7 @@ function AddInventoryModal({ onClose, onAdd, suppliers, categories = CATEGORIES,
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Name" value={name} onChange={setName} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <SelectField label="Category" value={category} onChange={setCategory} options={categories} />
+          <SelectField label="Category" value={category} onChange={pickCategory} options={categories} />
           <SelectField label="Unit" value={unit} onChange={setUnit} options={unitOptions} />
           <NumberField label="Quantity on hand" value={qty} onChange={setQty} step="0.1" suffix={unit} />
           <NumberField label="Low-stock alert at" value={threshold} onChange={setThreshold} step="0.1" suffix={unit} />
@@ -11309,7 +11325,7 @@ function AddPOModal({ onClose, onAdd, onSave, nextPONumber, suppliers, inventory
               <SelectField
                 label="Category"
                 value={line.category}
-                onChange={(v) => updateLine(line.id, { category: v })}
+                onChange={(v) => updateLine(line.id, { category: v, ...(v === "Juice" ? { unit: "L" } : {}) })}
                 options={CATEGORIES}
               />
               <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
@@ -12625,7 +12641,7 @@ function AddRecipeModal({ onClose, onAdd, inventory, onAddInventoryItem, editing
               )}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v })} options={CATEGORIES} />
+              <SelectField label="Category" value={line.category} onChange={(v) => updateLine(line.id, { category: v, ...(v === "Juice" ? { unit: "L" } : {}) })} options={CATEGORIES} />
               <SelectField label="Unit" value={line.unit} onChange={(v) => updateLine(line.id, { unit: v })} options={["kg", "g", "L", "ea"]} />
               <NumberField label="Quantity" value={line.qty} onChange={(v) => updateLine(line.id, { qty: v })} step="0.01" suffix={line.unit} />
               {line.category === "Grain" && (
@@ -14300,6 +14316,55 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
 // actually came in, rather than kept as a fixed recipe — apples change with
 // the season. Saves a normal batch, with the day's juice, additions and
 // settings recorded on it (dayRecipe), so the next one can start from it.
+// Type-to-search stock picker: shows matching items as you type.
+function StockSearchPick({ inventory, value, onChange, placeholder = "Search stock…", preferCategory }) {
+  const picked = inventory.find((x) => x.id === value) || null;
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const q = normItemName(query);
+  const matches = inventory
+    .filter((it) => !q || normItemName(it.name).includes(q) || normItemName(it.category).includes(q))
+    .sort((a, b) => (preferCategory ? (b.category === preferCategory) - (a.category === preferCategory) : 0) || a.name.localeCompare(b.name))
+    .slice(0, 30);
+  const box = { width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif" };
+  if (picked && !open) {
+    return (
+      <div style={{ ...box, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{picked.name} <span style={{ color: "#9BA88A", fontSize: 12 }}>({picked.qty}{picked.unit})</span></span>
+        <button type="button" onClick={() => { onChange(""); setQuery(""); setOpen(true); }} aria-label="Clear" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", padding: 0 }}><X size={15} /></button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={(e) => { setOpen(true); scrollFieldIntoView(e); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={box}
+      />
+      {open && (
+        <div style={{ position: "absolute", left: 0, right: 0, top: "100%", zIndex: 5, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 220, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+          {matches.length === 0 && <div style={{ padding: "8px 10px", fontSize: 12.5, color: "#9BA88A" }}>Nothing in stock matches "{query}".</div>}
+          {matches.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(it.id); setQuery(""); setOpen(false); }}
+              style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "8px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}
+            >
+              {it.name} <span style={{ color: "#9BA88A", fontSize: 11 }}>· {it.category} · {it.qty}{it.unit}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClose }) {
   const pastCiders = batches
     .filter((b) => b.productType === CIDER_TYPE && !b.mergedIntoBatchId && (b.dayRecipe || (b.juiceIntake || []).length))
@@ -14450,12 +14515,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
   };
 
   const selStyle = { width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontSize: 13.5 };
-  const itemSelect = (value, onChange, placeholder) => (
-    <select value={value} onChange={(e) => onChange(e.target.value)} style={selStyle}>
-      <option value="">{placeholder}</option>
-      {inventory.map((it) => <option key={it.id} value={it.id}>{it.name} ({it.qty}{it.unit})</option>)}
-    </select>
-  );
+  const itemSelect = (value, onChange, placeholder) => <StockSearchPick inventory={inventory} value={value} onChange={onChange} placeholder={placeholder.replace("…", "") + " — type to search"} />;
   const sub = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", margin: "6px 0 2px" };
   const dose = (g) => (g == null ? "—" : g >= 1000 ? `${r3c(g / 1000)} kg` : `${r1(g)} g`);
 
@@ -14503,10 +14563,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
               return (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: it ? "1fr 1fr" : "1fr", gap: 8 }}>
-                    <select value={l.itemId} onChange={(e) => setLot(l.id, { itemId: e.target.value, lotId: "" })} style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 13, color: "#2A3324" }}>
-                      <option value="">Not from stock (pressed here)</option>
-                      {juiceItems.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.qty}{x.unit})</option>)}
-                    </select>
+                    <StockSearchPick inventory={juiceItems} value={l.itemId} onChange={(v) => setLot(l.id, { itemId: v, lotId: "" })} placeholder="Search juice in stock… (blank = pressed here)" preferCategory="Juice" />
                     {it && (
                       <select value={l.lotId} onChange={(e) => setLot(l.id, { lotId: e.target.value })} style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 13, color: "#2A3324" }}>
                         <option value="">Oldest lot first</option>
@@ -30167,9 +30224,23 @@ function TankLogApp() {
   };
 
   const updateInventoryItemDetails = async (id, patch) => {
-    const { error } = await supabase.from("inventory_items").update({ name: patch.name, category: patch.category }).eq("id", id);
+    const item = inventory.find((it) => it.id === id);
+    const row = { name: patch.name, category: patch.category };
+    const next = { name: patch.name, category: patch.category };
+    if (item && patch.unit && patch.unit !== item.unit) {
+      // Changing the unit: convert stock, lots and costs where the units
+      // convert (kg↔g, L↔mL); otherwise keep the numbers as they are.
+      const f = patch.unitFactor || 1;
+      const conv = (n) => (n == null ? n : Math.round(Number(n) * f * 1000) / 1000);
+      next.unit = row.unit = patch.unit;
+      next.qty = row.qty = conv(item.qty);
+      next.threshold = row.threshold = conv(item.threshold);
+      next.lots = row.lots = (item.lots || []).map((l) => ({ ...l, qty: conv(l.qty), remainingQty: conv(l.remainingQty), ...(l.unitCost != null ? { unitCost: Number(l.unitCost) / f } : {}) }));
+      next.history = row.history = [...(item.history || []), { id: uid(), date: new Date().toISOString(), user: user.name, type: "manual", delta: 0, note: `Unit changed from ${item.unit} to ${patch.unit}` }];
+    }
+    const { error } = await supabase.from("inventory_items").update(row).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    setInventory((prev) => prev.map((it) => (it.id === id ? { ...it, ...next } : it)));
     showToast("success", "Item updated.");
   };
 
@@ -33871,6 +33942,7 @@ function TankLogApp() {
             onChangeSupplier={updateInventorySupplier}
             onDelete={isOwner ? deleteInventoryItem : undefined}
             onRename={renameInventoryItem}
+            canChangeUnit
             mergeCandidates={inventory.filter((it) => it.id !== selectedInventoryItem.id)}
             onMerge={mergeInventoryItems}
             onAddLot={addManualLot}
