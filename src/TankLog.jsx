@@ -372,7 +372,7 @@ function planXeroSales({ docs, ledger, salesMap, itemMappings, batches, availabl
             need -= take;
             allocations.push({ batchId: b.id, containerKey: map.containerKey, qty: take });
           });
-        allocations.forEach((a) => soldOf(batchById[a.batchId]).push({ lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: a.containerKey, qty: a.qty }));
+        allocations.forEach((a) => soldOf(batchById[a.batchId]).push({ lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: a.containerKey, qty: a.qty, customer: doc.contactName || "" }));
         const status = need > 0.0005 ? "short" : "applied";
         if (status === "short") summary.short += 1;
         summary.applied += 1;
@@ -382,7 +382,7 @@ function planXeroSales({ docs, ledger, salesMap, itemMappings, batches, availabl
         // Customer credit note: the stock comes back on the newest batch.
         const newest = [...candidates].sort((a, b) => packedOn[b.id].localeCompare(packedOn[a.id]))[0];
         if (newest) {
-          soldOf(newest).push({ lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: map.containerKey, qty: -units });
+          soldOf(newest).push({ lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: map.containerKey, qty: -units, customer: doc.contactName || "" });
           avail[`${newest.id}::${map.containerKey}`] = (avail[`${newest.id}::${map.containerKey}`] || 0) + units;
           allocations.push({ batchId: newest.id, containerKey: map.containerKey, qty: -units });
           summary.returned += units;
@@ -6378,6 +6378,7 @@ function FinishedGoodsStockView({
   onClearStock,
   onUndoClear,
   onCompareXero,
+  xeroNeedsReconnect,
 }) {
   const [showSoldOut, setShowSoldOut] = useState(false);
   // On hand means available right now — sold-out and cleared lines stay
@@ -6395,6 +6396,11 @@ function FinishedGoodsStockView({
 
   return (
     <div>
+      {xeroNeedsReconnect && (
+        <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "10px 12px", color: "#7A3E1D", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
+          Xero has disconnected, so sales from Xero (and Upstock) aren't coming off stock. Go to Settings → Xero and connect it again.
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <button
           data-tour="page-finishedGoodsStock-stocktake"
@@ -18611,6 +18617,29 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         );
       })()}
 
+      {(batch.xeroSold || []).some((e) => Number(e.qty) !== 0) && (() => {
+        // Where this batch went, from invoices in Xero (incl. Upstock orders).
+        const sold = [...batch.xeroSold].filter((e) => Number(e.qty) !== 0).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+        const qtyText = (e) => {
+          const n = Math.abs(Number(e.qty));
+          const what = e.containerKey === "cans330" ? canCasesText(n) : `${n} × ${CONTAINERS.find((c) => c.key === e.containerKey)?.shortLabel || e.containerKey}`;
+          return Number(e.qty) < 0 ? `${what} returned` : what;
+        };
+        return (
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>Where it went</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {sold.map((e, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, padding: "7px 10px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4 }}>
+                  <span style={{ color: "#2A3324" }}>{e.customer || "Customer not recorded"} — {qtyText(e)}</span>
+                  <span style={{ color: "#9BA88A", whiteSpace: "nowrap" }}>{String(e.docNumber || "").startsWith("Xero sales") ? "Xero summary" : `Xero ${e.docNumber || "invoice"}`} · {e.date}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {inMashTun && (
         <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
           {batch.brewStage !== "Recirculating" ? (
@@ -21180,7 +21209,9 @@ function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, cu
               .map((l) => ({ order: o, line: l, customer: customers.find((c) => c.id === o.customerId), viaPack: a.mixedPackTypeName }))
           )
       );
-      return { batch, qtyUsed, date: h.date, directOrders, packAssemblies, packOrders };
+      // Sold through Xero (incl. Upstock orders) — taken off this batch by the Xero sales check.
+      const xeroSales = (batch.xeroSold || []).filter((e) => Number(e.qty) > 0);
+      return { batch, qtyUsed, date: h.date, directOrders, packAssemblies, packOrders, xeroSales };
     })
     .filter(Boolean);
 }
@@ -21289,7 +21320,7 @@ function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies
           <EmptyState icon={Search} title="This lot hasn't been used in a batch yet" subtitle="Nothing to trace — it's still sitting in inventory, or was never drawn on." />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {trace.map(({ batch, qtyUsed, date, directOrders, packAssemblies, packOrders }) => (
+            {trace.map(({ batch, qtyUsed, date, directOrders, packAssemblies, packOrders, xeroSales = [] }) => (
               <div key={batch.id} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
                 <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, color: "#2A3324" }}>
                   {batch.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>#{batch.number}</span>
@@ -21298,10 +21329,16 @@ function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies
                   Used {qtyUsed} {item.unit} on {formatHistoryStamp(date)} — currently {batch.stage}
                 </div>
 
-                {directOrders.length === 0 && packOrders.length === 0 ? (
+                {directOrders.length === 0 && packOrders.length === 0 && xeroSales.length === 0 ? (
                   <div style={{ color: "#9BA88A", fontSize: 12.5 }}>Not yet on any sales order — still in production or in stock.</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {xeroSales.map((e, i) => (
+                      <div key={`x-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, padding: "6px 10px", background: "#EEF4FA", border: "1px solid #C9DBEC", borderRadius: 4 }}>
+                        <span style={{ color: "#2A3324" }}>{e.customer || "Customer not recorded"} — {e.containerKey === "cans330" ? canCasesText(e.qty) : `${e.qty} × ${CONTAINERS.find((c) => c.key === e.containerKey)?.shortLabel || e.containerKey}`}</span>
+                        <span style={{ color: "#9BA88A", whiteSpace: "nowrap" }}>Xero {e.docNumber || "invoice"} · {e.date}</span>
+                      </div>
+                    ))}
                     {directOrders.map((d, i) => (
                       <div key={`d-${i}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4 }}>
                         <span style={{ color: "#2A3324" }}>{d.customer ? d.customer.name : "Unknown customer"} — {d.line.qty} × {d.line.containerLabel}</span>
@@ -29515,6 +29552,7 @@ function TankLogApp() {
     setAiFeedback((prev) => prev.filter((f) => f.id !== id));
   };
 
+  const [xeroNeedsReconnect, setXeroNeedsReconnect] = useState(false);
   const callXeroApi = async (action, extra) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -29524,7 +29562,12 @@ function TankLogApp() {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: anonKey },
       body: JSON.stringify({ action, ...extra }),
     });
-    return res.json();
+    const data = await res.json();
+    // Xero drops the link if it isn't refreshed for 60 days — say so plainly
+    // instead of failing quietly in the background.
+    if (data && typeof data.error === "string" && /reconnect|Not connected/i.test(data.error)) setXeroNeedsReconnect(true);
+    else if (data && !data.error) setXeroNeedsReconnect(false);
+    return data;
   };
 
   const loadXeroAccounts = async () => {
@@ -29958,7 +30001,7 @@ function TankLogApp() {
       const data = await callXeroApi("listSales", { since });
       if (data.error) {
         console.error("Xero sales check failed:", data.error, data.detail);
-        if (!quiet) showToast("error", "Couldn't read sales from Xero just now — try again in a minute.");
+        if (!quiet) showToast("error", /reconnect|Not connected/i.test(String(data.error)) ? "Xero has disconnected — connect it again in Settings." : "Couldn't read sales from Xero just now — try again in a minute.");
         return;
       }
       const ledgerRes = await supabase.from("xero_stock_sales").select("*").eq("company_id", profile.companyId);
@@ -33466,6 +33509,7 @@ function TankLogApp() {
                 onClearStock={() => setShowClearStock(true)}
                 onUndoClear={undoStockClear}
                 onCompareXero={xeroConnection ? openXeroStockCompare : undefined}
+                xeroNeedsReconnect={xeroNeedsReconnect}
               />
             )}
             {showClearStock && (
@@ -34089,6 +34133,11 @@ function TankLogApp() {
                             Invoices you raise in Xero take the beer off Brewpoint's stock, and voiding one puts it back. Brewpoint checks every 10 minutes while it's open.
                             Invoices made from Brewpoint orders are skipped — those orders already took the stock off.
                           </div>
+                          {xeroNeedsReconnect && (
+                            <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 5, padding: "8px 10px", color: "#7A3E1D", fontSize: 12.5, marginBottom: 10, lineHeight: 1.5 }}>
+                              Xero has disconnected (it does this if the link isn't used for 60 days), so sales aren't coming through. Disconnect and connect Xero again above.
+                            </div>
+                          )}
                           {xeroSettings?.sales_sync_enabled ? (
                             <>
                               <div style={{ color: "#D9A441", fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
