@@ -25,6 +25,74 @@ const median = (xs) => {
 };
 const monthOf = (iso) => String(iso || "").slice(0, 7);
 
+// ── NZ public holidays (national) ───────────────────────────────────────
+// Holidays Act 2003: Waitangi and Anzac move to Monday when they fall on a
+// weekend; New Year and Christmas pairs move to the next free weekdays.
+// Matariki dates are set in law (Te Kāhui o Matariki Public Holiday Act 2022).
+// Regional anniversary days aren't included: add them as days off.
+const MATARIKI = {
+  2022: "06-24", 2023: "07-14", 2024: "06-28", 2025: "06-20", 2026: "07-10", 2027: "06-25",
+  2028: "07-14", 2029: "07-06", 2030: "06-21", 2031: "07-11", 2032: "07-02", 2033: "06-24",
+  2034: "07-07", 2035: "06-29", 2036: "07-18", 2037: "07-10", 2038: "06-25", 2039: "07-15",
+  2040: "07-06", 2041: "07-19", 2042: "07-11", 2043: "07-03", 2044: "06-24",
+};
+const isoOf = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
+const dow = (iso) => new Date(iso + "T00:00:00Z").getUTCDay();
+const easterSunday = (y) => {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return isoOf(y, month, day);
+};
+const nthMonday = (y, month, n) => {
+  let iso = isoOf(y, month, 1);
+  while (dow(iso) !== 1) iso = addDaysISO(iso, 1);
+  return addDaysISO(iso, 7 * (n - 1));
+};
+const holidayCache = {};
+export function nzPublicHolidays(year) {
+  if (holidayCache[year]) return holidayCache[year];
+  const out = {};
+  const add = (iso, name) => { out[iso] = name; };
+  const mondayise = (iso, name) => add(dow(iso) === 6 ? addDaysISO(iso, 2) : dow(iso) === 0 ? addDaysISO(iso, 1) : iso, name);
+  // A pair of days (1–2 Jan, 25–26 Dec): any that land on a weekend move to the next weekday not already taken.
+  const pair = (first, names) => {
+    const days = [first, addDaysISO(first, 1)];
+    const taken = new Set();
+    days.forEach((d) => { if (dow(d) !== 0 && dow(d) !== 6) taken.add(d); });
+    days.forEach((d, i) => {
+      let obs = d;
+      if (dow(d) === 0 || dow(d) === 6) {
+        obs = addDaysISO(days[1], 1);
+        while (dow(obs) === 0 || dow(obs) === 6 || taken.has(obs)) obs = addDaysISO(obs, 1);
+        taken.add(obs);
+      }
+      add(obs, names[i]);
+    });
+  };
+  pair(isoOf(year, 1, 1), ["New Year's Day", "Day after New Year's Day"]);
+  mondayise(isoOf(year, 2, 6), "Waitangi Day");
+  const easter = easterSunday(year);
+  add(addDaysISO(easter, -2), "Good Friday");
+  add(addDaysISO(easter, 1), "Easter Monday");
+  mondayise(isoOf(year, 4, 25), "Anzac Day");
+  add(nthMonday(year, 6, 1), "King's Birthday");
+  if (MATARIKI[year]) add(`${year}-${MATARIKI[year]}`, "Matariki");
+  add(nthMonday(year, 10, 4), "Labour Day");
+  pair(isoOf(year, 12, 25), ["Christmas Day", "Boxing Day"]);
+  holidayCache[year] = out;
+  return out;
+}
+// Why a day can't be a brew day (public holiday or one of the brewery's own days off), or null.
+export function dayOffReason(iso, settings) {
+  const off = (settings && settings.daysOff) || [];
+  const own = off.find((d) => d.date === iso);
+  if (own) return own.label || "Day off";
+  if (settings && settings.skipHolidays === false) return null;
+  return nzPublicHolidays(Number(iso.slice(0, 4)))[iso] || null;
+}
+
 // Product key: the recipe family when the batch has a recipe, otherwise the
 // batch name with split suffixes (" — A") and sizes ("240L") taken off.
 export const cleanProductName = (name) =>
@@ -286,6 +354,7 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
     for (let i = 0; i < 60 && !chosen; i++) {
       const day = addDaysISO(start, i);
       if (!s.brewWeekdays.includes(weekday(day))) continue;
+      if (dayOffReason(day, s)) continue;
       if ((brewLoad[day] || 0) + brewDays > s.brewsPerDay && brewDays <= s.brewsPerDay) continue;
       const end = addDaysISO(day, pr.leadDays);
       const free = fermenters.filter((t) => isFree(t.id, day, end));
