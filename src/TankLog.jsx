@@ -21216,7 +21216,135 @@ function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, cu
     .filter(Boolean);
 }
 
-function TraceabilityView({ inventory, batches, salesOrders, mixedPackAssemblies, customers }) {
+// Ingredient lots that went into a batch, from each stock item's history.
+function lotsForBatch(batch, inventory) {
+  const label = `${batch.name} (#${batch.number})`;
+  return inventory.flatMap((it) =>
+    (it.history || [])
+      .filter((h) => h.type === "batch" && h.note === label)
+      .flatMap((h) => (h.lots || []).map((l) => ({ item: it.name, lotNumber: l.lotNumber, qty: l.qty, unit: it.unit })))
+  );
+}
+
+// Backwards from a customer or venue: every batch they've had (Xero/Upstock
+// invoices and Brewpoint orders) and the ingredient lots in each.
+function CustomerTrace({ inventory, batches, salesOrders, customers }) {
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState("");
+  const [focused, setFocused] = useState(false);
+  const norm = (n) => String(n || "").trim().toLowerCase();
+  const names = useMemo(() => {
+    const set = new Map();
+    batches.forEach((b) => (b.xeroSold || []).forEach((e) => { if (e.customer) set.set(norm(e.customer), e.customer); }));
+    salesOrders.forEach((o) => { const c = customers.find((x) => x.id === o.customerId); if (c?.name) set.set(norm(c.name), c.name); });
+    return [...set.values()].sort((a, b) => a.localeCompare(b));
+  }, [batches, salesOrders, customers]);
+  const matches = names.filter((n) => norm(n).includes(norm(query))).slice(0, 40);
+  const sales = useMemo(() => {
+    if (!picked) return [];
+    const out = [];
+    batches.forEach((b) =>
+      (b.xeroSold || []).forEach((e) => {
+        if (norm(e.customer) === norm(picked) && Number(e.qty) !== 0) out.push({ batch: b, date: e.date, qty: Number(e.qty), containerKey: e.containerKey, ref: String(e.docNumber || "").startsWith("Xero sales") ? "Xero summary" : `Xero ${e.docNumber || "invoice"}` });
+      })
+    );
+    salesOrders
+      .filter((o) => o.status !== "Draft" && o.status !== "Cancelled" && norm(customers.find((c) => c.id === o.customerId)?.name) === norm(picked))
+      .forEach((o) =>
+        (o.lines || []).forEach((l) => {
+          const b = batches.find((x) => x.id === l.batchId);
+          if (b) out.push({ batch: b, date: o.orderDate, qty: Number(l.qty), containerKey: l.containerKey, label: l.containerLabel, ref: `Order #${o.orderNumber}` });
+        })
+      );
+    return out;
+  }, [picked, batches, salesOrders, customers]);
+  const byBatch = useMemo(() => {
+    const g = {};
+    sales.forEach((x) => (g[x.batch.id] = g[x.batch.id] || { batch: x.batch, lines: [] }).lines.push(x));
+    return Object.values(g).sort((a, b) => String(b.lines[0].date).localeCompare(String(a.lines[0].date)));
+  }, [sales]);
+  const qtyText = (x) => {
+    const n = Math.abs(x.qty);
+    const what = x.containerKey === "cans330" ? canCasesText(n) : `${n} × ${x.label || CONTAINERS.find((c) => c.key === x.containerKey)?.shortLabel || x.containerKey}`;
+    return x.qty < 0 ? `${what} returned` : what;
+  };
+  return (
+    <div>
+      <div style={{ color: "#5C6B54", fontSize: 13, marginBottom: 14 }}>
+        Pick a customer or venue to see every batch they've received — from Xero invoices (including Upstock orders) and Brewpoint orders — and the ingredient lots that went into each one.
+      </div>
+      <div style={{ position: "relative", marginBottom: 18 }}>
+        <div style={{ color: "#9BA88A", fontSize: 11, marginBottom: 4 }}>Customer</div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setPicked(""); }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder={names.length ? "Search customers…" : "No customers yet — sales show up once Xero is connected and items are matched"}
+          style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 14 }}
+        />
+        {focused && matches.length > 0 && (
+          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, marginTop: 2, maxHeight: 240, overflowY: "auto" }}>
+            {matches.map((n) => (
+              <button key={n} onMouseDown={() => { setPicked(n); setQuery(n); setFocused(false); }} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid #EBE8D6", padding: "9px 10px", color: "#2A3324", fontSize: 13, cursor: "pointer" }}>
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {picked && byBatch.length === 0 && <EmptyState icon={Search} title="Nothing found for this customer" subtitle="No invoices or orders linked to a batch yet." />}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {byBatch.map(({ batch, lines }) => {
+          const lots = lotsForBatch(batch, inventory);
+          const juice = (batch.dayRecipe?.lots || batch.juiceIntake || []).filter((l) => l.itemName || l.lotNumber);
+          return (
+            <div key={batch.id} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 15, color: "#2A3324" }}>
+                {batch.name} <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>#{batch.number}</span>
+              </div>
+              <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8 }}>Brewed {batch.startDate}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                {lines.sort((a, b) => String(b.date).localeCompare(String(a.date))).map((x, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, padding: "6px 10px", background: "#EEF4FA", border: "1px solid #C9DBEC", borderRadius: 4 }}>
+                    <span style={{ color: "#2A3324" }}>{qtyText(x)}</span>
+                    <span style={{ color: "#9BA88A", whiteSpace: "nowrap" }}>{x.ref} · {x.date}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Ingredient lots in this batch</div>
+              {lots.length === 0 && juice.length === 0 ? (
+                <div style={{ color: "#9BA88A", fontSize: 12.5 }}>No lots recorded — ingredients weren't taken from stock with lot numbers for this batch.</div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: "#2A3324", lineHeight: 1.6 }}>
+                  {lots.map((l, i) => <div key={i}>{l.item} — lot {l.lotNumber || "—"} ({l.qty} {l.unit})</div>)}
+                  {lots.length === 0 && juice.map((l, i) => <div key={`j${i}`}>{l.itemName || "Juice"} — lot {l.lotNumber || "—"} ({l.litres} L)</div>)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TraceabilityView(props) {
+  const [mode, setMode] = useState("lot");
+  return (
+    <div>
+      <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 5, overflow: "hidden", marginBottom: 16 }}>
+        {[["lot", "From an ingredient lot"], ["customer", "From a customer"]].map(([k, l]) => (
+          <button key={k} onClick={() => setMode(k)} style={{ flex: 1, background: mode === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: "10px", color: mode === k ? "#16191A" : "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: mode === k ? 600 : 400, cursor: "pointer" }}>{l}</button>
+        ))}
+      </div>
+      {mode === "lot" ? <LotTraceView {...props} /> : <CustomerTrace {...props} />}
+    </div>
+  );
+}
+
+function LotTraceView({ inventory, batches, salesOrders, mixedPackAssemblies, customers }) {
   const [itemId, setItemId] = useState("");
   const [itemQuery, setItemQuery] = useState("");
   const [itemFocused, setItemFocused] = useState(false);
