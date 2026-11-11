@@ -10857,7 +10857,7 @@ function PrintableOrderModal({ order, customer, companyName, onClose }) {
   const total = salesOrderTotal(order);
   const isQuote = order.status === "Draft";
 
-  return (
+  return createPortal(
     <div id="order-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto" }}>
       <style>{`
         @media print {
@@ -10938,7 +10938,8 @@ function PrintableOrderModal({ order, customer, companyName, onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -13682,7 +13683,10 @@ function Modal({ title, onClose, children }) {
     };
   }, []);
 
-  return (
+  // Always drawn on document.body, not where it's used: a pop-up opened
+  // inside an animated or zoomed part of the page would otherwise be
+  // positioned relative to that part, scroll with it, and run off screen.
+  return createPortal(
     <div
       style={{
         position: "fixed",
@@ -13729,7 +13733,8 @@ function Modal({ title, onClose, children }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -19636,7 +19641,7 @@ function XeroMappingModal({ queue, xeroItems, onConfirm, onClose }) {
 function FoodSafetyDisclaimerModal({ onAccept }) {
   const [confirmed, setConfirmed] = useState(false);
 
-  return (
+  return createPortal(
     <div
       style={{
         position: "fixed",
@@ -19731,7 +19736,8 @@ function FoodSafetyDisclaimerModal({ onAccept }) {
           Continue
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -19783,7 +19789,7 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose, per
     return r.notes || "";
   };
 
-  return (
+  return createPortal(
     <div id="audit-report-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto" }}>
       <style>{`
         @media print {
@@ -19863,7 +19869,8 @@ function FoodSafetyAuditReport({ records, monthFilter, companyName, onClose, per
           {sorted.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13, padding: "12px 0" }}>No records in this period.</div>}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -21501,7 +21508,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
   const td = { padding: "3px 6px", borderBottom: "1px solid #EEF0E2", fontSize: 11.5, verticalAlign: "top" };
   const num = { ...td, textAlign: "right", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" };
 
-  return (
+  return createPortal(
     <div id="excise-audit-print" style={{ position: "fixed", inset: 0, zIndex: 200, background: "#F5F1E4", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       <style>{`
         @media print {
@@ -21651,7 +21658,8 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           );
         })}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -23753,7 +23761,7 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inve
     fontFamily: "'Inter', sans-serif",
   };
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "rgba(10,12,11,0.85)", zIndex: 70, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "60px 16px" }}
@@ -23873,7 +23881,8 @@ function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inve
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
