@@ -1081,6 +1081,50 @@ function TankLogApp() {
     return true;
   };
 
+  // Full backup: every table for this company, straight from the database,
+  // paged so nothing is cut off at 1,000 rows. Xero tokens, auditor link PINs
+  // and invite links are left out on purpose.
+  const BACKUP_TABLES = [
+    "batches", "recipes", "tanks", "inventory_items", "consumables", "package_types", "purchase_orders", "suppliers",
+    "supplier_documents", "stock_takes", "customers", "customer_prices", "sales_orders", "kegs", "mixed_pack_types",
+    "mixed_pack_assemblies", "yeast_harvests", "triangle_tests", "food_safety_records", "pest_stations", "reminders",
+    "excise_item_codes", "excise_returns", "label_strengths", "beer_aliases", "brew_plan_settings", "xero_settings",
+    "xero_item_mappings", "xero_sales_item_map", "xero_stock_sales", "profiles", "activity_log", "ai_helper_feedback",
+  ];
+  const [backupBusy, setBackupBusy] = useState("");
+  const downloadFullBackup = async () => {
+    if (backupBusy) return;
+    const tables = {};
+    try {
+      for (const name of BACKUP_TABLES) {
+        setBackupBusy(name.replace(/_/g, " "));
+        const rows = [];
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabase.from(name).select("*").eq("company_id", profile.companyId).range(from, from + 999);
+          if (error) throw new Error(`${name}: ${error.message}`);
+          rows.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        tables[name] = rows;
+      }
+      const { data: company } = await supabase.from("companies").select("*").eq("id", profile.companyId).maybeSingle();
+      downloadJSON(`brewpoint-full-backup-${today()}.json`, {
+        exportedAt: new Date().toISOString(),
+        company: companyName,
+        format: "Brewpoint full backup v1 — database rows by table",
+        counts: Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, v.length])),
+        companyRow: company || null,
+        tables,
+      });
+      showToast("success", "Backup downloaded.");
+    } catch (e) {
+      console.error(e);
+      showToast("error", "The backup didn't finish — check your connection and try again.");
+    } finally {
+      setBackupBusy("");
+    }
+  };
+
   const uploadCompanyLogo = (file) => {
     if (!file) return;
     const reader = new FileReader();
@@ -6138,21 +6182,8 @@ function TankLogApp() {
 
                 {isOwner && (
                   <button
-                    onClick={() =>
-                      downloadJSON(`brewpoint-backup-${today()}.json`, {
-                        exportedAt: new Date().toISOString(),
-                        company: companyName,
-                        batches,
-                        recipes,
-                        inventory,
-                        consumables,
-                        packageTypes,
-                        purchaseOrders,
-                        tanks,
-                        suppliers,
-                        foodSafetyRecords,
-                      })
-                    }
+                    onClick={downloadFullBackup}
+                    disabled={!!backupBusy}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -6168,7 +6199,7 @@ function TankLogApp() {
                       cursor: "pointer",
                     }}
                   >
-                    <FileText size={15} /> Download full backup
+                    <FileText size={15} /> {backupBusy ? `Backing up ${backupBusy}…` : "Download full backup"}
                   </button>
                 )}
 
