@@ -255,3 +255,15 @@ end $$;
 drop trigger if exists xero_clear_keepalive_failure on public.xero_connections;
 create trigger xero_clear_keepalive_failure before update on public.xero_connections
   for each row execute function public.xero_clear_keepalive_failure();
+
+-- Costing (owner only): costed products, packaging/delivery defaults, the
+-- imported costing-sheet prices, and prices set by hand.
+create table if not exists public.costing_settings (
+  company_id uuid primary key references public.companies(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.costing_settings enable row level security;
+create policy "costing: owner reads" on public.costing_settings for select to authenticated using (company_id = get_my_company_id() and is_company_owner());
+create policy "costing: owner inserts" on public.costing_settings for insert to authenticated with check (company_id = get_my_company_id() and is_company_owner());
+create policy "costing: owner updates" on public.costing_settings for update to authenticated using (company_id = get_my_company_id() and is_company_owner()) with check (company_id = get_my_company_id() and is_company_owner());

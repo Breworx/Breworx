@@ -760,8 +760,10 @@ export function ReceivePOModal({ po, onClose, onConfirm, onConfirmMultiple, onEx
   );
 }
 
-export function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple, inventory, onDelete, onExtractDocument, onEdit, allPOs }) {
+export function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple, inventory, onDelete, onExtractDocument, onEdit, allPOs, onUpdateFreight }) {
   const [showReceive, setShowReceive] = useState(false);
+  const [freightDraft, setFreightDraft] = useState(null);
+  const [freightBusy, setFreightBusy] = useState(false);
   const batchesForLine = (lineName, lotNumber) => {
     const item = inventory.find((it) => sameItemName(it.name, lineName));
     if (!item || !item.history) return [];
@@ -894,6 +896,35 @@ export function PODetail({ po, onBack, onMarkSent, onReceive, onReceiveMultiple,
         >
           <Truck size={16} /> Mark received & add to inventory
         </button>
+      )}
+
+      {po.status === "Received" && onUpdateFreight && (
+        <div style={{ border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px 12px", marginTop: 10 }}>
+          {freightDraft == null ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ fontSize: 13, color: "#5C6B54" }}>
+                Freight <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>${Number(po.deliveryCost || 0).toFixed(2)}</span> ex GST
+              </div>
+              <button type="button" onClick={() => setFreightDraft(po.deliveryCost != null ? String(po.deliveryCost) : "")} style={{ background: "none", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 10px", fontSize: 12.5, color: "#2A3324", cursor: "pointer" }}>
+                {po.deliveryCost ? "Change" : "Add freight"}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 12.5, color: "#5C6B54", marginBottom: 6, lineHeight: 1.5 }}>
+                Freight ex GST for this order. It's spread across the lines by value and added to the stock cost of what came in on it.
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 13, color: "#5C6B54" }}>$</span>
+                <input type="number" inputMode="decimal" step="0.01" value={freightDraft} onChange={(e) => setFreightDraft(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 14, fontFamily: "'JetBrains Mono', monospace" }} />
+                <button type="button" disabled={freightBusy || freightDraft === "" || !(Number(freightDraft) >= 0)} onClick={async () => { setFreightBusy(true); await onUpdateFreight(po, Number(freightDraft)); setFreightBusy(false); setFreightDraft(null); }} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "8px 12px", fontSize: 13, color: "#16191A", cursor: "pointer", fontFamily: "'Oswald', sans-serif" }}>
+                  {freightBusy ? "Saving…" : "Save"}
+                </button>
+                <button type="button" onClick={() => setFreightDraft(null)} style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {po.status !== "Received" && (

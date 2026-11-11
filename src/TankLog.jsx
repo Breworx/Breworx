@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, X, TrendingUp, Beaker, Package, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, Menu, QrCode, Sparkles } from "lucide-react";
+import { Plus, Droplet, X, TrendingUp, Beaker, Package, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, Menu, QrCode, Sparkles, DollarSign } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { productKeyForBatch } from "./lib/brewPlanner";
 import { rowToBatch, batchToRow, rowToInventoryItem, inventoryItemToRow, rowToPO, poToRow, rowToRecipe, recipeToRow, rowToProfile, rowToTank, tankToRow, rowToStockTake, stockTakeToRow, rowToFoodSafetyRecord, foodSafetyRecordToRow, rowToSupplier, supplierToRow, rowToCustomer, customerToRow, rowToCustomerPrice, customerPriceToRow, rowToYeastHarvest, yeastHarvestToRow, rowToMixedPackType, mixedPackTypeToRow, rowToMixedPackAssembly, mixedPackAssemblyToRow, rowToPestStation, pestStationToRow, rowToExciseItemCode, exciseItemCodeToRow, rowToExciseReturn, exciseReturnToRow, rowToAiFeedback, aiFeedbackToRow, rowToKeg, kegToRow, rowToTriangleTest, triangleTestToRow, rowToSalesOrder, salesOrderToRow, rowToSupplierDocument, supplierDocumentToRow, rowToConsumable, consumableToRow, rowToPackageType, packageTypeToRow, rowToReminder, reminderToRow, rowToActivity, activityToRow } from "./lib/mappers";
@@ -18,6 +18,7 @@ import { AddInventoryModal, AddPackageTypeModal, AdjustInventoryModal, BulkOpeni
 import { BrewPlannerView } from "./components/planner";
 import { AddPOModal, POCard, PODetail } from "./components/purchasing";
 import { QcApprovalModal, QualityControlView, TriangleTestModal } from "./components/quality";
+import { CostingView } from "./components/costing";
 import { AddRecipeModal, MissingIngredientsModal, RecipeAnalyticsView, RecipeCard, RecipeDetail, ScaleRecipeModal } from "./components/recipes";
 import { AddKegsModal, AddSalesOrderModal, KegDetail, KegsView, PrintableOrderModal, RecordFulfillmentModal, SalesAnalyticsView, SalesOrderDetail, SalesOrdersView } from "./components/sales";
 import { AddTankModal, AssignTankModal, ConfirmDeleteBatchModal, ConfirmDeleteRecipeModal, ConfirmDeleteSupplierModal, ConfirmDeleteTankModal, EditSplitTanksModal, EditTankModal, TankHistoryModal, TransferToFermenterModal, VesselTransferModal } from "./components/tanks";
@@ -283,6 +284,7 @@ function TankLogApp() {
   const [barrelAgingModuleEnabled, setBarrelAgingModuleEnabled] = useState(true);
   const [exciseAbvMethod, setExciseAbvMethod] = useState("measured");
   const [brewPlanSettings, setBrewPlanSettings] = useState(null);
+  const [costingData, setCostingData] = useState(null);
   const [ciderFocus, setCiderFocus] = useState(null);
   const [labelStrengths, setLabelStrengths] = useState({});
   const [beerAliases, setBeerAliasesState] = useState({});
@@ -1088,7 +1090,7 @@ function TankLogApp() {
     "batches", "recipes", "tanks", "inventory_items", "consumables", "package_types", "purchase_orders", "suppliers",
     "supplier_documents", "stock_takes", "customers", "customer_prices", "sales_orders", "kegs", "mixed_pack_types",
     "mixed_pack_assemblies", "yeast_harvests", "triangle_tests", "food_safety_records", "pest_stations", "reminders",
-    "excise_item_codes", "excise_returns", "label_strengths", "beer_aliases", "brew_plan_settings", "xero_settings",
+    "excise_item_codes", "excise_returns", "label_strengths", "beer_aliases", "brew_plan_settings", "costing_settings", "xero_settings",
     "xero_item_mappings", "xero_sales_item_map", "xero_stock_sales", "profiles", "activity_log", "ai_helper_feedback",
   ];
   const [backupBusy, setBackupBusy] = useState("");
@@ -1175,6 +1177,19 @@ function TankLogApp() {
     if (!enabled && view === "aging") setView("home");
   };
 
+  // Costing is owner-only (the table only lets the owner read it).
+  useEffect(() => {
+    if (!profile?.companyId || profile?.role !== "owner") return;
+    supabase
+      .from("costing_settings")
+      .select("data")
+      .eq("company_id", profile.companyId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) console.error(error);
+        setCostingData(data?.data || {});
+      });
+  }, [profile?.companyId, profile?.role]);
   useEffect(() => {
     if (!profile?.companyId) return;
     supabase
@@ -1234,6 +1249,34 @@ function TankLogApp() {
       setBatches((prev) => prev.map((b) => (batchIds.includes(b.id) ? { ...b, labelAbv: abv } : b)));
     }
     showToast("success", `${name}: ${abv}%${batchIds.length ? ` set on ${batchIds.length} batch${batchIds.length === 1 ? "" : "es"}` : " saved for new batches"}.`);
+  };
+
+  const saveCosting = async (next) => {
+    setCostingData(next);
+    const { error } = await supabase.from("costing_settings").upsert({ company_id: profile.companyId, data: next, updated_at: new Date().toISOString() });
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); }
+  };
+  // From costing: put a corrected price on a stock item's lots that have no
+  // cost, $0, or one more than 3× away from it (e.g. a per-gram price
+  // entered as per-kg). Lots with a believable cost are left alone.
+  const fixStockPrice = async (item, pricePerLineUnit, lineUnit) => {
+    const f = unitFactor(item.unit, lineUnit);
+    if (f == null) { showToast("error", `Can't convert ${lineUnit} to ${item.unit} for ${item.name}.`); return; }
+    const price = Math.round(pricePerLineUnit * f * 1e6) / 1e6;
+    let changed = 0;
+    const lots = (item.lots || []).map((l) => {
+      const c = Number(l.unitCost);
+      const bad = l.unitCost == null || l.unitCost === "" || !(c > 0) || c / price > 3 || price / c > 3;
+      if (!bad) return l;
+      changed++;
+      return { ...l, unitCost: price };
+    });
+    if (!changed) { showToast("success", `${item.name} already has believable stock prices.`); return; }
+    const { error } = await supabase.from("inventory_items").update({ lots }).eq("id", item.id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, lots } : it)));
+    showToast("success", `${item.name}: ${changed} lot${changed === 1 ? "" : "s"} now $${price}/${item.unit}.`);
+    logActivity("updated", "inventory item", item.name, `Stock price corrected to $${price}/${item.unit} on ${changed} lot${changed === 1 ? "" : "s"} (from Costing)`);
   };
 
   const saveBrewPlanSettings = async (next) => {
@@ -3255,6 +3298,42 @@ function TankLogApp() {
     logActivity("received", "purchase order", po.poNumber, `Purchase order ${po.poNumber} received from ${po.supplier} — inventory updated`);
   };
 
+  // Freight added or changed after an order was received (it often comes on
+  // a separate invoice): the difference is spread over the order's lines by
+  // value, the same way receiving does it, and added to the cost of the lots
+  // that came in on this order. Batches already brewed keep their cost.
+  const updateReceivedPOFreight = async (po, newDelivery) => {
+    const delta = (Number(newDelivery) || 0) - (Number(po.deliveryCost) || 0);
+    const lines = po.lines || [];
+    const totalValue = lines.reduce((sum, l) => sum + (Number(l.qty) || 0) * (Number(l.costPerUnit) || 0), 0);
+    if (Math.abs(delta) > 0.0001 && totalValue <= 0) { showToast("error", "This order's lines have no prices, so freight can't be spread across them."); return; }
+    let nextInventory = [...inventory];
+    if (Math.abs(delta) > 0.0001) {
+      const used = new Set();
+      for (const line of lines) {
+        const lineDelta = (((Number(line.qty) || 0) * (Number(line.costPerUnit) || 0)) / totalValue) * delta;
+        const idx = nextInventory.findIndex((it) => sameItemName(it.name, line.name));
+        if (idx < 0 || !lineDelta) continue;
+        const item = nextInventory[idx];
+        const lots = item.lots || [];
+        const pick = lots.findIndex((l, i) => !used.has(`${item.id}:${i}`) && l.poNumber === po.poNumber && (l.lotNumber || "no lot #") === (line.lotNumber || "no lot #"));
+        const at = pick >= 0 ? pick : lots.findIndex((l, i) => !used.has(`${item.id}:${i}`) && l.poNumber === po.poNumber);
+        if (at < 0 || !(Number(lots[at].qty) > 0) || lots[at].unitCost == null) continue;
+        used.add(`${item.id}:${at}`);
+        const newLots = lots.map((l, i) => (i === at ? { ...l, unitCost: Math.round((Number(l.unitCost) + lineDelta / Number(l.qty)) * 1e6) / 1e6 } : l));
+        const { error } = await supabase.from("inventory_items").update({ lots: newLots }).eq("id", item.id);
+        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+        nextInventory[idx] = { ...item, lots: newLots };
+      }
+    }
+    const { error: poError } = await supabase.from("purchase_orders").update({ delivery_cost: Number(newDelivery) || 0 }).eq("id", po.id);
+    if (poError) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setInventory(nextInventory);
+    setPurchaseOrders((prev) => prev.map((p) => (p.id === po.id ? { ...p, deliveryCost: Number(newDelivery) || 0 } : p)));
+    showToast("success", `${po.poNumber}: freight now $${(Number(newDelivery) || 0).toFixed(2)} — stock costs updated.`);
+    logActivity("updated", "purchase order", po.poNumber, `Freight on ${po.poNumber} changed to $${(Number(newDelivery) || 0).toFixed(2)}`);
+  };
+
   // Two or more separately-placed orders that arrived in the same delivery
   // — the freight charge gets split proportionally across every line from
   // every order combined, not just one PO's lines, and each PO ends up
@@ -4390,7 +4469,8 @@ function TankLogApp() {
                   // its code are untouched, just re-add this line to bring
                   // it back: ["recipeBuilder", "Recipe Builder", FlaskConical],
                   ["recipeAnalytics", "Recipe Analytics", TrendingUp],
-                ],
+                  isOwner && ["costing", "Costing", DollarSign],
+                ].filter(Boolean),
               },
               {
                 label: "Quality",
@@ -4537,7 +4617,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "brewPlanner" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
+              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "brewPlanner" && view !== "costing" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -4709,6 +4789,17 @@ function TankLogApp() {
             )}
             {!loadingData && view === "foodsafety" && !foodSafetyDisclaimerAcceptedAt && (
               <FoodSafetyDisclaimerModal onAccept={acceptFoodSafetyDisclaimer} />
+            )}
+
+            {!loadingData && view === "costing" && isOwner && costingData && (
+              <CostingView
+                costing={costingData}
+                inventory={inventory}
+                recipes={recipes}
+                labelStrengths={labelStrengths}
+                onSave={saveCosting}
+                onFixStockPrice={fixStockPrice}
+              />
             )}
 
             {!loadingData && view === "brewPlanner" && brewPlanSettings && (
@@ -6416,7 +6507,7 @@ function TankLogApp() {
         )}
 
         {!selected && selectedPO && (
-          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} onReceiveMultiple={receiveMultiplePOs} inventory={inventory} onDelete={isOwner ? deletePO : undefined} onExtractDocument={extractDocument} onEdit={setEditingPO} allPOs={purchaseOrders} />
+          <PODetail po={selectedPO} onBack={() => setSelectedPOId(null)} onMarkSent={markPOSent} onReceive={receivePO} onReceiveMultiple={receiveMultiplePOs} inventory={inventory} onDelete={isOwner ? deletePO : undefined} onExtractDocument={extractDocument} onEdit={setEditingPO} allPOs={purchaseOrders} onUpdateFreight={updateReceivedPOFreight} />
         )}
 
         {!selected && !selectedPO && selectedRecipe && (
