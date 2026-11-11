@@ -21978,9 +21978,8 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
   const exportSummary = () =>
     downloadCSV(
       `excise-audit-summary-${fileTag}.csv`,
-      ["Month", "Status", "Declared on TSW", "Entry number", "Filed", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Declared duty ($)", "Alcohol levy ($)", "GST on levy ($)", "Total payable ($)", "Estimated duty ($)", "Screenshots", "Reviewed by", "Notes / issues"],
+      ["Month", "Status", "Declared on TSW", "Entry number", "Filed", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Screenshots", "Reviewed by", "Notes / issues"],
       ordered.map((m) => {
-        const est = tswLinesForRows(m.rows).reduce((s2, l) => s2 + l.duty, 0);
         return [
           monthLabelFromKey(m.period),
           AUDIT_STATUS[m.status]?.label || m.status,
@@ -21993,11 +21992,6 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           m.ret?.declaredLal ?? "",
           m.ret?.declaredLitres != null ? round3(m.ret.declaredLitres - m.appLitres) : "",
           m.ret?.declaredLal != null ? round3(m.ret.declaredLal - m.appLal) : "",
-          m.ret?.declaredDuty != null ? Number(m.ret.declaredDuty).toFixed(2) : "",
-          m.ret?.declaredLevy != null ? Number(m.ret.declaredLevy).toFixed(2) : "",
-          m.ret?.declaredLevyGst != null ? Number(m.ret.declaredLevyGst).toFixed(2) : "",
-          returnPayable(m.ret) ? returnPayable(m.ret).total.toFixed(2) : "",
-          est.toFixed(2),
           (m.ret?.screenshotPaths || []).length,
           m.ret?.reviewedBy || "",
           [...m.issues.map((i) => i.text), m.ret?.varianceExplanation ? `Explanation: ${m.ret.varianceExplanation}` : ""].filter(Boolean).join(" | "),
@@ -22077,7 +22071,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
         <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 500, margin: "4px 0 6px" }}>Excise Self-Audit Report</h1>
         <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 16 }}>Period: {periodRange} · Generated {today()}</div>
         <div style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 18, color: "#2A3324" }}>
-          Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. LAL is litres × ABV cut to 3 decimals, as TSW calculates it. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
+          Volumes only — no dollar amounts are included. Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. LAL is litres × ABV cut to 3 decimals, as TSW calculates it. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10, pageBreakInside: "avoid" }}>
           {[["Months", checked.length], ["Matching", count("ok")], ["Notes", count("check")], ["Attention", count("attention") + count("missing")]].map(([l, n]) => (
@@ -22088,8 +22082,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           ))}
         </div>
         <div style={{ fontSize: 12.5, fontFamily: "'JetBrains Mono', monospace", color: "#2A3324", marginBottom: 22, lineHeight: 1.6 }}>
-          Packaged {fmtL(totals.litres)} / {totals.lal.toFixed(3)} LAL · Declared {fmtL(totals.declaredLitres)} / {totals.declaredLal.toFixed(3)} LAL
-          {totals.duty ? ` · Declared duty $${totals.duty.toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · Levy $${totals.levy.toFixed(2)} · GST on levy $${totals.levyGst.toFixed(2)} · Total paid $${round2(totals.duty + totals.levy + totals.levyGst).toLocaleString("en-NZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""} · {totals.ticked} of {ordered.length} months ticked as declared on TSW
+          Packaged {fmtL(totals.litres)} / {totals.lal.toFixed(3)} LAL · Declared {fmtL(totals.declaredLitres)} / {totals.declaredLal.toFixed(3)} LAL · {totals.ticked} of {ordered.length} months ticked as declared on TSW
         </div>
 
         {ordered.map((m) => {
@@ -22109,7 +22102,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
               </div>
               {m.ret && (
                 <div style={{ color: "#5C6B54", marginTop: 3 }}>
-                  Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"}{returnPayable(m.ret) ? ` · ${payableText(returnPayable(m.ret))}` : ""} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
+                  Entry {m.ret.entryNumber || "—"} · Filed {m.ret.filedDate || "—"} · {(m.ret.screenshotPaths || []).length} screenshot(s) on file
                   {m.ret.declaredOnTsw && m.ret.declaredOnTswAt ? ` · Ticked declared ${String(m.ret.declaredOnTswAt).slice(0, 10)}${m.ret.declaredOnTswBy ? ` by ${m.ret.declaredOnTswBy}` : ""}` : ""}
                 </div>
               )}
@@ -22123,7 +22116,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
                 <>
                   <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>Excise worked out from packaging</div>
                   <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4 }}>
-                    <thead><tr><th style={th}>Product</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th><th style={{ ...th, textAlign: "right" }}>Rate</th><th style={{ ...th, textAlign: "right" }}>Duty</th></tr></thead>
+                    <thead><tr><th style={th}>Product</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th></tr></thead>
                     <tbody>
                       {lines.map((l) => (
                         <tr key={l.key}>
@@ -22131,8 +22124,6 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
                           <td style={num}>{l.abv.toFixed(1)}</td>
                           <td style={num}>{l.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 })}</td>
                           <td style={num}>{l.lal.toFixed(3)}</td>
-                          <td style={num}>{l.band.basis === "alcohol" ? `$${l.rate}/LAL` : l.band.basis === "beverage" ? `$${l.rate}/L` : "—"}</td>
-                          <td style={num}>${l.duty.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -22142,12 +22133,11 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
 
               {full && (m.ret?.declaredLines || []).length > 0 && (() => {
                 const dl = m.ret.declaredLines;
-                const p = returnPayable(m.ret);
                 return (
                   <>
                     <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>Declared on TSW</div>
                     <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4 }}>
-                      <thead><tr><th style={th}>Item</th><th style={th}>Description</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th><th style={{ ...th, textAlign: "right" }}>Duty</th></tr></thead>
+                      <thead><tr><th style={th}>Item</th><th style={th}>Description</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th></tr></thead>
                       <tbody>
                         {dl.map((l, j) => (
                           <tr key={j}>
@@ -22156,17 +22146,8 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
                             <td style={num}>{l.abv != null ? Number(l.abv).toFixed(1) : "—"}</td>
                             <td style={num}>{l.litres != null ? Number(l.litres).toLocaleString("en-NZ", { maximumFractionDigits: 3 }) : "—"}</td>
                             <td style={num}>{l.lal != null ? Number(l.lal).toFixed(3) : "—"}</td>
-                            <td style={num}>{l.duty != null ? `$${Number(l.duty).toFixed(2)}` : "—"}</td>
                           </tr>
                         ))}
-                        {p && (
-                          <>
-                            <tr><td style={td} colSpan={5}>Excise duty</td><td style={num}>${p.duty.toFixed(2)}</td></tr>
-                            {p.levy != null && <tr><td style={td} colSpan={5}>Alcohol levy</td><td style={num}>${p.levy.toFixed(2)}</td></tr>}
-                            {p.levyGst != null && <tr><td style={td} colSpan={5}>GST on levy</td><td style={num}>${p.levyGst.toFixed(2)}</td></tr>}
-                            <tr><td style={{ ...td, fontWeight: 600 }} colSpan={5}>Total paid</td><td style={{ ...num, fontWeight: 600 }}>${p.total.toFixed(2)}</td></tr>
-                          </>
-                        )}
                       </tbody>
                     </table>
                     {dl.some((l) => (l.derived || []).includes("litres")) && <div style={{ fontSize: 10.5, color: "#5C6B54", marginTop: 3 }}>Litres worked out from LAL ÷ ABV where TSW showed LAL only.</div>}
@@ -22292,7 +22273,7 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
   const exportCsv = () =>
     downloadCSV(
       `excise-self-audit-${today()}.csv`,
-      ["Period", "Status", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "Duty paid ($)", "Alcohol levy ($)", "GST on levy ($)", "Total paid ($)", "TSW entry number", "Filed date", "Usual due date", "Screenshots on file", "Issues", "Explanation", "Reviewed by", "Reviewed on"],
+      ["Period", "Status", "Packaged litres", "Packaged LAL", "Declared litres", "Declared LAL", "Litres difference", "LAL difference", "TSW entry number", "Filed date", "Usual due date", "Screenshots on file", "Issues", "Explanation", "Reviewed by", "Reviewed on"],
       [...counted].reverse().map((m) => [
         m.period,
         AUDIT_STATUS[m.status].label,
@@ -22302,10 +22283,6 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
         m.ret?.declaredLal ?? "",
         m.litresDiff ?? "",
         m.lalDiff ?? "",
-        m.ret?.declaredDuty ?? "",
-        m.ret?.declaredLevy ?? "",
-        m.ret?.declaredLevyGst ?? "",
-        returnPayable(m.ret)?.total ?? "",
         m.ret?.entryNumber || "",
         m.ret?.filedDate || "",
         m.due,
