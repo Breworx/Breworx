@@ -21963,6 +21963,17 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
     ticked: ordered.filter((m) => m.ret?.declaredOnTsw).length,
   };
   const fileTag = ordered.length ? `${ordered[0].period}_to_${ordered[ordered.length - 1].period}` : "none";
+  const oneMonth = ordered.length === 1;
+  // Name the saved PDF after the month(s): browsers use the page title.
+  const printReport = () => {
+    const before = document.title;
+    const tag = !ordered.length ? "" : oneMonth ? ordered[0].period : `${ordered[0].period} to ${ordered[ordered.length - 1].period}`;
+    document.title = `${companyName || "Brewery"} excise ${tag}`.trim();
+    const restore = () => { document.title = before; window.removeEventListener("afterprint", restore); };
+    window.addEventListener("afterprint", restore);
+    window.print();
+    setTimeout(restore, 60000);
+  };
 
   const exportSummary = () =>
     downloadCSV(
@@ -22022,6 +22033,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           #excise-audit-print { position: absolute; top: 0; left: 0; width: 100%; background: #FFFFFF; overflow: visible; }
           .no-print { display: none !important; }
           .audit-month { page-break-inside: avoid; }
+          .audit-month-page + .audit-month-page { page-break-before: always; }
         }
       `}</style>
       <div className="no-print" style={{ position: "sticky", top: 0, background: "#F5F1E4", borderBottom: "1px solid #DDE0C8", padding: "calc(10px + env(safe-area-inset-top)) 16px 10px", zIndex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -22029,9 +22041,17 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#5C6B54", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 13.5, padding: 6 }}>
             <X size={16} /> {closeLabel}
           </button>
-          <button onClick={() => window.print()} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}>
-            Print / Save as PDF
+          <button onClick={printReport} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 16px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13.5, cursor: "pointer" }}>
+            {oneMonth ? `Save ${monthLabelFromKey(ordered[0].period)} as PDF` : "Print / Save as PDF"}
           </button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: "#5C6B54" }}>
+          <span>One month</span>
+          <select value={oneMonth ? from : ""} onChange={(e) => { if (e.target.value) { setFrom(e.target.value); setTo(e.target.value); } }} style={sel}>
+            <option value="">Pick a month…</option>
+            {[...keys].reverse().map((k) => <option key={k} value={k}>{monthLabelFromKey(k)}</option>)}
+          </select>
+          <button onClick={() => { setFrom(keys[0] || ""); setTo(keys[keys.length - 1] || ""); }} style={{ ...auditSecondaryBtn, padding: "6px 10px" }}>All months</button>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: "#5C6B54" }}>
           <span>From</span>
@@ -22076,7 +22096,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           const lines = tswLinesForRows(m.rows);
           const runs = [...m.rows].sort((a, b) => String(a.date).localeCompare(String(b.date))).map((r) => auditRunDetail(r, batchById));
           return (
-            <div key={m.period} className="audit-month" style={{ borderTop: "1px solid #DDE0C8", padding: "14px 0", fontSize: 12.5 }}>
+            <div key={m.period} className={full ? "audit-month audit-month-page" : "audit-month"} style={{ borderTop: "1px solid #DDE0C8", padding: "14px 0", fontSize: 12.5 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
                 <strong style={{ fontSize: 15 }}>{monthLabelFromKey(m.period)}</strong>
                 <span style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -22101,7 +22121,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
 
               {full && lines.length > 0 && (
                 <>
-                  <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>TSW lines (from records)</div>
+                  <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>Excise worked out from packaging</div>
                   <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4 }}>
                     <thead><tr><th style={th}>Product</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th><th style={{ ...th, textAlign: "right" }}>Rate</th><th style={{ ...th, textAlign: "right" }}>Duty</th></tr></thead>
                     <tbody>
@@ -22119,6 +22139,40 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
                   </table>
                 </>
               )}
+
+              {full && (m.ret?.declaredLines || []).length > 0 && (() => {
+                const dl = m.ret.declaredLines;
+                const p = returnPayable(m.ret);
+                return (
+                  <>
+                    <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54" }}>Declared on TSW</div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 4 }}>
+                      <thead><tr><th style={th}>Item</th><th style={th}>Description</th><th style={{ ...th, textAlign: "right" }}>ABV %</th><th style={{ ...th, textAlign: "right" }}>Litres</th><th style={{ ...th, textAlign: "right" }}>LAL</th><th style={{ ...th, textAlign: "right" }}>Duty</th></tr></thead>
+                      <tbody>
+                        {dl.map((l, j) => (
+                          <tr key={j}>
+                            <td style={{ ...td, whiteSpace: "nowrap" }}>{l.itemCode || "—"}</td>
+                            <td style={td}>{l.description || "—"}</td>
+                            <td style={num}>{l.abv != null ? Number(l.abv).toFixed(1) : "—"}</td>
+                            <td style={num}>{l.litres != null ? Number(l.litres).toLocaleString("en-NZ", { maximumFractionDigits: 3 }) : "—"}</td>
+                            <td style={num}>{l.lal != null ? Number(l.lal).toFixed(3) : "—"}</td>
+                            <td style={num}>{l.duty != null ? `$${Number(l.duty).toFixed(2)}` : "—"}</td>
+                          </tr>
+                        ))}
+                        {p && (
+                          <>
+                            <tr><td style={td} colSpan={5}>Excise duty</td><td style={num}>${p.duty.toFixed(2)}</td></tr>
+                            {p.levy != null && <tr><td style={td} colSpan={5}>Alcohol levy</td><td style={num}>${p.levy.toFixed(2)}</td></tr>}
+                            {p.levyGst != null && <tr><td style={td} colSpan={5}>GST on levy</td><td style={num}>${p.levyGst.toFixed(2)}</td></tr>}
+                            <tr><td style={{ ...td, fontWeight: 600 }} colSpan={5}>Total paid</td><td style={{ ...num, fontWeight: 600 }}>${p.total.toFixed(2)}</td></tr>
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                    {dl.some((l) => (l.derived || []).includes("litres")) && <div style={{ fontSize: 10.5, color: "#5C6B54", marginTop: 3 }}>Litres worked out from LAL ÷ ABV where TSW showed LAL only.</div>}
+                  </>
+                );
+              })()}
 
               {(m.ret?.declaredLines || []).length > 0 && (
                 <>
