@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import TankLog, { XeroCallback, AuditSharePage } from "./TankLog.jsx";
+import TankLog from "./TankLog.jsx";
+import { XeroCallback } from "./components/xero.jsx";
+import { AuditSharePage } from "./components/auditor.jsx";
 
 const path = window.location.pathname;
 const isXeroCallback = path === "/xero-callback";
