@@ -212,3 +212,46 @@ begin
 end $$;
 revoke all on function public.accept_food_safety_disclaimer(text) from public, anon;
 grant execute on function public.accept_food_safety_disclaimer(text) to authenticated;
+
+-- Xero keep-alive: a weekly job refreshes every Xero connection so it never
+-- hits Xero's 60-day unused limit. Edge function: supabase/functions/xero-keepalive.
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+alter table public.xero_connections
+  add column if not exists last_keepalive_at timestamptz,
+  add column if not exists keepalive_failed_at timestamptz;
+do $$ begin
+  if not exists (select 1 from vault.secrets where name = 'xero_keepalive_secret') then
+    perform vault.create_secret(encode(gen_random_bytes(32), 'hex'), 'xero_keepalive_secret');
+  end if;
+end $$;
+create or replace function public.get_xero_keepalive_secret()
+returns text language sql security definer set search_path = public, vault as $$
+  select decrypted_secret from vault.decrypted_secrets where name = 'xero_keepalive_secret';
+$$;
+revoke all on function public.get_xero_keepalive_secret() from public, anon, authenticated;
+grant execute on function public.get_xero_keepalive_secret() to service_role;
+create or replace function public.run_xero_keepalive()
+returns bigint language sql security definer set search_path = public, vault, net as $$
+  select net.http_post(
+    url := 'https://duefcixwiykpebfysexe.supabase.co/functions/v1/xero-keepalive',
+    headers := jsonb_build_object('Content-Type','application/json','x-keepalive-secret',
+      (select decrypted_secret from vault.decrypted_secrets where name = 'xero_keepalive_secret')),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 30000);
+$$;
+revoke all on function public.run_xero_keepalive() from public, anon, authenticated;
+-- Mondays 3:17am NZ time (Sunday 14:17 UTC, NZDT).
+select cron.schedule('xero-keepalive-weekly', '17 14 * * 0', $$select public.run_xero_keepalive()$$);
+create or replace function public.xero_clear_keepalive_failure()
+returns trigger language plpgsql as $$
+begin
+  if new.refresh_token is distinct from old.refresh_token
+     and new.keepalive_failed_at is not distinct from old.keepalive_failed_at then
+    new.keepalive_failed_at := null;
+  end if;
+  return new;
+end $$;
+drop trigger if exists xero_clear_keepalive_failure on public.xero_connections;
+create trigger xero_clear_keepalive_failure before update on public.xero_connections
+  for each row execute function public.xero_clear_keepalive_failure();
