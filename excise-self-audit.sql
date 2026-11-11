@@ -154,3 +154,6 @@ alter table public.brew_plan_settings enable row level security;
 drop policy if exists "own company brew plan settings" on public.brew_plan_settings;
 create policy "own company brew plan settings" on public.brew_plan_settings
   for all using (company_id = get_my_company_id()) with check (company_id = get_my_company_id());
+
+-- Cider built on the day: the day's juice, rates and stock items on the batch.
+alter table public.batches add column if not exists day_recipe jsonb;
