@@ -3333,12 +3333,13 @@ const TRAINING_TOPICS = [
   "Other",
 ];
 
-const CATEGORIES = ["Grain", "Hops", "Yeast", "Other"];
+const CATEGORIES = ["Grain", "Hops", "Yeast", "Juice", "Other"];
 
 const CATEGORY_COLOR = {
   Grain: "#5C9A3C",
   Hops: "#D9A441",
   Yeast: "#B8925A",
+  Juice: "#C77D2E",
   Other: "#9BA88A",
   Can: "#5C9A3C",
   Bottle: "#D9A441",
@@ -14304,7 +14305,8 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
     .filter((b) => b.productType === CIDER_TYPE && !b.mergedIntoBatchId && (b.dayRecipe || (b.juiceIntake || []).length))
     .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
   const fermenters = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle");
-  const blankLot = () => ({ id: uid(), variety: "", orchard: "", litres: "", mode: "brix", value: "", ph: "", ta: "" });
+  const blankLot = () => ({ id: uid(), variety: "", orchard: "", litres: "", mode: "brix", value: "", ph: "", ta: "", itemId: "", lotId: "" });
+  const juiceItems = [...inventory].sort((a, b) => (b.category === "Juice") - (a.category === "Juice") || a.name.localeCompare(b.name));
   const [name, setName] = useState(`Cider ${today()}`);
   const [startDate, setStartDate] = useState(today());
   const [tankId, setTankId] = useState("");
@@ -14321,7 +14323,11 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
   const setLot = (id, patch) => setLots((p) => p.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   const lotRecords = lots
     .filter((l) => Number(l.litres) > 0)
-    .map((l) => ({ id: l.id, date: startDate, variety: l.variety.trim(), orchard: l.orchard.trim(), litres: Number(l.litres), brix: l.mode === "brix" ? cnum(l.value) : null, sg: l.mode === "sg" ? cnum(l.value) : null, ph: cnum(l.ph), ta: cnum(l.ta) }));
+    .map((l) => {
+      const it = inventory.find((x) => x.id === l.itemId);
+      const lot = it && (it.lots || []).find((x) => x.id === l.lotId);
+      return { id: l.id, date: startDate, variety: l.variety.trim(), orchard: l.orchard.trim(), litres: Number(l.litres), brix: l.mode === "brix" ? cnum(l.value) : null, sg: l.mode === "sg" ? cnum(l.value) : null, ph: cnum(l.ph), ta: cnum(l.ta), itemId: it ? it.id : null, itemName: it ? it.name : null, lotId: lot ? lot.id : null, lotNumber: lot ? lot.lotNumber : null };
+    });
   const sum = juiceSummary(lotRecords);
   const L = sum.litres;
   const freeSo2 = sum.ph != null && cnum(molecular) != null ? freeSo2For(sum.ph, Number(molecular)) : null;
@@ -14348,7 +14354,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
     const b = pastCiders.find((x) => x.id === id);
     if (!b) return;
     const r = b.dayRecipe || {};
-    setLots(((r.lots || b.juiceIntake || []).length ? (r.lots || b.juiceIntake) : [{}]).map((l) => ({ ...blankLot(), variety: l.variety || "", orchard: l.orchard || "", mode: l.sg != null && l.brix == null ? "sg" : "brix" })));
+    setLots(((r.lots || b.juiceIntake || []).length ? (r.lots || b.juiceIntake) : [{}]).map((l) => ({ ...blankLot(), variety: l.variety || "", orchard: l.orchard || "", itemId: l.itemId && inventory.some((x) => x.id === l.itemId) ? l.itemId : "", mode: l.sg != null && l.brix == null ? "sg" : "brix" })));
     if (r.fg != null) setFg(String(r.fg));
     setTargetAbv(r.targetAbv != null ? String(r.targetAbv) : "");
     if (r.molecularSo2 != null) setMolecular(String(r.molecularSo2));
@@ -14365,7 +14371,17 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
     const f = it ? unitFactor("g", it.unit) : null;
     return it && f != null && grams ? r3c(grams * f) : null;
   };
+  // Juice taken from stock: litres converted into the item's unit, from the chosen lot first.
+  const juiceRows = lotRecords
+    .filter((l) => l.itemId)
+    .map((l) => {
+      const it = inventory.find((x) => x.id === l.itemId);
+      const f = it ? unitFactor("L", it.unit) : null;
+      return it && f != null ? { id: uid(), name: it.name, category: it.category || "Juice", qty: r3c(l.litres * f), unit: it.unit, preferredLotId: l.lotId || undefined, note: `Juice${l.lotNumber ? ` lot ${l.lotNumber}` : ""}` } : null;
+    })
+    .filter(Boolean);
   const ingredientRows = [
+    ...juiceRows,
     ...ROLES.filter((r) => calc[r.role] > 0 && roleItems[r.role]).map((r) => {
       const it = inventory.find((x) => x.id === roleItems[r.role]);
       const qty = itemQtyFromGrams(roleItems[r.role], calc[r.role]);
@@ -14444,7 +14460,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
   return (
     <Modal title="Start today's cider" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={ciderNote}>Build this cider from the juice that came in today. Everything below is saved on the batch, and the next cider can start from it.</div>
+        <div style={ciderNote}>Build this cider from the juice that came in today. Juice bought in can be taken from stock by lot (add it to Inventory as a Juice item, in litres). Everything below is saved on the batch, and the next cider can start from it.</div>
         {pastCiders.length > 0 && (
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Start from a past cider (optional)</span>
@@ -14475,6 +14491,30 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
               <TextField label="Variety" value={l.variety} onChange={(v) => setLot(l.id, { variety: v })} />
               <TextField label="Orchard" value={l.orchard} onChange={(v) => setLot(l.id, { orchard: v })} />
             </div>
+            {(() => {
+              const it = inventory.find((x) => x.id === l.itemId);
+              const lotsLeft = it ? (it.lots || []).filter((x) => (x.remainingQty ?? x.qty) > 0) : [];
+              const f = it ? unitFactor("L", it.unit) : null;
+              const need = it && f != null ? Number(l.litres || 0) * f : 0;
+              return (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: it ? "1fr 1fr" : "1fr", gap: 8 }}>
+                    <select value={l.itemId} onChange={(e) => setLot(l.id, { itemId: e.target.value, lotId: "" })} style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 13, color: "#2A3324" }}>
+                      <option value="">Not from stock (pressed here)</option>
+                      {juiceItems.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.qty}{x.unit})</option>)}
+                    </select>
+                    {it && (
+                      <select value={l.lotId} onChange={(e) => setLot(l.id, { lotId: e.target.value })} style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", fontSize: 13, color: "#2A3324" }}>
+                        <option value="">Oldest lot first</option>
+                        {lotsLeft.map((x) => <option key={x.id} value={x.id}>Lot {x.lotNumber || "—"} · {x.remainingQty ?? x.qty}{it.unit} left</option>)}
+                      </select>
+                    )}
+                  </div>
+                  {it && f == null && <div style={{ fontSize: 11.5, color: "#B5502F" }}>{it.name} isn't counted in litres, so it can't be taken out of stock.</div>}
+                  {it && f != null && need > it.qty && <div style={{ fontSize: 11.5, color: "#B5502F" }}>Only {it.qty}{it.unit} of {it.name} in stock.</div>}
+                </>
+              );
+            })()}
             <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
               {[["brix", "Brix"], ["sg", "SG"]].map(([m, label]) => (
                 <button key={m} type="button" onClick={() => setLot(l.id, { mode: m })} style={{ flex: 1, background: l.mode === m ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 6, fontSize: 12, color: l.mode === m ? "#16191A" : "#5C6B54", cursor: "pointer" }}>{label}</button>
@@ -14562,7 +14602,7 @@ function CiderDayRecipeCard({ batch }) {
       <div style={ciderHead}>Built on the day · {r.builtOn}</div>
       <div style={{ fontSize: 12.5, color: "#2A3324", lineHeight: 1.6 }}>
         {(r.lots || []).map((l, i) => (
-          <div key={i}>{l.litres}L {l.variety || "juice"}{l.orchard ? ` (${l.orchard})` : ""}{l.brix != null ? ` · ${l.brix}°Bx` : l.sg != null ? ` · SG ${l.sg}` : ""}{l.ph != null ? ` · pH ${l.ph}` : ""}{l.ta != null ? ` · TA ${l.ta}` : ""}</div>
+          <div key={i}>{l.litres}L {l.variety || l.itemName || "juice"}{l.orchard ? ` (${l.orchard})` : ""}{l.lotNumber ? ` · lot ${l.lotNumber}` : ""}{l.brix != null ? ` · ${l.brix}°Bx` : l.sg != null ? ` · SG ${l.sg}` : ""}{l.ph != null ? ` · pH ${l.ph}` : ""}{l.ta != null ? ` · TA ${l.ta}` : ""}</div>
         ))}
         <div style={{ color: "#5C6B54", marginTop: 4 }}>
           {c.litres}L · OG {c.og}{c.ph != null ? ` · pH ${c.ph}` : ""}{c.abvIfDry != null ? ` · ~${c.abvIfDry}% dry` : ""}{c.kmetaG ? ` · K-meta ${c.kmetaG}g` : ""}{c.sugarG ? ` · sugar ${c.sugarG}g` : ""}
@@ -14699,7 +14739,7 @@ function PlannerNumber({ label, value, onCommit, step }) {
   );
 }
 
-function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, nextNumber }) {
+function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, nextNumber, nextCiderNumber }) {
   const s = { periodMonths: 3, horizonWeeks: 12, baseCoverWeeks: 4, brewWeekdays: [1, 2, 3, 4, 5], brewsPerDay: 2, kitLitres: 240, products: {}, ...(settings || {}) };
   const [editing, setEditing] = useState(null); // product key being edited
   const [added, setAdded] = useState({}); // suggestion id -> true
@@ -14753,12 +14793,15 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
     setAdded((p) => ({ ...p, [sug.id]: true }));
   };
   const schedulable = plan.suggestions.filter((x) => x.startDate && !added[x.id]);
+  const isCider = (sug) => (recipeFor(sug)?.productType || sug.productType) === "Cider/Perry";
+  const numberFor = (sug) => (isCider(sug) && nextCiderNumber ? nextCiderNumber : nextNumber);
   const addAll = async () => {
     setBusy(true);
     let n = parseInt(nextNumber, 10) || 1;
+    let f = parseInt(String(nextCiderNumber || "F0001").slice(1), 10) || 1;
     for (const sug of schedulable) {
-      await addOne(sug, String(n));
-      n += 1;
+      if (isCider(sug)) { await addOne(sug, `F${String(f).padStart(4, "0")}`); f += 1; }
+      else { await addOne(sug, String(n)); n += 1; }
     }
     setBusy(false);
   };
@@ -14852,7 +14895,7 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
                   {sug.noTank && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>No fermenter is free for {sug.leadDays} days within 2 months of {fmtDay(sug.needDate)}.</div>}
                 </div>
                 {sug.startDate && (
-                  <button type="button" disabled={added[sug.id] || busy} onClick={() => addOne(sug, nextNumber)} style={{ ...btn2, whiteSpace: "nowrap", opacity: added[sug.id] ? 0.6 : 1 }}>
+                  <button type="button" disabled={added[sug.id] || busy} onClick={() => addOne(sug, numberFor(sug))} style={{ ...btn2, whiteSpace: "nowrap", opacity: added[sug.id] ? 0.6 : 1 }}>
                     {added[sug.id] ? "Added ✓" : "Add"}
                   </button>
                 )}
@@ -14941,7 +14984,11 @@ function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemb
   );
 }
 
-function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, presetName, yeastHarvests, onUseHarvest, presetProductType }) {
+function AddBatchModal({ onClose, onAdd, nextNumber: beerNextNumber, nextCiderNumber, recipes, presetRecipe, tanks, batches, inventory, onAddInventoryItem, presetTankId, presetStartDate, presetName, yeastHarvests, onUseHarvest, presetProductType }) {
+  const startType = presetRecipe ? presetRecipe.productType || "Beer" : presetProductType || "Beer";
+  const numberFor = (type) => (type === "Cider/Perry" && nextCiderNumber ? nextCiderNumber : beerNextNumber);
+  const [numberType, setNumberType] = useState(startType);
+  const nextNumber = numberFor(numberType);
   const mashTuns = tanks.filter((t) => t.type === "Mash Tun");
   const tankChoices = mashTuns.length > 0 ? mashTuns : tanks;
   const [recipeId, setRecipeId] = useState(presetRecipe ? presetRecipe.id : "");
@@ -14962,6 +15009,15 @@ function AddBatchModal({ onClose, onAdd, nextNumber, recipes, presetRecipe, tank
   });
   const [startDate, setStartDate] = useState(presetStartDate || today());
   const [batchNumber, setBatchNumber] = useState(nextNumber);
+  // Cider gets the next F number, everything else the next beer number —
+  // switch it when the product type changes, unless it was typed by hand.
+  useEffect(() => {
+    if (productType === numberType) return;
+    const oldAuto = numberFor(numberType);
+    const newAuto = numberFor(productType);
+    setBatchNumber((cur) => (cur === oldAuto ? newAuto : cur));
+    setNumberType(productType);
+  }, [productType]);
   const [plannedDays, setPlannedDays] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   const [splitRows, setSplitRows] = useState([{ id: uid(), tankId: "", volume: "" }]);
@@ -28101,6 +28157,11 @@ function TankLogApp() {
   }, [selected?.id]);
   const recentBatches = recentBatchIds.map((id) => batches.find((b) => b.id === id)).filter(Boolean);
   const nextNumber = useMemo(() => String(Math.max(0, ...batches.map((b) => parseInt(b.number, 10) || 0)) + 1), [batches]);
+  // Cider batches have their own run: F0001, F0002, … (split tanks add A/B as usual).
+  const nextCiderNumber = useMemo(() => {
+    const n = Math.max(0, ...batches.map((b) => { const m = /^F(\d+)/i.exec(String(b.number || "")); return m ? parseInt(m[1], 10) : 0; }));
+    return `F${String(n + 1).padStart(4, "0")}`;
+  }, [batches]);
   const selectedPO = useMemo(() => purchaseOrders.find((p) => p.id === selectedPOId) || null, [purchaseOrders, selectedPOId]);
   const nextPONumber = useMemo(() => {
     const nums = purchaseOrders.map((p) => parseInt((p.poNumber.match(/\d+/) || [0])[0], 10) || 0);
@@ -28287,17 +28348,23 @@ function TankLogApp() {
     // before creating the batch, so the batch record itself carries the
     // real ingredient cost from the moment it exists.
     let totalIngredientCost = 0;
-    const plannedUpdates = [];
+    // One running total per stock item, so an item that appears on more
+    // than one line (e.g. juice from two lots) is taken out line by line
+    // from what's left, not each line from the same starting stock.
+    const byItem = {};
     if (b.ingredients && b.ingredients.length > 0) {
       for (const ing of b.ingredients) {
         const item = inventory.find((it) => sameItemName(it.name, ing.name));
         if (!item) continue;
-
-        const { updatedLots, lotsUsed, cost } = deductFromLotsFIFO(item.lots, ing.qty, ing.preferredLotId);
+        const w = byItem[item.id] || (byItem[item.id] = { item, lots: item.lots, used: 0, lotsUsed: [] });
+        const { updatedLots, lotsUsed, cost } = deductFromLotsFIFO(w.lots, ing.qty, ing.preferredLotId);
         totalIngredientCost += cost;
-        plannedUpdates.push({ item, updatedLots, lotsUsed });
+        w.lots = updatedLots;
+        w.used += Number(ing.qty) || 0;
+        w.lotsUsed.push(...lotsUsed);
       }
     }
+    const plannedUpdates = Object.values(byItem).map((w) => ({ item: w.item, updatedLots: w.lots, lotsUsed: w.lotsUsed, used: w.used }));
     totalIngredientCost = Math.round(totalIngredientCost * 100) / 100;
 
     const { data, error } = await supabase
@@ -28312,8 +28379,8 @@ function TankLogApp() {
     if (b.tankId) resetTankClean(b.tankId, b);
     (b.splitTanks || []).forEach((t) => resetTankClean(t.tankId, b));
 
-    for (const { item, updatedLots, lotsUsed } of plannedUpdates) {
-      const newQty = Math.max(0, Math.round((item.qty - (b.ingredients.find((i) => sameItemName(i.name, item.name))?.qty || 0)) * 100) / 100);
+    for (const { item, updatedLots, lotsUsed, used } of plannedUpdates) {
+      const newQty = Math.max(0, Math.round((item.qty - used) * 100) / 100);
       const actualDelta = Math.round((newQty - item.qty) * 100) / 100;
       const historyEntry = {
         id: uid(),
@@ -32069,6 +32136,7 @@ function TankLogApp() {
                 onSaveSettings={saveBrewPlanSettings}
                 onSchedule={addBatch}
                 nextNumber={nextNumber}
+                nextCiderNumber={nextCiderNumber}
               />
             )}
 
@@ -32077,7 +32145,7 @@ function TankLogApp() {
                 batches={batches}
                 inventory={inventory}
                 tanks={tanks}
-                nextNumber={nextNumber}
+                nextNumber={nextCiderNumber}
                 onCreateBatch={addBatch}
                 onSaveCider={saveCiderData}
                 onSetBatchFigures={saveCiderData}
@@ -33920,6 +33988,7 @@ function TankLogApp() {
           }}
           onAdd={addBatch}
           nextNumber={nextNumber}
+          nextCiderNumber={nextCiderNumber}
           recipes={recipes}
           presetRecipe={brewRecipe}
           tanks={tanks}
