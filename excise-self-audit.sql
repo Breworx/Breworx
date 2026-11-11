@@ -160,3 +160,16 @@ alter table public.batches add column if not exists day_recipe jsonb;
 
 -- Juice gravity on juice stock items, used by the cider plan.
 alter table public.inventory_items add column if not exists juice_sg numeric;
+
+-- Label strength per beer (product key = recipe family, or cleaned batch name).
+create table if not exists public.label_strengths (
+  company_id uuid not null references public.companies(id) on delete cascade,
+  product_key text not null,
+  abv numeric not null,
+  updated_at timestamptz not null default now(),
+  primary key (company_id, product_key)
+);
+alter table public.label_strengths enable row level security;
+drop policy if exists "own company label strengths" on public.label_strengths;
+create policy "own company label strengths" on public.label_strengths
+  for all using (company_id = get_my_company_id()) with check (company_id = get_my_company_id());

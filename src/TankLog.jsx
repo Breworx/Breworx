@@ -22479,16 +22479,117 @@ function ExciseSelfAudit({ batches, abvMethod, exciseItemCodes, exciseReturns, c
   );
 }
 
+// Label strengths: one ABV per beer, applied to its batches. Batches in a
+// month already ticked as declared on TSW are left alone.
+function LabelStrengthsView({ batches, recipes, exciseReturns, strengths, onSave }) {
+  const [drafts, setDrafts] = useState({});
+  const [replace, setReplace] = useState({});
+  const [showOld, setShowOld] = useState(false);
+  const [busy, setBusy] = useState("");
+  const fam = useMemo(() => Object.fromEntries(recipes.map((r) => [r.id, r.familyId || r.id])), [recipes]);
+  const declared = useMemo(() => new Set(exciseReturns.filter((r) => r.declaredOnTsw).map((r) => r.period)), [exciseReturns]);
+  const locked = (b) => packagingEvents(b).some((e) => declared.has(monthKeyFromDate(e.date)));
+  const beers = useMemo(() => {
+    const by = {};
+    batches.filter((b) => !b.mergedIntoBatchId).forEach((b) => {
+      const k = productKeyForBatch(b, fam);
+      (by[k] = by[k] || []).push(b);
+    });
+    return Object.entries(by)
+      .map(([key, list]) => {
+        const sorted = [...list].sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+        const lastLabel = sorted.find((b) => b.labelAbv != null)?.labelAbv ?? null;
+        const open = sorted.filter((b) => !locked(b));
+        return {
+          key,
+          name: cleanProductName(sorted[0].name) || sorted[0].name,
+          type: sorted[0].productType || "Beer",
+          last: sorted[0].startDate,
+          count: sorted.length,
+          lastLabel,
+          open,
+          missing: open.filter((b) => b.labelAbv == null).length,
+        };
+      })
+      .sort((a, b) => String(b.last).localeCompare(String(a.last)));
+  }, [batches, fam, declared]);
+  const cutoff = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); })();
+  const shown = showOld ? beers : beers.filter((b) => b.last >= cutoff);
+  const card = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "12px 14px", marginBottom: 10 };
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: "#5C6B54", lineHeight: 1.5, marginBottom: 14 }}>
+        Set the strength on each beer's label once. It's used for every batch of that beer not yet declared, and for new batches from now on. Batches in months already ticked as declared on TSW aren't changed.
+      </div>
+      {shown.map((b) => {
+        const saved = strengths[b.key];
+        const value = drafts[b.key] ?? (saved != null ? String(saved) : b.lastLabel != null ? String(b.lastLabel) : "");
+        const v = Number(value);
+        const valid = value !== "" && Number.isFinite(v) && v > 0 && v < 70;
+        const targets = b.open.filter((x) => x.labelAbv == null || (replace[b.key] && Number(x.labelAbv) !== v));
+        const differ = b.open.filter((x) => x.labelAbv != null && valid && Number(x.labelAbv) !== v).length;
+        return (
+          <div key={b.key} style={card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, color: "#2A3324" }}>{b.name}</div>
+                <div style={{ fontSize: 11.5, color: b.missing ? "#B5502F" : "#9BA88A" }}>
+                  {b.type} · {b.count} batch{b.count === 1 ? "" : "es"}{b.missing ? ` · ${b.missing} with no label strength` : ""}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  value={value}
+                  onChange={(e) => setDrafts((p) => ({ ...p, [b.key]: e.target.value }))}
+                  style={{ width: 70, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: "#2A3324", textAlign: "right" }}
+                />
+                <span style={{ fontSize: 13, color: "#5C6B54" }}>%</span>
+                <button
+                  type="button"
+                  disabled={!valid || busy === b.key || (saved === v && targets.length === 0)}
+                  onClick={async () => {
+                    setBusy(b.key);
+                    await onSave(b.key, v, targets.map((x) => x.id), b.name);
+                    setDrafts((p) => { const n = { ...p }; delete n[b.key]; return n; });
+                    setBusy("");
+                  }}
+                  style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "8px 12px", color: "#16191A", fontSize: 12.5, cursor: "pointer", opacity: !valid || (saved === v && targets.length === 0) ? 0.45 : 1 }}
+                >
+                  {busy === b.key ? "Saving…" : saved === v && targets.length === 0 ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+            </div>
+            {differ > 0 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5C6B54", marginTop: 8 }}>
+                <input type="checkbox" checked={!!replace[b.key]} onChange={(e) => setReplace((p) => ({ ...p, [b.key]: e.target.checked }))} style={{ accentColor: "#5C9A3C" }} />
+                Also change {differ} undeclared batch{differ === 1 ? "" : "es"} that already have a different strength
+              </label>
+            )}
+          </div>
+        );
+      })}
+      {beers.length > shown.length && (
+        <button type="button" onClick={() => setShowOld(true)} style={{ background: "none", border: "none", color: "#5C9A3C", textDecoration: "underline", cursor: "pointer", fontSize: 13 }}>
+          Show {beers.length - shown.length} beer{beers.length - shown.length === 1 ? "" : "s"} not brewed in the last year
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ExciseReportView(props) {
   const [tab, setTab] = useState("calculate");
   return (
     <div>
       <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 5, overflow: "hidden", marginBottom: 18 }}>
-        {[["calculate", "Calculate & export"], ["audit", "Self-audit"]].map(([k, l]) => (
+        {[["calculate", "Calculate & export"], ["audit", "Self-audit"], ["labels", "Label strengths"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ flex: 1, background: tab === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: "10px", color: tab === k ? "#16191A" : "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: tab === k ? 600 : 400, cursor: "pointer" }}>{l}</button>
         ))}
       </div>
-      {tab === "calculate" ? <ExciseCalculateView {...props} /> : <ExciseSelfAudit {...props} />}
+      {tab === "calculate" ? <ExciseCalculateView {...props} /> : tab === "audit" ? <ExciseSelfAudit {...props} /> : <LabelStrengthsView batches={props.batches} recipes={props.recipes || []} exciseReturns={props.exciseReturns || []} strengths={props.labelStrengths || {}} onSave={props.onSaveLabelStrength} />}
     </div>
   );
 }
@@ -28416,6 +28517,7 @@ function TankLogApp() {
   const [exciseAbvMethod, setExciseAbvMethod] = useState("measured");
   const [brewPlanSettings, setBrewPlanSettings] = useState(null);
   const [ciderFocus, setCiderFocus] = useState(null);
+  const [labelStrengths, setLabelStrengths] = useState({});
   const [teammates, setTeammates] = useState([]);
   const [inviteLink, setInviteLink] = useState("");
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -28898,7 +29000,14 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, timers } : b)));
   };
 
-  const addBatch = async (b) => {
+  const addBatch = async (input) => {
+    // New batches get their beer's label strength, if one is set.
+    let b = input;
+    if (b.labelAbv == null) {
+      const fam = Object.fromEntries(recipes.map((r) => [r.id, r.familyId || r.id]));
+      const abv = labelStrengths[productKeyForBatch(b, fam)];
+      if (abv != null) b = { ...b, labelAbv: abv };
+    }
     // Work out which lots each ingredient will draw from — and their cost —
     // before creating the batch, so the batch record itself carries the
     // real ingredient cost from the moment it exists.
@@ -29258,6 +29367,31 @@ function TankLogApp() {
         setBrewPlanSettings(data?.settings || {});
       });
   }, [profile?.companyId]);
+  useEffect(() => {
+    if (!profile?.companyId) return;
+    supabase
+      .from("label_strengths")
+      .select("product_key, abv")
+      .eq("company_id", profile.companyId)
+      .then(({ data, error }) => {
+        if (error) { console.error(error); return; }
+        setLabelStrengths(Object.fromEntries((data || []).map((r) => [r.product_key, Number(r.abv)])));
+      });
+  }, [profile?.companyId]);
+  // Save a beer's label strength and put it on the batches given (the
+  // page only passes ones not in a month already declared on TSW).
+  const saveLabelStrength = async (key, abv, batchIds, name) => {
+    const { error } = await supabase.from("label_strengths").upsert({ company_id: profile.companyId, product_key: key, abv, updated_at: new Date().toISOString() });
+    if (error) { console.error(error); showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setLabelStrengths((p) => ({ ...p, [key]: abv }));
+    if (batchIds.length) {
+      const { error: e2 } = await supabase.from("batches").update({ label_abv: abv }).in("id", batchIds);
+      if (e2) { console.error(e2); showToast("error", "The strength saved, but the batches didn't update — try again."); return; }
+      setBatches((prev) => prev.map((b) => (batchIds.includes(b.id) ? { ...b, labelAbv: abv } : b)));
+    }
+    showToast("success", `${name}: ${abv}%${batchIds.length ? ` set on ${batchIds.length} batch${batchIds.length === 1 ? "" : "es"}` : " saved for new batches"}.`);
+  };
+
   const saveBrewPlanSettings = async (next) => {
     setBrewPlanSettings(next);
     const { error } = await supabase.from("brew_plan_settings").upsert({ company_id: profile.companyId, settings: next, updated_at: new Date().toISOString() });
@@ -32737,6 +32871,9 @@ function TankLogApp() {
                 abvMethod={exciseAbvMethod}
                 onSetAbvMethod={updateExciseAbvMethod}
                 onSetLabelAbv={setBatchLabelAbv}
+                recipes={recipes}
+                labelStrengths={labelStrengths}
+                onSaveLabelStrength={saveLabelStrength}
                 onSetDeclared={setExciseDeclared}
                 exciseReturns={exciseReturns}
                 companyName={companyName}
