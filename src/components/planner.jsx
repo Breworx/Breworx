@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { planBrews, productKeyForBatch } from "../lib/brewPlanner";
+import { addDaysISO, nzPublicHolidays, planBrews, productKeyForBatch } from "../lib/brewPlanner";
 import { monthLabelFromKey } from "../lib/excise";
 import { CONTAINERS, availableStockList, batchTankIds, packagedVolume, packagingEvents, remainingVolume, uid } from "../lib/production";
 import { today } from "../lib/utils";
@@ -71,6 +71,59 @@ export function PlannerNumber({ label, value, onCommit, step }) {
         style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 14 }}
       />
     </label>
+  );
+}
+
+// Public holidays and the brewery's own days off, which the planner never
+// picks as a brew day.
+function DaysOffEditor({ s, save, horizonWeeks, sel, btn2, note }) {
+  const [date, setDate] = useState("");
+  const [label, setLabel] = useState("");
+  const start = today();
+  const end = addDaysISO(start, horizonWeeks * 7);
+  const years = [...new Set([start.slice(0, 4), end.slice(0, 4)])].map(Number);
+  const upcoming = years
+    .flatMap((y) => Object.entries(nzPublicHolidays(y)))
+    .filter(([d]) => d >= start && d <= end)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const own = [...(s.daysOff || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const fmt = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
+  const skip = s.skipHolidays !== false;
+  const chip = { display: "inline-flex", alignItems: "center", gap: 6, background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 12, padding: "3px 9px", fontSize: 12, color: "#2A3324" };
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginBottom: 6 }}>Days off</div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#2A3324", cursor: "pointer" }}>
+        <input type="checkbox" checked={skip} onChange={(e) => save({ skipHolidays: e.target.checked })} style={{ accentColor: "#5C9A3C" }} />
+        Don't brew on NZ public holidays
+      </label>
+      {skip && upcoming.length > 0 && (
+        <div style={{ ...note, marginTop: 4 }}>Coming up: {upcoming.map(([d, n]) => `${n} ${fmt(d)}`).join(" · ")}</div>
+      )}
+      {own.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          {own.map((d) => (
+            <span key={d.date} style={chip}>
+              {d.label ? `${d.label} · ` : ""}{fmt(d.date)}
+              <button type="button" aria-label="Remove" onClick={() => save({ daysOff: own.filter((x) => x.date !== d.date) })} style={{ background: "none", border: "none", padding: 0, color: "#9BA88A", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+        <input type="date" value={date} min={start} onChange={(e) => setDate(e.target.value)} style={sel} />
+        <input type="text" value={label} placeholder="e.g. Otago Anniversary" onChange={(e) => setLabel(e.target.value)} style={{ ...sel, flex: "1 1 140px", minWidth: 0 }} />
+        <button
+          type="button"
+          disabled={!date}
+          onClick={() => { save({ daysOff: [...own.filter((x) => x.date !== date), { date, label: label.trim() }] }); setDate(""); setLabel(""); }}
+          style={{ ...btn2, opacity: date ? 1 : 0.5 }}
+        >
+          Add day off
+        </button>
+      </div>
+      <div style={{ ...note, marginTop: 4 }}>For anniversary days, shutdowns or leave. National holidays are already covered.</div>
+    </div>
   );
 }
 
@@ -196,6 +249,7 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
             );
           })}
         </div>
+        <DaysOffEditor s={s} save={save} horizonWeeks={s.horizonWeeks} sel={sel} btn2={btn2} note={note} />
         <div style={{ ...note, marginTop: 10 }}>
           Sales are the litres packaged in that period{plan.xeroMonths.length ? `, except ${plan.xeroMonths.map((m) => monthLabelFromKey(m)).join(", ")}, which use your Xero sales` : ""}. Each beer's cover starts at the base and goes up (to at most double) for beers whose monthly sales swing a lot. It updates on its own as more months come in.
         </div>

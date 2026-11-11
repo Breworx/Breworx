@@ -963,8 +963,13 @@ export function LabelStrengthsView({ batches, recipes, exciseReturns, strengths,
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: "#2A3324" }}>{b.name}</div>
                 <div style={{ fontSize: 11.5, color: b.missing ? "#B5502F" : "#9BA88A" }}>
-                  {b.type} · {b.count} batch{b.count === 1 ? "" : "es"}{b.missing ? ` · ${b.missing} with no label strength` : ""}
+                  {b.type} · {b.count} batch{b.count === 1 ? "" : "es"}{b.missing && b.type === "Beer" ? ` · ${b.missing} with no label strength` : ""}
                 </div>
+                {b.type !== "Beer" && (
+                  <div style={{ fontSize: 11.5, color: "#8A6D0B", marginTop: 2, lineHeight: 1.4 }}>
+                    For the label only. Customs allows label strength for beer, so excise uses the measured ABV for this.
+                  </div>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                 <input
