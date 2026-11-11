@@ -7418,9 +7418,29 @@ function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredien
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ color: "#2A3324", fontSize: 13.5 }}>{it.name}</span>
                   <span style={{ color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5 }}>
-                    system: {formatQty(it.qty, it.unit)}
+                    system: {it.casePack ? canCasesText(it.qty) : formatQty(it.qty, it.unit)}
                   </span>
                 </div>
+                {it.casePack ? (() => {
+                  // Count cans as full cases plus any loose cans.
+                  const total = counted === "" ? Number(it.qty) || 0 : Number(counted) || 0;
+                  const cases = Math.floor(Math.max(0, total) / it.casePack);
+                  const loose = Math.max(0, total) - cases * it.casePack;
+                  const box = { width: 70, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px 9px", color: "#2A3324", fontFamily: "'JetBrains Mono', monospace", fontSize: 13 };
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <input type="number" inputMode="numeric" min="0" step="1" value={cases} onChange={(e) => updateCount(it.id, String((Math.max(0, parseInt(e.target.value || "0", 10)) || 0) * it.casePack + loose))} style={box} />
+                      <span style={{ color: "#5C6B54", fontSize: 12 }}>cases +</span>
+                      <input type="number" inputMode="numeric" min="0" step="1" value={loose} onChange={(e) => updateCount(it.id, String(cases * it.casePack + (Math.max(0, parseInt(e.target.value || "0", 10)) || 0)))} style={{ ...box, width: 60 }} />
+                      <span style={{ color: "#5C6B54", fontSize: 12 }}>cans</span>
+                      {diff !== 0 && (
+                        <span style={{ color: diff > 0 ? "#D9A441" : "#5C9A3C", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, marginLeft: "auto" }}>
+                          {diff > 0 ? "+" : "-"}{canCasesText(Math.abs(diff))}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })() : (
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
                     type="number"
@@ -7447,6 +7467,7 @@ function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredien
                     </span>
                   )}
                 </div>
+                )}
               </div>
             );
           })}
@@ -34956,7 +34977,11 @@ function TankLogApp() {
         <StockTakeModal
           inventory={availableStock
             .filter((s) => s.packaged > 0)
-            .map((s) => ({ id: `${s.batchId}::${s.containerKey}`, name: `${s.batchName} — ${s.containerLabel}`, qty: s.available, unit: "units" }))}
+            .map((s) =>
+              s.containerKey === "cans330"
+                ? { id: `${s.batchId}::${s.containerKey}`, name: `${s.batchName} — 330ml Cans`, qty: s.available, unit: "cans", casePack: CANS_PER_CASE, category: s.batchName }
+                : { id: `${s.batchId}::${s.containerKey}`, name: `${s.batchName} — ${s.containerLabel}`, qty: s.available, unit: "units", category: s.batchName }
+            )}
           itemLabel="item"
           onClose={() => setShowFinishedStockTake(false)}
           onComplete={completeFinishedStockTake}
