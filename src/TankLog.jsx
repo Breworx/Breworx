@@ -14387,16 +14387,34 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
   const [targetSg, setTargetSg] = useState(planned?.targetSg != null ? Number(planned.targetSg).toFixed(3) : "1.010");
   const [targetAbv, setTargetAbv] = useState(planned?.abv != null ? String(planned.abv) : "");
   const [method, setMethod] = useState(planned ? "juice" : "sugar");
-  const [juiceItemId, setJuiceItemId] = useState(planned?.sweetItemId || "");
-  const [juiceSg, setJuiceSg] = useState(planned?.sweetSg != null ? String(planned.sweetSg) : j.sg != null ? j.sg.toFixed(3) : "1.050");
-  const juiceItem = inventory.find((x) => x.id === juiceItemId) || null;
-  useEffect(() => { if (juiceItem?.juiceSg) setJuiceSg(String(juiceItem.juiceSg)); }, [juiceItemId]);
+  // Sweetening juices: any number, each with its own SG. Leave litres blank
+  // and the app works them out (shared in proportion to what's in stock);
+  // type litres on a juice to fix that one.
+  const newJuice = (over = {}) => ({ id: uid(), itemId: "", sg: "", litres: "", ...over });
+  const [juices, setJuices] = useState(() => [
+    newJuice({ itemId: planned?.sweetItemId || "", sg: planned?.sweetSg != null ? String(planned.sweetSg) : j.sg != null ? j.sg.toFixed(3) : "1.050" }),
+  ]);
+  const setJuice = (id, patch) => setJuices((p) => p.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const pickJuiceItem = (id, itemId) => {
+    const it = inventory.find((x) => x.id === itemId);
+    setJuice(id, { itemId, ...(it?.juiceSg ? { sg: String(it.juiceSg) } : {}) });
+  };
+  const stockL = (it) => (it && unitFactor(it.unit, "L") != null ? it.qty * unitFactor(it.unit, "L") : null);
   const [sorbateRate, setSorbateRate] = useState("200");
   const [molecular, setMolecular] = useState("0.8");
   const [existingFree, setExistingFree] = useState("");
   const [saved, setSaved] = useState(false);
   const L = cnum(litres) || 0;
-  const sgN = cnum(sg), tgt = cnum(targetSg), abvN = cnum(abv), phN = cnum(ph), jsg = cnum(juiceSg);
+  const sgN = cnum(sg), tgt = cnum(targetSg), abvN = cnum(abv), phN = cnum(ph);
+  const jRows = juices.map((x) => ({ ...x, item: inventory.find((i) => i.id === x.itemId) || null, sgV: cnum(x.sg), fixedL: cnum(x.litres) })).filter((x) => x.sgV != null && x.sgV > 1);
+  const fixedRows = jRows.filter((x) => x.fixedL != null && x.fixedL > 0);
+  const autoRows = jRows.filter((x) => !(x.fixedL != null && x.fixedL > 0));
+  const fixedLsum = fixedRows.reduce((t, x) => t + x.fixedL, 0);
+  const fixedPts = fixedRows.reduce((t, x) => t + x.fixedL * (x.sgV - 1), 0);
+  const weightOf = (x) => { const st = stockL(x.item); return st != null && st > 0 ? st : 1; };
+  const wSum = autoRows.reduce((t, x) => t + weightOf(x), 0);
+  const autoSg = autoRows.length ? autoRows.reduce((t, x) => t + weightOf(x) * x.sgV, 0) / wSum : null; // blended SG of the auto juices
+  const jsg = jRows.length ? (autoSg ?? fixedRows[0].sgV) : null;
   const pts = sgN != null && tgt != null ? (tgt - sgN) * 1000 : null;
   // With a target ABV too: the finished volume is set by the ABV
   // (V = litres × ABV now ÷ target), then juice or sugar sets the sweetness
@@ -14404,13 +14422,15 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
   const tAbv = cnum(targetAbv);
   const byAbv = tAbv != null && abvN != null && tAbv > 0 && tAbv < abvN && L && sgN != null && tgt != null;
   const V = byAbv ? (L * abvN) / tAbv : null;
-  let sugarG = null, juiceL = null, waterL = 0, abvNote = null;
+  let sugarG = null, juiceL = null, waterL = 0, abvNote = null, autoTotal = 0;
   if (byAbv) {
-    if (method === "juice" && jsg != null && jsg > 1.0) {
-      const J = (V * (tgt - 1) - L * (sgN - 1)) / (jsg - 1);
-      if (J < 0) abvNote = "It's already sweeter than the target once diluted to that ABV.";
-      else if (L + J > V + 0.05) abvNote = `To reach SG ${tgt.toFixed(3)} with this juice it would end up below ${tAbv}% — about ${r1((L * abvN) / (L + J))}%.`;
-      else { juiceL = J; waterL = V - L - J; }
+    if (method === "juice" && jRows.length) {
+      const need = V * (tgt - 1) - L * (sgN - 1) - fixedPts; // sugar points still to come from the auto juices
+      const J = autoRows.length ? need / (autoSg - 1) : 0;
+      if (J < -0.05) abvNote = "It's already sweeter than the target once diluted to that ABV" + (fixedRows.length ? " with the litres you've set." : ".");
+      else if (L + fixedLsum + Math.max(0, J) > V + 0.05) abvNote = `To reach SG ${tgt.toFixed(3)} with these juices it would end up below ${tAbv}% — about ${r1((L * abvN) / (L + fixedLsum + Math.max(0, J)))}%.`;
+      else { juiceL = fixedLsum + Math.max(0, J); waterL = V - L - juiceL; }
+      autoTotal = Math.max(0, J);
     } else if (method === "sugar") {
       waterL = V - L;
       const mix = (L * sgN + waterL * 1.0) / V;
@@ -14418,8 +14438,19 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
     }
   } else {
     sugarG = method === "sugar" && pts > 0 && L ? (pts / SUGAR_POINTS_PER_G_L) * L : null;
-    juiceL = method === "juice" && pts > 0 && jsg != null && jsg > tgt && L ? (L * (tgt - sgN)) / (jsg - tgt) : null;
+    if (method === "juice" && jRows.length && pts > 0 && L) {
+      // Solve the auto juices' litres so the mix lands on the target SG.
+      const J = autoRows.length ? ((tgt - 1) * (L + fixedLsum) - L * (sgN - 1) - fixedPts) / (autoSg - tgt) : 0;
+      if (autoRows.length && autoSg <= tgt) abvNote = "The juice has to be sweeter than the target SG.";
+      else if (J < -0.05) abvNote = "The litres you've set already go past the target SG.";
+      else { juiceL = fixedLsum + Math.max(0, J); autoTotal = Math.max(0, J); }
+    }
   }
+  // Share the worked-out litres between the auto juices by stock.
+  const juiceLitres = Object.fromEntries(
+    jRows.map((x) => [x.id, x.fixedL != null && x.fixedL > 0 ? x.fixedL : autoRows.length && wSum ? (autoTotal * weightOf(x)) / wSum : 0])
+  );
+  const finalSg = juiceL != null && L ? (L * sgN + jRows.reduce((t, x) => t + (juiceLitres[x.id] || 0) * x.sgV, 0) + (waterL || 0)) / (L + juiceL + (waterL || 0)) : null;
   const finalL = L + (juiceL || 0) + (waterL || 0);
   const finalAbv = abvN != null && finalL ? (abvN * L) / finalL : null;
   const sorbateG = cnum(sorbateRate) && finalL ? (Number(sorbateRate) * finalL) / 1000 : null;
@@ -14437,8 +14468,9 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
       targetSg: tgt,
       sugarG: sugarG != null ? r1(sugarG) : null,
       juiceL: juiceL != null ? r1(juiceL) : null,
-      juiceSg: method === "juice" ? jsg : null,
-      juiceItemName: method === "juice" && juiceItem ? juiceItem.name : null,
+      juiceSg: method === "juice" && juiceL ? r3c((jRows.reduce((t, x) => t + (juiceLitres[x.id] || 0) * x.sgV, 0)) / juiceL) : null,
+      juices: method === "juice" ? jRows.filter((x) => juiceLitres[x.id] > 0).map((x) => ({ itemId: x.item?.id || null, name: x.item?.name || "Juice", sg: x.sgV, litres: r1(juiceLitres[x.id]) })) : null,
+      juiceItemName: method === "juice" ? jRows.filter((x) => juiceLitres[x.id] > 0).map((x) => x.item?.name || "juice").join(" + ") || null : null,
       waterL: waterL > 0.05 ? r1(waterL) : null,
       targetAbv: tAbv,
       litresAfter: r1(finalL),
@@ -14482,8 +14514,32 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
         </div>
         {method === "juice" && (
           <>
-            <StockSearchPick inventory={inventory.filter((it) => it.category === "Juice" || /juice/i.test(it.name))} value={juiceItemId} onChange={setJuiceItemId} placeholder="Juice from stock (optional) — type to search" preferCategory="Juice" />
-            <div style={{ marginTop: 8 }}><NumberField label="Juice SG" value={juiceSg} onChange={setJuiceSg} step="0.001" /></div>
+            {juices.map((x, i) => {
+              const it = inventory.find((z) => z.id === x.itemId);
+              const st = stockL(it);
+              const use = juiceLitres[x.id];
+              return (
+                <div key={x.id} style={{ border: "1px solid #EBE8D6", borderRadius: 5, padding: 9, marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <StockSearchPick inventory={inventory.filter((z) => z.category === "Juice" || /juice/i.test(z.name))} value={x.itemId} onChange={(v) => pickJuiceItem(x.id, v)} placeholder={`Juice ${i + 1} from stock (optional)`} preferCategory="Juice" />
+                    </div>
+                    {juices.length > 1 && <button type="button" onClick={() => setJuices((p) => p.filter((z) => z.id !== x.id))} aria-label="Remove" style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer" }}><Trash2 size={15} /></button>}
+                  </div>
+                  <div style={grid2}>
+                    <NumberField label="SG" value={x.sg} onChange={(v) => setJuice(x.id, { sg: v })} step="0.001" />
+                    <NumberField label="Litres (blank = work out)" value={x.litres} onChange={(v) => setJuice(x.id, { litres: v })} step="0.5" suffix="L" />
+                  </div>
+                  {use > 0 && (
+                    <div style={{ fontSize: 12.5, color: st != null && use > st + 0.01 ? "#B5502F" : "#3F7A28" }}>
+                      Use {r1(use)}L{st != null ? ` · ${r1(st)}L in stock${use > st + 0.01 ? " — not enough" : ""}` : ""}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <button type="button" onClick={() => setJuices((p) => [...p, newJuice()])} style={{ ...ciderBtn2, marginBottom: 6 }}>+ Another juice</button>
+            {autoRows.length > 1 && <div style={ciderNote}>Juices without litres are shared in proportion to what's in stock.</div>}
           </>
         )}
         {abvNote && <div style={{ ...ciderWarn, marginTop: 8 }}>{abvNote}</div>}
@@ -14496,13 +14552,10 @@ function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
         {method === "sugar" && <DoseRow label="Sugar to add" grams={sugarG} detail={sugarG ? `${r1(sugarG / L)} g/L` : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/^sugar|sucrose/i} />}
         {method === "juice" && juiceL != null && (
           <div style={{ fontSize: 13.5, color: "#2A3324", marginTop: 10, lineHeight: 1.6 }}>
-            Add <strong>{r1(juiceL)}L</strong> of {juiceItem ? juiceItem.name : "juice"}{waterL > 0.05 ? <> and <strong>{r1(waterL)}L</strong> water</> : null} → {r1(finalL)}L{finalAbv != null ? ` at about ${r1(finalAbv)}% ABV` : ""}.
-            {juiceItem && unitFactor(juiceItem.unit, "L") != null && juiceL > juiceItem.qty * unitFactor(juiceItem.unit, "L") + 0.01 && (
-              <div style={{ ...ciderWarn, marginTop: 6 }}>Only {juiceItem.qty}{juiceItem.unit} of {juiceItem.name} in stock.</div>
-            )}
+            Add <strong>{r1(juiceL)}L</strong> of juice{waterL > 0.05 ? <> and <strong>{r1(waterL)}L</strong> water</> : null} → {r1(finalL)}L{finalAbv != null ? ` at about ${r1(finalAbv)}% ABV` : ""}{finalSg != null ? `, SG ${finalSg.toFixed(3)}` : ""}.
           </div>
         )}
-        {method === "juice" && jsg != null && tgt != null && jsg <= tgt && <div style={{ ...ciderWarn, marginTop: 8 }}>The juice has to be sweeter than the target SG.</div>}
+
       </div>
       <div style={ciderCard}>
         <div style={ciderHead}>Stabilise</div>
