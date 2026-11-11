@@ -14675,15 +14675,19 @@ function CiderDayRecipeCard({ batch }) {
   );
 }
 
-function CiderView({ batches, inventory, tanks = [], nextNumber, onCreateBatch, onSaveCider, onSetBatchFigures, onLogAddition, onStartBatch, onOpenBatch }) {
+function CiderView({ batches, inventory, tanks = [], nextNumber, onCreateBatch, onSaveCider, onSetBatchFigures, onLogAddition, onStartBatch, onOpenBatch, focus }) {
   const [showDaySheet, setShowDaySheet] = useState(false);
   const ciderBatches = useMemo(
     () => batches.filter((b) => b.productType === CIDER_TYPE && !b.mergedIntoBatchId).sort((a, b) => String(b.startDate).localeCompare(String(a.startDate))),
     [batches]
   );
   const active = ciderBatches.filter((b) => !(b.stage === "Packaged" && remainingVolume(b) === 0));
-  const [batchId, setBatchId] = useState(() => active[0]?.id || "");
-  const [tab, setTab] = useState("juice");
+  const [batchId, setBatchId] = useState(() => focus?.batchId || active[0]?.id || "");
+  const [tab, setTab] = useState(focus?.tab || "juice");
+  useEffect(() => {
+    if (focus?.batchId) setBatchId(focus.batchId);
+    if (focus?.tab) setTab(focus.tab);
+  }, [focus?.key]);
   const batch = ciderBatches.find((b) => b.id === batchId) || null;
   const tabs = [["juice", "Juice"], ["additions", "Additions"], ["blend", "Blend"], ["sweeten", "Back-sweeten"]];
   return (
@@ -17594,7 +17598,78 @@ function QualityControlView({ recipes, batches, onOpenBatch, onLogTriangleTest, 
   );
 }
 
-function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner }) {
+// Cider part of the batch page: the day's recipe, what's been added, back-
+// sweetening and blends, with shortcuts into the Cider page's calculators.
+function CiderBatchPanel({ batch, onOpenCiderTools }) {
+  const j = juiceSummary(batch.juiceIntake);
+  const adds = batch.batchAdditions || [];
+  const sweet = batch.backSweetenings || [];
+  const blends = batch.blendLog || [];
+  const head = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 };
+  const row = { borderTop: "1px solid #EEF0E2", padding: "7px 0", fontSize: 12.5, color: "#2A3324" };
+  const tool = (tab, label) => (
+    <button type="button" onClick={() => onOpenCiderTools && onOpenCiderTools(batch.id, tab)} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 11px", color: "#2A3324", fontSize: 12.5, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+      {label}
+    </button>
+  );
+  return (
+    <div style={{ marginBottom: 22 }}>
+      {onOpenCiderTools && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+          {tool("juice", "Juice")}
+          {tool("additions", "Additions calculator")}
+          {tool("sweeten", "Back-sweeten & stabilise")}
+          {tool("blend", "Blend")}
+        </div>
+      )}
+      {batch.dayRecipe ? (
+        <CiderDayRecipeCard batch={batch} />
+      ) : (batch.juiceIntake || []).length > 0 ? (
+        <div style={{ ...ciderCard }}>
+          <div style={head}>Juice</div>
+          <div style={{ fontSize: 12.5, color: "#2A3324" }}>
+            {r1(j.litres)}L · SG {fmtSg(j.sg)}{j.ph != null ? ` · pH ${j.ph.toFixed(2)}` : ""}{j.ta != null ? ` · TA ${r1(j.ta)}` : ""}
+          </div>
+        </div>
+      ) : null}
+      {adds.length > 0 && (
+        <div style={ciderCard}>
+          <div style={head}>Added since</div>
+          {adds.map((a) => (
+            <div key={a.id} style={row}>{a.date} · {a.qty}{a.unit} {a.name}{a.note ? <span style={{ color: "#9BA88A" }}> · {a.note}</span> : null}</div>
+          ))}
+        </div>
+      )}
+      {sweet.length > 0 && (
+        <div style={ciderCard}>
+          <div style={head}>Back-sweetening &amp; stabilising</div>
+          {sweet.map((h) => (
+            <div key={h.id} style={row}>
+              {h.date} · {h.method === "juice" ? `${h.juiceL}L juice` : `${h.sugarG}g sugar`} to SG {h.targetSg}
+              <span style={{ color: "#9BA88A" }}> · {h.litresAfter}L{h.abvAfter != null ? ` at ${h.abvAfter}%` : ""}{h.sorbateG ? ` · sorbate ${h.sorbateG}g` : ""}{h.kmetaG ? ` · K-meta ${h.kmetaG}g` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {blends.length > 0 && (
+        <div style={ciderCard}>
+          <div style={head}>Blends</div>
+          {blends.map((bl) => (
+            <div key={bl.id} style={row}>
+              {bl.date} · {(bl.components || []).map((c) => `${c.litres}L ${c.name}`).join(" + ")}
+              <span style={{ color: "#9BA88A" }}> → {bl.result?.litres}L{bl.result?.abv != null ? ` at ${bl.result.abv}%` : ""}{bl.note ? ` · ${bl.note}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner, onOpenCiderTools }) {
+  // Cider gets its own version of this page: no mash, boil, hop or
+  // diacetyl sections; juice, additions, back-sweetening and blends instead.
+  const isCider = batch.productType === "Cider/Perry";
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteDate, setNoteDate] = useState(today());
@@ -17753,12 +17828,20 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-        {[
-          ["OG", batch.og != null ? batch.og.toFixed(3) : "—"],
-          ["Current SG", latest.gravity != null ? latest.gravity.toFixed(3) : "—"],
-          ["Target FG", batch.fg != null ? batch.fg.toFixed(3) : "—"],
-          ["Attenuation", batch.og != null && latest.gravity != null ? `${pct.toFixed(0)}%` : "—"],
-        ].map(([label, val]) => (
+        {(isCider
+          ? [
+              ["OG", batch.og != null ? batch.og.toFixed(3) : "—"],
+              ["SG now", latest.gravity != null ? latest.gravity.toFixed(3) : "—"],
+              ["ABV now", batch.og != null && latest.gravity != null ? `${calcABV(batch.og, latest.gravity).toFixed(1)}%` : "—"],
+              ["Target FG", batch.fg != null ? batch.fg.toFixed(3) : "—"],
+            ]
+          : [
+              ["OG", batch.og != null ? batch.og.toFixed(3) : "—"],
+              ["Current SG", latest.gravity != null ? latest.gravity.toFixed(3) : "—"],
+              ["Target FG", batch.fg != null ? batch.fg.toFixed(3) : "—"],
+              ["Attenuation", batch.og != null && latest.gravity != null ? `${pct.toFixed(0)}%` : "—"],
+            ]
+        ).map(([label, val]) => (
           <div key={label} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
             <div style={{ fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>{label}</div>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, color: "#2A3324", marginTop: 3 }}>{val}</div>
@@ -17766,7 +17849,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         ))}
       </div>
 
-      {batch.stage === "Brewing" && (
+      {isCider && <CiderBatchPanel batch={batch} onOpenCiderTools={onOpenCiderTools} />}
+
+      {!isCider && batch.stage === "Brewing" && (
         <BrewDayTimers
           timers={batch.timers || []}
           onStart={(label, minutes) => onStartTimer(batch.id, label, minutes)}
@@ -17876,17 +17961,23 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       })()}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
-        Brew day
+        {isCider ? "Juice into tank" : "Brew day"}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 22 }}>
-        {[
-          ["Mash pH", batch.mashPh, "mashPh", 0.01, "", 2],
-          ["Mash temp", batch.mashTemp, "mashTemp", 0.5, "°C", 1],
-          ["Pre-boil SG", batch.preBoilGravity, "preBoilGravity", 0.001, "", 3],
-          ["Top-up water", batch.topUpWater, "topUpWater", 0.1, "L", 1],
-          ["pH into tank", batch.phIntoTank, "phIntoTank", 0.01, "", 2],
-          ["SG into tank", batch.sgIntoTank, "sgIntoTank", 0.001, "", 3],
-        ].map(([label, rawVal, field, step, suffix, decimals]) => (
+      <div style={{ display: "grid", gridTemplateColumns: isCider ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 10, marginBottom: 22 }}>
+        {(isCider
+          ? [
+              ["Juice pH", batch.phIntoTank, "phIntoTank", 0.01, "", 2],
+              ["Juice SG", batch.sgIntoTank, "sgIntoTank", 0.001, "", 3],
+            ]
+          : [
+              ["Mash pH", batch.mashPh, "mashPh", 0.01, "", 2],
+              ["Mash temp", batch.mashTemp, "mashTemp", 0.5, "°C", 1],
+              ["Pre-boil SG", batch.preBoilGravity, "preBoilGravity", 0.001, "", 3],
+              ["Top-up water", batch.topUpWater, "topUpWater", 0.1, "L", 1],
+              ["pH into tank", batch.phIntoTank, "phIntoTank", 0.01, "", 2],
+              ["SG into tank", batch.sgIntoTank, "sgIntoTank", 0.001, "", 3],
+            ]
+        ).map(([label, rawVal, field, step, suffix, decimals]) => (
           <button
             key={field}
             onClick={() => onEditBrewDayField({ batch, field, label, value: rawVal, step, suffix })}
@@ -17901,14 +17992,16 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
       </div>
 
       <div style={{ display: "flex", gap: 24, marginBottom: 22, flexWrap: "wrap" }}>
+        {!isCider && (
+          <DumpLogCheckbox
+            label="Hop dump done"
+            log={batch.hopDumpLog}
+            onLog={(d) => onLogDump(batch.id, "hopDumpLog", d)}
+            onUndo={() => onUndoDump(batch.id, "hopDumpLog")}
+          />
+        )}
         <DumpLogCheckbox
-          label="Hop dump done"
-          log={batch.hopDumpLog}
-          onLog={(d) => onLogDump(batch.id, "hopDumpLog", d)}
-          onUndo={() => onUndoDump(batch.id, "hopDumpLog")}
-        />
-        <DumpLogCheckbox
-          label="Yeast dump done"
+          label={isCider ? "Racked off the lees" : "Yeast dump done"}
           log={batch.yeastDumpLog}
           onLog={(d) => onLogDump(batch.id, "yeastDumpLog", d)}
           onUndo={() => onUndoDump(batch.id, "yeastDumpLog")}
@@ -18272,7 +18365,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </div>
       )}
 
-      {batch.stage === "Primary" && currentTank?.type !== "Kettle" && (() => {
+      {!isCider && batch.stage === "Primary" && currentTank?.type !== "Kettle" && (() => {
         const kettles = tanks.filter((t) => t.type === "Kettle");
         if (kettles.length === 0) return null;
         return (
@@ -18475,7 +18568,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         </button>
       )}
 
-      {(batch.stage === "Primary" || (batch.diacetylTests && batch.diacetylTests.length > 0)) && (
+      {!isCider && (batch.stage === "Primary" || (batch.diacetylTests && batch.diacetylTests.length > 0)) && (
         <div style={{ marginBottom: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
@@ -18741,7 +18834,7 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         )}
       </div>
 
-      {(batch.stage === "Brewing" || batch.stage === "Primary") && (
+      {!isCider && (batch.stage === "Brewing" || batch.stage === "Primary") && (
         <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px", marginBottom: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: (batch.brewDays || []).length > 0 ? 10 : 0 }}>
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" }}>
@@ -27922,6 +28015,7 @@ function TankLogApp() {
   const [barrelAgingModuleEnabled, setBarrelAgingModuleEnabled] = useState(true);
   const [exciseAbvMethod, setExciseAbvMethod] = useState("measured");
   const [brewPlanSettings, setBrewPlanSettings] = useState(null);
+  const [ciderFocus, setCiderFocus] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [inviteLink, setInviteLink] = useState("");
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -32221,6 +32315,7 @@ function TankLogApp() {
                 inventory={inventory}
                 tanks={tanks}
                 nextNumber={nextCiderNumber}
+                focus={ciderFocus}
                 onCreateBatch={addBatch}
                 onSaveCider={saveCiderData}
                 onSetBatchFigures={saveCiderData}
@@ -33771,6 +33866,11 @@ function TankLogApp() {
             batch={selected}
             recipes={recipes}
             allBatches={batches}
+            onOpenCiderTools={(batchId, tab) => {
+              setCiderFocus({ batchId, tab, key: Date.now() });
+              setSelectedId(null);
+              setView("cider");
+            }}
             onOpenBatch={setSelectedId}
             onConvertSplitTanks={setConvertSplitTarget}
             isOwner={isOwner}
