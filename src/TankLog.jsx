@@ -482,7 +482,11 @@ function TankLogApp() {
       if (stockTakesRes.error) console.error(stockTakesRes.error);
       else setStockTakes(stockTakesRes.data.map(rowToStockTake));
       if (xeroRes.error) console.error(xeroRes.error);
-      else setXeroConnection(xeroRes.data || null);
+      else {
+        setXeroConnection(xeroRes.data || null);
+        // The weekly keep-alive couldn't refresh it: Xero has already dropped the link.
+        if (xeroRes.data && xeroRes.data.keepalive_failed_at) setXeroNeedsReconnect(true);
+      }
       if (foodSafetyRes.error) console.error(foodSafetyRes.error);
       else setFoodSafetyRecords(foodSafetyRes.data.map(rowToFoodSafetyRecord));
       if (suppliersRes.error) console.error(suppliersRes.error);

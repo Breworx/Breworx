@@ -73,7 +73,7 @@ export async function downloadExciseReportPdf({ months, companyName, periodRange
   };
 
   // Front page
-  text(`Period: ${periodRange} · Generated ${new Date().toISOString().slice(0, 10)}`, { size: 9.5, color: [92, 107, 84], gap: 2 });
+  text(`Generated ${new Date().toISOString().slice(0, 10)}`, { size: 9.5, color: [92, 107, 84], gap: 2 });
   if (intro) text(intro, { size: 9, gap: 3 });
   if (counts) text(counts, { size: 9.5, bold: true, gap: 1 });
   if (summaryLine) text(summaryLine, { size: 9, gap: 4 });
