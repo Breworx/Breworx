@@ -125,7 +125,16 @@ const CONTAINERS = [
 // modal (outside the main app component) computes the exact same key a
 // real packaged batch will use when it's actually sold.
 const CANS_PER_CASE = 24;
-const productKeyFor = (name, containerKey) => `${name.trim().toLowerCase()}::${containerKey}`;
+// Batch names grouped into one beer (Settings → Xero → Same beer), so
+// "Basecamp 240L" and "Base Camp Hazy" are one product for Xero matching,
+// stock and tracing. Split-tank letters (" — A") are ignored too.
+let BEER_ALIASES = {}; // lower-case batch name -> beer name
+const splitFreeName = (name) => String(name || "").replace(/\s+—\s+[A-Z0-9]{1,3}$/, "").trim();
+const canonicalBeerName = (name) => {
+  const base = splitFreeName(name);
+  return BEER_ALIASES[base.toLowerCase()] || base;
+};
+const productKeyFor = (name, containerKey) => `${canonicalBeerName(name).trim().toLowerCase()}::${containerKey}`;
 
 // The actual point of a triangle test — a raw "8/12 correct" tells a
 // brewer nothing on its own, since even random guessing gets roughly a
@@ -6097,6 +6106,52 @@ function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
 // sale invoiced in Xero takes the right stock off. Several Xero items can
 // be the same beer (Craftys / Gents / Moon Juice labels), and "units"
 // handles cases: a case-of-24 item takes 24 cans off per case sold.
+function SameBeerModal({ batches, aliases, onClose, onSave }) {
+  // Every batch name (split letters taken off), with how often it's used.
+  const names = useMemo(() => {
+    const by = {};
+    batches.filter((b) => !b.mergedIntoBatchId).forEach((b) => {
+      const n = splitFreeName(b.name);
+      const k = n.toLowerCase();
+      if (!by[k]) by[k] = { name: n, count: 0, last: "" };
+      by[k].count += 1;
+      if (String(b.startDate) > by[k].last) by[k].last = String(b.startDate);
+    });
+    return Object.values(by).sort((a, b) => a.name.localeCompare(b.name));
+  }, [batches]);
+  const [draft, setDraft] = useState(() => ({ ...aliases }));
+  const [saving, setSaving] = useState(false);
+  const roots = names.filter((n) => !draft[n.name.toLowerCase()]);
+  const sel = { background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", fontSize: 13, color: "#2A3324", minWidth: 0, width: "100%" };
+  return (
+    <Modal title="Same beer, different names" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
+          If one beer has been brewed under different batch names (e.g. "Basecamp 240L" and "Base Camp Hazy"), set the extra names to <strong>Same beer as</strong> the main one. Xero matching, stock and tracing then treat them as one beer. For other labels sold in Xero (Craftys, Gents), you don't need this — just match their Xero codes to the house beer.
+        </div>
+        {names.map((n) => {
+          const k = n.name.toLowerCase();
+          return (
+            <div key={k} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, alignItems: "center", borderTop: "1px solid #EEF0E2", paddingTop: 8 }}>
+              <div style={{ fontSize: 13, color: "#2A3324", minWidth: 0 }}>
+                {n.name}
+                <div style={{ fontSize: 11, color: "#9BA88A" }}>{n.count} batch{n.count === 1 ? "" : "es"} · last {n.last}</div>
+              </div>
+              <select value={draft[k] || ""} onChange={(e) => setDraft((p) => { const x = { ...p }; if (e.target.value) x[k] = e.target.value; else delete x[k]; return x; })} style={sel}>
+                <option value="">Its own beer</option>
+                {roots.filter((r) => r.name.toLowerCase() !== k).map((r) => <option key={r.name} value={r.name}>Same beer as {r.name}</option>)}
+              </select>
+            </div>
+          );
+        })}
+        <button disabled={saving} onClick={async () => { setSaving(true); const ok = await onSave(draft); setSaving(false); if (ok) onClose(); }} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function XeroHistoryImport({ before, onImport }) {
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState(() => { const d = new Date(`${before}T00:00:00`); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); });
@@ -6124,7 +6179,7 @@ function XeroHistoryImport({ before, onImport }) {
   );
 }
 
-function XeroItemMatchModal({ xeroItems, beerNames, existing, highlightCodes, onClose, onSave }) {
+function XeroItemMatchModal({ xeroItems, beerNames, existing, highlightCodes, onClose, onSave, onOpenSameBeer }) {
   const byCode = useMemo(() => Object.fromEntries((existing || []).map((m) => [String(m.xero_item_code).toLowerCase(), m])), [existing]);
   const [rows, setRows] = useState(() =>
     (xeroItems || []).map((it) => {
@@ -6179,6 +6234,11 @@ function XeroItemMatchModal({ xeroItems, beerNames, existing, highlightCodes, on
             <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
               Pick the beer and container each Xero item is. <strong>Units</strong> is how many Brewpoint units one Xero unit holds — 24 for a case of 24 cans, 1 for a keg. Items that aren't beer (hops, consulting, equipment) can be set to "Not stock". Best guesses are filled in — check them.
             </div>
+            {onOpenSameBeer && (
+              <button onClick={onOpenSameBeer} style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontSize: 12.5, cursor: "pointer" }}>
+                Same beer, different batch names? Group them first…
+              </button>
+            )}
             <div style={{ display: "flex", border: "1px solid #DDE0C8", borderRadius: 4, overflow: "hidden" }}>
               {[["todo", `To check (${rows.filter((r) => !r.saved || highlight.has(String(r.code).toLowerCase())).length})`], ["all", `All items (${rows.length})`]].map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)} style={{ flex: 1, background: filter === k ? "#5C9A3C" : "#F5F1E4", border: "none", padding: 9, color: filter === k ? "#16191A" : "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>{l}</button>
@@ -28801,6 +28861,9 @@ function TankLogApp() {
   const [brewPlanSettings, setBrewPlanSettings] = useState(null);
   const [ciderFocus, setCiderFocus] = useState(null);
   const [labelStrengths, setLabelStrengths] = useState({});
+  const [beerAliases, setBeerAliasesState] = useState({});
+  const [showSameBeer, setShowSameBeer] = useState(false);
+  const setBeerAliases = (map) => { BEER_ALIASES = map; setBeerAliasesState(map); };
   const [teammates, setTeammates] = useState([]);
   const [inviteLink, setInviteLink] = useState("");
   const [creatingInvite, setCreatingInvite] = useState(false);
@@ -29661,6 +29724,30 @@ function TankLogApp() {
         setLabelStrengths(Object.fromEntries((data || []).map((r) => [r.product_key, Number(r.abv)])));
       });
   }, [profile?.companyId]);
+  useEffect(() => {
+    if (!profile?.companyId) return;
+    supabase
+      .from("beer_aliases")
+      .select("batch_name, beer_name")
+      .eq("company_id", profile.companyId)
+      .then(({ data, error }) => {
+        if (error) { console.error(error); return; }
+        setBeerAliases(Object.fromEntries((data || []).map((r) => [String(r.batch_name).toLowerCase(), r.beer_name])));
+      });
+  }, [profile?.companyId]);
+  const saveBeerAliases = async (draft) => {
+    const del = await supabase.from("beer_aliases").delete().eq("company_id", profile.companyId);
+    if (del.error) { console.error(del.error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    const rows = Object.entries(draft).map(([k, beer]) => ({ company_id: profile.companyId, batch_name: k, beer_name: beer }));
+    if (rows.length) {
+      const ins = await supabase.from("beer_aliases").insert(rows);
+      if (ins.error) { console.error(ins.error); showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    }
+    setBeerAliases(draft);
+    showToast("success", rows.length ? `${rows.length} batch name${rows.length === 1 ? "" : "s"} grouped under another beer.` : "No names grouped.");
+    return true;
+  };
+
   // Save a beer's label strength and put it on the batches given (the
   // page only passes ones not in a month already declared on TSW).
   const saveLabelStrength = async (key, abv, batchIds, name) => {
@@ -34409,6 +34496,12 @@ function TankLogApp() {
                                   Compare stock with Xero
                                 </button>
                                 <button
+                                  onClick={() => setShowSameBeer(true)}
+                                  style={{ flex: "1 1 140px", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+                                >
+                                  Same beer, different names
+                                </button>
+                                <button
                                   onClick={openXeroItemMatch}
                                   style={{ flex: "1 1 140px", background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
                                 >
@@ -35339,10 +35432,12 @@ function TankLogApp() {
           }}
         />
       )}
+      {showSameBeer && <SameBeerModal batches={batches} aliases={beerAliases} onClose={() => setShowSameBeer(false)} onSave={saveBeerAliases} />}
       {xeroMatchItems && (
         <XeroItemMatchModal
           xeroItems={xeroMatchItems}
-          beerNames={[...new Set(batches.filter((b) => b.packaging).map((b) => b.name.trim()))].sort((a, b) => a.localeCompare(b))}
+          beerNames={[...new Set(batches.filter((b) => b.packaging).map((b) => canonicalBeerName(b.name)))].sort((a, b) => a.localeCompare(b))}
+          onOpenSameBeer={() => setShowSameBeer(true)}
           existing={xeroSalesMap}
           highlightCodes={xeroUnmatched}
           onClose={() => setXeroMatchItems(null)}
