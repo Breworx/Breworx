@@ -22130,7 +22130,7 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
           const lines = tswLinesForRows(m.rows);
           const runs = [...m.rows].sort((a, b) => String(a.date).localeCompare(String(b.date))).map((r) => auditRunDetail(r, batchById));
           return (
-            <div key={m.period} className={full ? "audit-month audit-month-page" : "audit-month"} style={{ borderTop: "1px solid #DDE0C8", padding: "14px 0", fontSize: 12.5 }}>
+            <div key={m.period} className="audit-month audit-month-page" style={{ borderTop: "1px solid #DDE0C8", padding: "14px 0", fontSize: 12.5 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
                 <strong style={{ fontSize: 15 }}>{monthLabelFromKey(m.period)}</strong>
                 <span style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
