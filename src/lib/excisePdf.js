@@ -80,8 +80,12 @@ export async function downloadExciseReportPdf({ months, companyName, periodRange
   if (counts) text(counts, { size: 9.5, bold: true, gap: 1 });
   if (summaryLine) text(summaryLine, { size: 9, gap: 4 });
 
-  months.forEach((m) => {
-    rule();
+  // Each month on its own page (the first follows the heading).
+  months.forEach((m, idx) => {
+    if (idx > 0) {
+      doc.addPage();
+      y = M;
+    } else rule();
     renderMonth(m, { text, table, ensure });
   });
 
