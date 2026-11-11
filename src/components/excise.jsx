@@ -579,7 +579,6 @@ export function ExciseAuditReport({ months, batches = [], companyName, abvMethod
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "30px 24px 60px", color: "#1A1F16" }}>
         <div className="no-print" style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5C6B54" }}>{companyName || "Brewery"}</div>
         <h1 className="no-print" style={{ fontFamily: "'Oswald', sans-serif", fontSize: 26, fontWeight: 500, margin: "4px 0 6px" }}>Excise Self-Audit Report</h1>
-        <div style={{ fontSize: 13, color: "#5C6B54", marginBottom: 16 }}>Period: {periodRange} · Generated {today()}</div>
         <div style={{ fontSize: 12.5, lineHeight: 1.55, marginBottom: 18, color: "#2A3324" }}>
           Volumes only — no dollar amounts are included. Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using {abvMethod === "label" ? "label" : "measured"} ABV. LAL is litres × ABV cut to 3 decimals, as TSW calculates it. Differences within rounding (0.5%, or 1 L / 0.05 LAL) are treated as matching. This is an internal check prepared by the brewery, not a Customs assessment.
         </div>
