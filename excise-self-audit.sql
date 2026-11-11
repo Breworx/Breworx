@@ -176,3 +176,16 @@ create policy "own company label strengths" on public.label_strengths
 
 -- Past Xero sales recorded for tracing only (don't affect stock).
 alter table public.batches add column if not exists sales_history jsonb not null default '[]'::jsonb;
+
+-- Batch names grouped into one beer for Xero matching, stock and tracing.
+create table if not exists public.beer_aliases (
+  company_id uuid not null references public.companies(id) on delete cascade,
+  batch_name text not null,
+  beer_name text not null,
+  updated_at timestamptz not null default now(),
+  primary key (company_id, batch_name)
+);
+alter table public.beer_aliases enable row level security;
+drop policy if exists "own company beer aliases" on public.beer_aliases;
+create policy "own company beer aliases" on public.beer_aliases
+  for all using (company_id = get_my_company_id()) with check (company_id = get_my_company_id());
