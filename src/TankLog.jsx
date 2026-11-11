@@ -22838,6 +22838,9 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
         <EmptyState icon={FileText} title="Nothing packaged yet" subtitle="Excise is calculated from packaging events, so this fills in once you've packaged a batch with a logged final gravity." />
       ) : (
         <>
+          {/* With a month picked, the TSW lines table above already has the exact
+              totals, so these summary boxes only show for a longer period. */}
+          {!monthFilter && (<>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
               <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Volume packaged</div>
@@ -22862,6 +22865,7 @@ function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, abvMeth
             <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#3F7A28" }}>Total payable (duty + levy + GST on levy)</div>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>${totalPayable.toFixed(2)}</div>
           </div>
+          </>)}
           <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 22 }}>
             Duty and levy use Customs' published rates for the date each batch was packaged. GST is charged on the levy only, not on the duty. TSW works out the final figures, so allow a few cents for rounding.
           </div>
