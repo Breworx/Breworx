@@ -5936,9 +5936,25 @@ function stockClearHistory(batches) {
   return Object.values(byId).sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
+// Cans are counted in cases of 24: "12 cases", or "12 cases + 6 cans".
+const canCasesText = (n) => {
+  const cans = Math.round(Number(n) || 0);
+  const sign = cans < 0 ? "-" : "";
+  const abs = Math.abs(cans);
+  const cases = Math.floor(abs / CANS_PER_CASE);
+  const loose = abs % CANS_PER_CASE;
+  const parts = [];
+  if (cases || !loose) parts.push(`${cases} case${cases === 1 ? "" : "s"}`);
+  if (loose) parts.push(`${loose} can${loose === 1 ? "" : "s"}`);
+  return sign + parts.join(" + ");
+};
 const containerCountsLabel = (counts) =>
   CONTAINERS.filter((c) => counts[c.key])
-    .map((c) => (counts[c.key] < 0 ? `${-counts[c.key]} × ${c.shortLabel} put back` : `${counts[c.key]} × ${c.shortLabel}`))
+    .map((c) => {
+      const n = counts[c.key];
+      const qty = c.key === "cans330" ? canCasesText(Math.abs(n)) : `${Math.abs(n)} × ${c.shortLabel}`;
+      return n < 0 ? `${qty} put back` : qty;
+    })
     .join(", ");
 
 const lastPackagedDate = (b) => packagingEvents(b).reduce((m, e) => (e.date && e.date > m ? e.date : m), "");
@@ -6510,15 +6526,16 @@ function FinishedGoodsStockView({
                     borderRadius: 6,
                   }}
                 >
-                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.containerLabel}</span>
+                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.containerKey === "cans330" ? "330ml Cans (cases of 24)" : s.containerLabel}</span>
                   <span
                     style={{
                       fontFamily: "'JetBrains Mono', monospace",
                       fontSize: 13,
                       color: s.available <= 0 ? "#B5502F" : "#5C9A3C",
+                      textAlign: "right",
                     }}
                   >
-                    {s.available} available
+                    {s.containerKey === "cans330" ? `${canCasesText(s.available)} available` : `${s.available} available`}
                   </span>
                 </div>
               ))}
