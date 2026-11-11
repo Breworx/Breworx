@@ -1,6 +1,6 @@
 // Brew planner: works out what to brew next and when, from how fast each
 // product sells, what's packaged, what's in tank and what's already
-// scheduled. Pure functions — the page in TankLog.jsx feeds it plain data.
+// scheduled. Pure functions — the page in components/planner.jsx feeds it plain data.
 //
 // Demand: litres packaged per product over the chosen period (packaging is
 // how this brewery has recorded sales), except months that have Xero sales
