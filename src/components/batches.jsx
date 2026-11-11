@@ -1629,7 +1629,12 @@ export function PackagingModal({ batch, onClose, onSave, packageTypes, onToggleF
   const caseCans = (Number(canCases) || 0) * CANS_PER_CASE;
   const totalCans = caseCans + (Number(looseCans) || 0);
   const effective = { ...counts, cans330: totalCans };
-  const [packageTypeSelections, setPackageTypeSelections] = useState({});
+  // Cans deduct cans and lids automatically when there's a can package type;
+  // it can still be changed or set to none.
+  const [packageTypeSelections, setPackageTypeSelections] = useState(() => {
+    const can = (packageTypes || []).filter((pt) => /\bcans?\b/i.test(pt.name));
+    return can.length === 1 ? { cans330: can[0].id } : {};
+  });
   const [date, setDate] = useState(today());
   const activeFaults = currentFaults(batch);
 
