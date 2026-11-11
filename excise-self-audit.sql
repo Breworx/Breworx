@@ -189,3 +189,26 @@ alter table public.beer_aliases enable row level security;
 drop policy if exists "own company beer aliases" on public.beer_aliases;
 create policy "own company beer aliases" on public.beer_aliases
   for all using (company_id = get_my_company_id()) with check (company_id = get_my_company_id());
+
+-- Company settings: the owner can update their own company (logo, modules,
+-- excise ABV method). Before this there was no update policy, so changes
+-- silently didn't save.
+drop policy if exists "owner updates own company" on public.companies;
+create policy "owner updates own company" on public.companies
+  for update to authenticated
+  using (id = get_my_company_id() and is_company_owner())
+  with check (id = get_my_company_id() and is_company_owner());
+
+-- Any team member can accept the food safety disclaimer (only those two fields).
+create or replace function public.accept_food_safety_disclaimer(accepted_by text)
+returns timestamptz language plpgsql security definer set search_path = public as $$
+declare ts timestamptz := now();
+begin
+  if get_my_company_id() is null then raise exception 'not signed in'; end if;
+  update companies set food_safety_disclaimer_accepted_at = ts,
+                       food_safety_disclaimer_accepted_by = accepted_by
+   where id = get_my_company_id() and food_safety_disclaimer_accepted_at is null;
+  return ts;
+end $$;
+revoke all on function public.accept_food_safety_disclaimer(text) from public, anon;
+grant execute on function public.accept_food_safety_disclaimer(text) to authenticated;

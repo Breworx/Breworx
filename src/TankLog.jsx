@@ -1068,6 +1068,15 @@ function TankLogApp() {
     });
   };
 
+  // Company settings only save for the owner. An update the database refuses
+  // comes back as "no rows changed" rather than an error, so check for that.
+  const updateCompany = async (fields) => {
+    const { data, error } = await supabase.from("companies").update(fields).eq("id", profile.companyId).select("id");
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    if (!data || data.length === 0) { showToast("error", "Only the account owner can change company settings."); return false; }
+    return true;
+  };
+
   const uploadCompanyLogo = (file) => {
     if (!file) return;
     const reader = new FileReader();
@@ -1082,8 +1091,7 @@ function TankLogApp() {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL("image/png");
-        const { error } = await supabase.from("companies").update({ logo_url: dataUrl }).eq("id", profile.companyId);
-        if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+        if (!(await updateCompany({ logo_url: dataUrl }))) return;
         setCompanyLogo(dataUrl);
       };
       img.src = String(reader.result);
@@ -1092,19 +1100,15 @@ function TankLogApp() {
   };
 
   const removeCompanyLogo = async () => {
-    const { error } = await supabase.from("companies").update({ logo_url: null }).eq("id", profile.companyId);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (!(await updateCompany({ logo_url: null }))) return;
     setCompanyLogo("");
   };
 
   const acceptFoodSafetyDisclaimer = async () => {
-    const acceptedAt = new Date().toISOString();
-    const { error } = await supabase
-      .from("companies")
-      .update({ food_safety_disclaimer_accepted_at: acceptedAt, food_safety_disclaimer_accepted_by: user.name })
-      .eq("id", profile.companyId);
+    // Through a database function so any team member can accept it, not just the owner.
+    const { data, error } = await supabase.rpc("accept_food_safety_disclaimer", { accepted_by: user.name });
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
-    setFoodSafetyDisclaimerAcceptedAt(acceptedAt);
+    setFoodSafetyDisclaimerAcceptedAt(data || new Date().toISOString());
   };
 
   // Sales (Customers + Orders) is a genuinely optional module — plenty of
@@ -1112,15 +1116,13 @@ function TankLogApp() {
   // spreadsheets, whatever), so this just hides the whole section rather
   // than forcing it on everyone.
   const toggleSalesModule = async (enabled) => {
-    const { error } = await supabase.from("companies").update({ sales_module_enabled: enabled }).eq("id", profile.companyId);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (!(await updateCompany({ sales_module_enabled: enabled }))) return;
     setSalesModuleEnabled(enabled);
     if (!enabled && (view === "customers" || view === "salesOrders")) setView("home");
   };
 
   const toggleBarrelAgingModule = async (enabled) => {
-    const { error } = await supabase.from("companies").update({ barrel_aging_module_enabled: enabled }).eq("id", profile.companyId);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (!(await updateCompany({ barrel_aging_module_enabled: enabled }))) return;
     setBarrelAgingModuleEnabled(enabled);
     if (!enabled && view === "aging") setView("home");
   };
@@ -1193,8 +1195,7 @@ function TankLogApp() {
   };
 
   const updateExciseAbvMethod = async (method) => {
-    const { error } = await supabase.from("companies").update({ excise_abv_method: method }).eq("id", profile.companyId);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (!(await updateCompany({ excise_abv_method: method }))) return;
     setExciseAbvMethod(method);
   };
 
