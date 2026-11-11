@@ -157,3 +157,6 @@ create policy "own company brew plan settings" on public.brew_plan_settings
 
 -- Cider built on the day: the day's juice, rates and stock items on the batch.
 alter table public.batches add column if not exists day_recipe jsonb;
+
+-- Juice gravity on juice stock items, used by the cider plan.
+alter table public.inventory_items add column if not exists juice_sg numeric;
