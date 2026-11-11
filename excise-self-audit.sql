@@ -173,3 +173,6 @@ alter table public.label_strengths enable row level security;
 drop policy if exists "own company label strengths" on public.label_strengths;
 create policy "own company label strengths" on public.label_strengths
   for all using (company_id = get_my_company_id()) with check (company_id = get_my_company_id());
+
+-- Past Xero sales recorded for tracing only (don't affect stock).
+alter table public.batches add column if not exists sales_history jsonb not null default '[]'::jsonb;

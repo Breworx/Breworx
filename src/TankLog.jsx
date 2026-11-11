@@ -6097,6 +6097,33 @@ function ClearStockModal({ availableStock, batches, onClose, onConfirm }) {
 // sale invoiced in Xero takes the right stock off. Several Xero items can
 // be the same beer (Craftys / Gents / Moon Juice labels), and "units"
 // handles cases: a case-of-24 item takes 24 cans off per case sold.
+function XeroHistoryImport({ before, onImport }) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(() => { const d = new Date(`${before}T00:00:00`); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); });
+  const [busy, setBusy] = useState(false);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{ width: "100%", background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", color: "#5C6B54", fontSize: 12.5, cursor: "pointer", marginBottom: 10 }}>
+        Add past sales for tracing…
+      </button>
+    );
+  }
+  return (
+    <div style={{ background: "#F8F5EA", border: "1px solid #DDE0C8", borderRadius: 5, padding: "10px 12px", marginBottom: 10 }}>
+      <div style={{ fontSize: 12.5, color: "#2A3324", lineHeight: 1.5, marginBottom: 8 }}>
+        Reads Xero invoices from this date up to {before} and records which customer got which batch, for Traceability. <strong>Stock isn't changed</strong> — that stock was already cleared. Match your Xero items first. Safe to run again.
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input type="date" value={from} max={before} onChange={(e) => setFrom(e.target.value)} style={{ flex: 1, minWidth: 0, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "8px", fontSize: 13, color: "#2A3324" }} />
+        <button disabled={busy} onClick={async () => { setBusy(true); const ok = await onImport(from); setBusy(false); if (ok) setOpen(false); }} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "9px 12px", color: "#16191A", fontSize: 12.5, cursor: "pointer", opacity: busy ? 0.6 : 1, whiteSpace: "nowrap" }}>
+          {busy ? "Reading Xero…" : "Add past sales"}
+        </button>
+        <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: "#9BA88A", fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function XeroItemMatchModal({ xeroItems, beerNames, existing, highlightCodes, onClose, onSave }) {
   const byCode = useMemo(() => Object.fromEntries((existing || []).map((m) => [String(m.xero_item_code).toLowerCase(), m])), [existing]);
   const [rows, setRows] = useState(() =>
@@ -18617,9 +18644,9 @@ function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDel
         );
       })()}
 
-      {(batch.xeroSold || []).some((e) => Number(e.qty) !== 0) && (() => {
+      {[...(batch.xeroSold || []), ...(batch.salesHistory || [])].some((e) => Number(e.qty) !== 0) && (() => {
         // Where this batch went, from invoices in Xero (incl. Upstock orders).
-        const sold = [...batch.xeroSold].filter((e) => Number(e.qty) !== 0).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+        const sold = [...(batch.xeroSold || []), ...(batch.salesHistory || [])].filter((e) => Number(e.qty) !== 0).sort((a, b) => String(b.date).localeCompare(String(a.date)));
         const qtyText = (e) => {
           const n = Math.abs(Number(e.qty));
           const what = e.containerKey === "cans330" ? canCasesText(n) : `${n} × ${CONTAINERS.find((c) => c.key === e.containerKey)?.shortLabel || e.containerKey}`;
@@ -21210,7 +21237,7 @@ function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssemblies, cu
           )
       );
       // Sold through Xero (incl. Upstock orders) — taken off this batch by the Xero sales check.
-      const xeroSales = (batch.xeroSold || []).filter((e) => Number(e.qty) > 0);
+      const xeroSales = [...(batch.salesHistory || []), ...(batch.xeroSold || [])].filter((e) => Number(e.qty) > 0);
       return { batch, qtyUsed, date: h.date, directOrders, packAssemblies, packOrders, xeroSales };
     })
     .filter(Boolean);
@@ -21235,7 +21262,7 @@ function CustomerTrace({ inventory, batches, salesOrders, customers }) {
   const norm = (n) => String(n || "").trim().toLowerCase();
   const names = useMemo(() => {
     const set = new Map();
-    batches.forEach((b) => (b.xeroSold || []).forEach((e) => { if (e.customer) set.set(norm(e.customer), e.customer); }));
+    batches.forEach((b) => [...(b.xeroSold || []), ...(b.salesHistory || [])].forEach((e) => { if (e.customer) set.set(norm(e.customer), e.customer); }));
     salesOrders.forEach((o) => { const c = customers.find((x) => x.id === o.customerId); if (c?.name) set.set(norm(c.name), c.name); });
     return [...set.values()].sort((a, b) => a.localeCompare(b));
   }, [batches, salesOrders, customers]);
@@ -21244,7 +21271,7 @@ function CustomerTrace({ inventory, batches, salesOrders, customers }) {
     if (!picked) return [];
     const out = [];
     batches.forEach((b) =>
-      (b.xeroSold || []).forEach((e) => {
+      [...(b.xeroSold || []), ...(b.salesHistory || [])].forEach((e) => {
         if (norm(e.customer) === norm(picked) && Number(e.qty) !== 0) out.push({ batch: b, date: e.date, qty: Number(e.qty), containerKey: e.containerKey, ref: String(e.docNumber || "").startsWith("Xero sales") ? "Xero summary" : `Xero ${e.docNumber || "invoice"}` });
       })
     );
@@ -21328,6 +21355,59 @@ function CustomerTrace({ inventory, batches, salesOrders, customers }) {
       </div>
     </div>
   );
+}
+
+// Past Xero invoices, for tracing only: who got which batch, worked out the
+// same way as live sales (oldest packaged batch first, never more than the
+// batch packaged in that container by the invoice date) but without taking
+// any stock off — that stock was already cleared or matched.
+function planXeroSalesHistory({ docs, beforeDate, salesMap, itemMappings, batches }) {
+  const mapByCode = {};
+  (salesMap || []).forEach((m) => (mapByCode[String(m.xero_item_code).toLowerCase()] = m));
+  const resolve = (code) => {
+    const m = mapByCode[String(code).toLowerCase()];
+    if (m) {
+      if (m.ignore) return { ignore: true };
+      if (m.product_key) return { productKey: m.product_key, containerKey: m.container_key || m.product_key.split("::")[1], units: Number(m.units_per_xero_unit) || 1 };
+    }
+    const fm = (itemMappings || []).find((x) => String(x.xero_item_code).toLowerCase() === String(code).toLowerCase());
+    if (fm) return { productKey: fm.product_key, containerKey: fm.product_key.split("::")[1], units: 1 };
+    return null;
+  };
+  const used = {}; // batchId::container -> units placed so far
+  const packedBy = (b, containerKey, date) => packagingEvents(b).filter((e) => !e.date || e.date <= date).reduce((t, e) => t + (Number(e[containerKey]) || 0), 0);
+  const firstPacked = (b) => packagingEvents(b).reduce((m, e) => (e.date && (!m || e.date < m) ? e.date : m), "");
+  const out = {}; // batchId -> entries
+  const summary = { lines: 0, placed: 0, unplaced: 0, unmapped: new Set() };
+  [...(docs || [])]
+    .filter((d) => d.date && d.date < beforeDate && (d.status === "AUTHORISED" || d.status === "PAID"))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .forEach((doc) =>
+      doc.lines.forEach((line) => {
+        const map = resolve(line.itemCode);
+        if (!map) { summary.unmapped.add(line.itemCode); return; }
+        if (map.ignore) return;
+        summary.lines += 1;
+        const sign = doc.docType === "credit" ? -1 : 1;
+        let units = Math.round(Math.abs(line.qty) * map.units);
+        const candidates = batches
+          .filter((b) => !b.mergedIntoBatchId && productKeyFor(b.name, map.containerKey) === map.productKey && firstPacked(b) && firstPacked(b) <= doc.date)
+          .sort((a, b) => firstPacked(a).localeCompare(firstPacked(b)));
+        for (const b of candidates) {
+          if (units <= 0) break;
+          const k = `${b.id}::${map.containerKey}`;
+          const room = packedBy(b, map.containerKey, doc.date) - (used[k] || 0);
+          if (room <= 0) continue;
+          const take = sign > 0 ? Math.min(room, units) : units;
+          used[k] = (used[k] || 0) + (sign > 0 ? take : 0);
+          (out[b.id] = out[b.id] || []).push({ source: "xero-history", lineId: line.lineId, docNumber: doc.number, date: doc.date, containerKey: map.containerKey, qty: sign * take, customer: doc.contactName || "" });
+          units -= take;
+          summary.placed += take;
+        }
+        if (units > 0) summary.unplaced += units;
+      })
+    );
+  return { byBatch: out, summary: { ...summary, unmapped: [...summary.unmapped] } };
 }
 
 function TraceabilityView(props) {
@@ -30119,6 +30199,39 @@ function TankLogApp() {
     return true;
   };
 
+  // Read older Xero invoices (before the sales check's start date) and
+  // record who got which batch — for tracing only, stock isn't touched.
+  const importXeroSalesHistory = async (fromDate) => {
+    const beforeDate = xeroSettings?.sales_sync_from || today();
+    if (!fromDate || fromDate >= beforeDate) { showToast("error", `Pick a date before ${beforeDate}.`); return false; }
+    const data = await callXeroApi("listSales", { since: fromDate });
+    if (data.error) {
+      showToast("error", /reconnect|Not connected/i.test(String(data.error)) ? "Xero has disconnected — connect it again first." : "Couldn't read invoices from Xero — try again in a minute.");
+      return false;
+    }
+    const { byBatch, summary } = planXeroSalesHistory({ docs: data.docs || [], beforeDate, salesMap: xeroSalesMap, itemMappings: xeroItemMappings, batches });
+    // Replace any earlier import from the same range so running it again doesn't double up.
+    const changes = batches
+      .map((b) => {
+        const kept = (b.salesHistory || []).filter((e) => !(e.source === "xero-history" && e.date >= fromDate && e.date < beforeDate));
+        const next = [...kept, ...(byBatch[b.id] || [])];
+        return JSON.stringify(next) === JSON.stringify(b.salesHistory || []) ? null : { id: b.id, salesHistory: next };
+      })
+      .filter(Boolean);
+    for (let i = 0; i < changes.length; i += 15) {
+      const results = await Promise.all(changes.slice(i, i + 15).map((c) => supabase.from("batches").update({ sales_history: c.salesHistory }).eq("id", c.id)));
+      if (results.some((r) => r.error)) { console.error(results.find((r) => r.error).error); showToast("error", "Some batches didn't update — try again."); return false; }
+    }
+    const byId = Object.fromEntries(changes.map((c) => [c.id, c.salesHistory]));
+    setBatches((prev) => prev.map((b) => (byId[b.id] ? { ...b, salesHistory: byId[b.id] } : b)));
+    const parts = [`${summary.lines} invoice line${summary.lines === 1 ? "" : "s"} traced to batches`];
+    if (summary.unmapped.length) parts.push(`${summary.unmapped.length} item code${summary.unmapped.length === 1 ? "" : "s"} not matched (${summary.unmapped.slice(0, 5).join(", ")}${summary.unmapped.length > 5 ? "…" : ""})`);
+    if (summary.unplaced > 0) parts.push(`${summary.unplaced} unit${summary.unplaced === 1 ? "" : "s"} couldn't be placed on a batch`);
+    showToast("success", parts.join(" · ") + ". Stock levels weren't changed.");
+    logActivity("synced", "stock", "Xero sales history", parts.join(" · "));
+    return true;
+  };
+
   const xeroSalesSyncRunning = useRef(false);
   const syncSalesFromXero = async (quiet = false) => {
     if (!xeroConnection || !xeroSettings?.sales_sync_enabled || xeroSalesSyncRunning.current) return;
@@ -34280,6 +34393,7 @@ function TankLogApp() {
                                   Sold in Xero but not matched to a beer yet: {xeroUnmatched.join(", ")}. Match them and they'll come off stock on the next check.
                                 </div>
                               )}
+                              <XeroHistoryImport before={xeroSettings.sales_sync_from || today()} onImport={importXeroSalesHistory} />
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                 <button
                                   onClick={() => syncSalesFromXero(false)}
