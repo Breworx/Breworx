@@ -73,8 +73,6 @@ export async function downloadExciseReportPdf({ months, companyName, periodRange
   };
 
   // Front page
-  text(companyName || "Brewery", { size: 10, color: [92, 107, 84] });
-  text("Excise returns", { size: 18, bold: true, gap: 1 });
   text(`Period: ${periodRange} · Generated ${new Date().toISOString().slice(0, 10)}`, { size: 9.5, color: [92, 107, 84], gap: 2 });
   if (intro) text(intro, { size: 9, gap: 3 });
   if (counts) text(counts, { size: 9.5, bold: true, gap: 1 });
@@ -96,7 +94,7 @@ export async function downloadExciseReportPdf({ months, companyName, periodRange
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(155, 168, 138);
-    doc.text(clean(`${companyName || "Brewery"} · Excise returns · ${periodRange} · Page ${i} of ${pages}`), W / 2, H - 7, { align: "center" });
+    doc.text(`Page ${i} of ${pages}`, W / 2, H - 7, { align: "center" });
   }
   doc.save(fileName);
 }
