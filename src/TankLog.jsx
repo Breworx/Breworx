@@ -21979,49 +21979,31 @@ function ExciseAuditReport({ months, batches = [], companyName, abvMethod, onClo
         abvMethod,
         full,
         fileName: `${companyName || "Brewery"} excise ${tag}.pdf`,
-        intro: `Volumes only — no dollar amounts are included. Each month's declared excise return is compared with production records. Duty is declared at packaging, so declared litres and litres of alcohol (LAL) are checked against beer packaged that month, using ${abvMethod === "label" ? "label" : "measured"} ABV. LAL is litres × ABV cut to 3 decimals, as TSW calculates it. This is an internal check prepared by the brewery, not a Customs assessment.`,
-        counts: `${checked.length} months · ${count("ok")} matching · ${count("check")} with notes · ${count("attention") + count("missing")} needing attention`,
-        summaryLine: `Packaged ${fmtL(totals.litres)} / ${totals.lal.toFixed(3)} LAL · Declared ${fmtL(totals.declaredLitres)} / ${totals.declaredLal.toFixed(3)} LAL · ${totals.ticked} of ${ordered.length} months ticked as declared on TSW`,
-        renderMonth: (m, { text, table }) => {
-          text(`${monthLabelFromKey(m.period)}  —  ${AUDIT_STATUS[m.status]?.label || m.status}${m.ret?.declaredOnTsw ? " · Declared on TSW" : ""}`, { size: 12, bold: true, gap: 1.5 });
-          text(`Packaged ${fmtL(m.appLitres)} / ${round3(m.appLal).toFixed(3)} LAL · Declared ${fmtL(m.ret?.declaredLitres)} / ${m.ret?.declaredLal != null ? Number(m.ret.declaredLal).toFixed(3) : "—"} LAL`, { size: 9 });
-          if (m.ret) text(`Entry ${m.ret.entryNumber || "—"} · Filed ${m.ret.filedDate || "—"} · ${(m.ret.screenshotPaths || []).length} screenshot(s) on file${m.ret.declaredOnTsw && m.ret.declaredOnTswAt ? ` · Ticked declared ${String(m.ret.declaredOnTswAt).slice(0, 10)}${m.ret.declaredOnTswBy ? ` by ${m.ret.declaredOnTswBy}` : ""}` : ""}`, { size: 8.5, color: [92, 107, 84] });
-          m.issues.forEach((iss) => text(`• ${iss.text}`, { size: 8.5, color: iss.level === "red" ? [181, 80, 47] : [138, 109, 11], gap: 0.6 }));
-          if (m.ret?.varianceExplanation) text(`Explanation: ${m.ret.varianceExplanation}`, { size: 8.5 });
-          if (m.ret?.reviewedBy) text(`Reviewed by ${m.ret.reviewedBy} on ${String(m.ret.reviewedAt || "").slice(0, 10)}`, { size: 8.5, color: [63, 122, 40] });
-          if (!full) return;
-          const lines = tswLinesForRows(m.rows);
-          if (lines.length) {
-            text("EXCISE WORKED OUT FROM PACKAGING", { size: 7.5, color: [92, 107, 84], gap: 0.5 });
-            table(["Product", "ABV %", "Litres", "LAL"], lines.map((l) => [l.name, l.abv.toFixed(1), l.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 }), l.lal.toFixed(3)]), [0.55, 0.15, 0.15, 0.15], [1, 2, 3]);
-          }
+        intro: "",
+        counts: "",
+        summaryLine: `${ordered.length} month${ordered.length === 1 ? "" : "s"} · Packaged ${fmtL(totals.litres)} / ${totals.lal.toFixed(3)} LAL · Declared ${fmtL(totals.declaredLitres)} / ${totals.declaredLal.toFixed(3)} LAL`,
+        // Kept simple: what was declared and what was packaged, no notes.
+        renderMonth: (m, { text, table, ensure }) => {
+          ensure(30);
+          text(monthLabelFromKey(m.period), { size: 12, bold: true, gap: 0.8 });
+          text(
+            `${m.ret ? `Entry ${m.ret.entryNumber || "—"} · Filed ${m.ret.filedDate || "—"} · ` : "Not declared · "}Packaged ${fmtL(m.appLitres)} / ${round3(m.appLal).toFixed(3)} LAL · Declared ${fmtL(m.ret?.declaredLitres)} / ${m.ret?.declaredLal != null ? Number(m.ret.declaredLal).toFixed(3) : "—"} LAL`,
+            { size: 8.5, color: [92, 107, 84], gap: 2 }
+          );
           const dl = m.ret?.declaredLines || [];
           if (dl.length) {
-            text("DECLARED ON TSW", { size: 7.5, color: [92, 107, 84], gap: 0.5 });
+            text("Declared on TSW", { size: 8, bold: true, gap: 0.5 });
             table(["Item", "Description", "ABV %", "Litres", "LAL"], dl.map((l) => [l.itemCode || "—", l.description || "—", l.abv != null ? Number(l.abv).toFixed(1) : "—", l.litres != null ? Number(l.litres).toLocaleString("en-NZ", { maximumFractionDigits: 3 }) : "—", l.lal != null ? Number(l.lal).toFixed(3) : "—"]), [0.15, 0.43, 0.12, 0.15, 0.15], [2, 3, 4]);
-            text("DECLARED VS PACKAGED, BY STRENGTH", { size: 7.5, color: [92, 107, 84], gap: 0.5 });
-            exciseAbvComparison(m.rows, dl).forEach((r) =>
-              text(`${r.abv === "?" ? "Unknown ABV" : `${r.abv}%`}: packaged ${fmtL(r.packedL)} · declared ${fmtL(r.declaredL)}${r.off ? ` (${fmtDiffL(r.diff)})` : " OK"}${r.beers.length ? ` — ${r.beers.join(", ")}` : ""}`, { size: 8.5, color: r.off ? [181, 80, 47] : [26, 31, 22], gap: 0.4 })
-            );
-            text("", { size: 4, gap: 1 });
           }
           const runs = [...m.rows].sort((a, b) => String(a.date).localeCompare(String(b.date))).map((r) => auditRunDetail(r, batchById));
           if (runs.length) {
-            text("PACKAGING RUNS", { size: 7.5, color: [92, 107, 84], gap: 0.5 });
+            text("Packaged", { size: 8, bold: true, gap: 0.5 });
             table(
-              ["Date", "Batch", "Packaged as", "Litres", "ABV", "LAL"],
-              runs.map((d) => [
-                d.date,
-                `${d.batch} ${d.beer}${[d.brewDate && `brewed ${d.brewDate}`, d.tank, d.brewedL && `${d.brewedL} L brewed`, d.lossL != null && `${d.lossL} L loss`, d.og && `OG ${Number(d.og).toFixed(3)}`].filter(Boolean).length ? "\n" + [d.brewDate && `brewed ${d.brewDate}`, d.tank, d.brewedL && `${d.brewedL} L brewed`, d.lossL != null && `${d.lossL} L loss`, d.og && `OG ${Number(d.og).toFixed(3)}`].filter(Boolean).join(" · ") : ""}`,
-                d.containers,
-                d.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 }),
-                `${d.abv.toFixed(1)}%${d.abvSource === "measured" ? "*" : ""}`,
-                d.lal.toFixed(3),
-              ]),
-              [0.13, 0.35, 0.22, 0.1, 0.09, 0.11],
+              ["Date", "Batch", "Packaged as", "Litres", "ABV %", "LAL"],
+              runs.map((d) => [d.date, `${d.batch} ${d.beer}`, d.containers, d.litres.toLocaleString("en-NZ", { maximumFractionDigits: 3 }), d.abv.toFixed(1), d.lal.toFixed(3)]),
+              [0.13, 0.33, 0.24, 0.1, 0.09, 0.11],
               [3, 4, 5]
             );
-            if (runs.some((d) => d.abvSource === "measured")) text("* measured ABV — no label strength recorded", { size: 7.5, color: [138, 109, 11] });
           }
         },
       });
