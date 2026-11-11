@@ -7335,6 +7335,18 @@ function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredien
   });
 
   const updateCount = (id, val) => setCounts((prev) => ({ ...prev, [id]: val }));
+  // Grouped by category (Grain, Hops, Yeast, Juice, Other, then any others),
+  // A–Z within each, so you can count one area of the brewery at a time.
+  const [closed, setClosed] = useState({});
+  const groups = useMemo(() => {
+    const by = {};
+    inventory.forEach((it) => (by[it.category || "Other"] = by[it.category || "Other"] || []).push(it));
+    const order = (c) => { const i = CATEGORIES.indexOf(c); return i === -1 ? 100 : i; };
+    return Object.keys(by)
+      .sort((a, b) => order(a) - order(b) || a.localeCompare(b))
+      .map((c) => ({ category: c, items: by[c].sort((a, b) => a.name.localeCompare(b.name)) }));
+  }, [inventory]);
+  const changedIn = (items) => items.filter((it) => counts[it.id] !== "" && Math.round((Number(counts[it.id]) - it.qty) * 100) / 100 !== 0).length;
 
   const discrepancyCount = inventory.filter((it) => {
     const counted = counts[it.id];
@@ -7364,8 +7376,24 @@ function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredien
           Walk the brewery and enter what you actually count for each {itemLabel}. Anything left unchanged is
           assumed correct as-is.
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {inventory.map((it) => {
+        {groups.length > 1 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {groups.map((g) => (
+              <button key={g.category} type="button" onClick={() => document.getElementById(`stocktake-${g.category}`)?.scrollIntoView({ behavior: "smooth", block: "start" })} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 999, padding: "5px 11px", fontSize: 12, color: "#2A3324", cursor: "pointer" }}>
+                {g.category} ({g.items.length})
+              </button>
+            ))}
+          </div>
+        )}
+        {groups.map((g) => (
+        <div key={g.category} id={`stocktake-${g.category}`} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" onClick={() => setClosed((p) => ({ ...p, [g.category]: !p[g.category] }))} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", borderBottom: `2px solid ${CATEGORY_COLOR[g.category] || "#C9D1AC"}`, padding: "6px 2px", cursor: "pointer", textAlign: "left" }}>
+            <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: 15, color: "#2A3324" }}>
+              {closed[g.category] ? "▸" : "▾"} {g.category} <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#9BA88A" }}>{g.items.length} item{g.items.length === 1 ? "" : "s"}</span>
+            </span>
+            {changedIn(g.items) > 0 && <span style={{ fontSize: 11.5, color: "#8A6D0B" }}>{changedIn(g.items)} changed</span>}
+          </button>
+          {!closed[g.category] && g.items.map((it) => {
             const counted = counts[it.id];
             const diff = counted === "" ? 0 : Math.round((Number(counted) - it.qty) * 100) / 100;
             return (
@@ -7405,8 +7433,9 @@ function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredien
               </div>
             );
           })}
-          {inventory.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No {itemLabel}s to count yet.</div>}
         </div>
+        ))}
+        {inventory.length === 0 && <div style={{ color: "#9BA88A", fontSize: 13 }}>No {itemLabel}s to count yet.</div>}
         <button
           onClick={submit}
           style={{
