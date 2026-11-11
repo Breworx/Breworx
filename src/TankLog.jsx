@@ -14308,6 +14308,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
   const blankLot = () => ({ id: uid(), variety: "", orchard: "", litres: "", mode: "brix", value: "", ph: "", ta: "", itemId: "", lotId: "" });
   const juiceItems = [...inventory].sort((a, b) => (b.category === "Juice") - (a.category === "Juice") || a.name.localeCompare(b.name));
   const [name, setName] = useState(`Cider ${today()}`);
+  const [batchNumber, setBatchNumber] = useState(nextNumber);
   const [startDate, setStartDate] = useState(today());
   const [tankId, setTankId] = useState("");
   const [lots, setLots] = useState([blankLot()]);
@@ -14400,7 +14401,8 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
   const tank = tanks.find((t) => t.id === tankId) || null;
   const tooBig = tank && L > Number(tank.capacity || 0);
   const occupied = tank && startDate <= today() && tankIsOccupied(batches, tank.id);
-  const canSave = name.trim() && L > 0 && og != null && !saving && !occupied;
+  const numberTaken = batches.some((b) => String(b.number).trim().toLowerCase() === batchNumber.trim().toLowerCase());
+  const canSave = name.trim() && batchNumber.trim() && !numberTaken && L > 0 && og != null && !saving && !occupied;
 
   const save = async () => {
     if (!canSave) return;
@@ -14421,7 +14423,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
     };
     await onCreate({
       id: uid(),
-      number: nextNumber,
+      number: batchNumber.trim(),
       name: name.trim(),
       style: "Cider",
       productType: CIDER_TYPE,
@@ -14471,10 +14473,12 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
             <span style={ciderNote}>Copies the varieties, orchards, rates and stock items — not the litres or readings, since this year's fruit will differ.</span>
           </label>
         )}
-        <div style={grid2}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+          <TextField label="Batch #" value={batchNumber} onChange={setBatchNumber} />
           <TextField label="Name" value={name} onChange={setName} />
-          <TextField label="Date" type="date" value={startDate} onChange={setStartDate} />
         </div>
+        {numberTaken && <div style={ciderWarn}>Batch #{batchNumber.trim()} already exists — the next cider number is {nextNumber}.</div>}
+        <TextField label="Date" type="date" value={startDate} onChange={setStartDate} />
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
           <select value={tankId} onChange={(e) => setTankId(e.target.value)} style={selStyle}>
@@ -14586,7 +14590,7 @@ function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate, onClos
         <TextField label="Notes for this year's fruit (optional)" value={notes} onChange={setNotes} />
         {ingredientRows.length > 0 && <div style={ciderNote}>Taken out of stock when you save: {ingredientRows.map((x) => `${x.qty}${x.unit} ${x.name}`).join(", ")}.</div>}
         <button type="button" onClick={save} disabled={!canSave} style={{ ...ciderBtn, opacity: canSave ? 1 : 0.5, padding: "12px" }}>
-          {saving ? "Saving…" : `Start ${name.trim() || "cider"} (#${nextNumber})`}
+          {saving ? "Saving…" : `Start #${batchNumber.trim() || nextNumber} ${name.trim() || "cider"}`}
         </button>
       </div>
     </Modal>
