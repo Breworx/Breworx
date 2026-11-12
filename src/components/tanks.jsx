@@ -1102,7 +1102,7 @@ export function BrewDayVesselIcon({ isKettle, recirculating, uid: idSeed, size =
   );
 }
 
-export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, onCycleClean, onSetCleanStage }) {
+export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, onCycleClean, onSetCleanStage, readOnly }) {
   const empty = !batch;
   const latest = batch ? latestReading(batch) : null;
   const color = batch ? STAGE_COLOR[batch.stage] || "#5C9A3C" : "#C9D1AC";
@@ -1172,7 +1172,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
             </span>
           )}
           <button
-            onClick={() => onCycleClean(tank.id)}
+            onClick={() => !readOnly && onCycleClean(tank.id)}
             style={{
               marginTop: 4,
               display: "flex",
@@ -1271,7 +1271,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
         {tank.type === "Brite Tank" && cleanStage === "Rinsed" ? (
           <div style={{ display: "flex", gap: 6 }}>
             <button
-              onClick={() => onSetCleanStage(tank.id, "Acid clean")}
+              onClick={() => !readOnly && onSetCleanStage(tank.id, "Acid clean")}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1290,7 +1290,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
               Acid clean
             </button>
             <button
-              onClick={() => onSetCleanStage(tank.id, "Caustic clean")}
+              onClick={() => !readOnly && onSetCleanStage(tank.id, "Caustic clean")}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1311,7 +1311,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
           </div>
         ) : (
           <button
-            onClick={() => onCycleClean(tank.id)}
+            onClick={() => !readOnly && onCycleClean(tank.id)}
             style={{
               display: "flex",
               alignItems: "center",
@@ -1347,7 +1347,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
         boxShadow: "0 1px 2px rgba(42,51,36,0.05), 0 4px 14px rgba(42,51,36,0.06)",
       }}
     >
-      {!empty && (
+      {!empty && !readOnly && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1375,7 +1375,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
         </button>
       )}
       <button
-        onClick={() => batch && onOpen(batch.id)}
+        onClick={() => batch && onOpen && onOpen(batch.id)}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -1384,7 +1384,7 @@ export function TankWallCard({ tank, batch, scheduledBatch, onOpen, onQuickLog, 
           background: "none",
           border: "none",
           padding: 0,
-          cursor: batch ? "pointer" : "default",
+          cursor: batch && onOpen ? "pointer" : "default",
           textAlign: "center",
           width: "100%",
         }}
