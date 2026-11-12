@@ -6376,6 +6376,9 @@ function TankLogApp() {
         {selected && (
           <BatchDetail
             batch={selected}
+            consumables={consumables}
+            costing={costingData}
+            exciseAbvMethod={exciseAbvMethod}
             recipes={recipes}
             allBatches={batches}
             onOpenCiderTools={(batchId, tab) => {
