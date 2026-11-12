@@ -189,19 +189,31 @@ export function availableStockList(batches, salesOrders, mixedPackAssemblies) {
     // Stock written off with "Clear stock" — kept off the packaging itself
     // so the excise records behind it never change.
     const cleared = {};
-    (b.stockCleared || []).forEach((e) => Object.entries(e.counts || {}).forEach(([k, v]) => (cleared[k] = (cleared[k] || 0) + v)));
+    // Repacked beer (a declared keg moved into cans or other kegs) is an
+    // entry here too: the units it came out of count as cleared, the units
+    // it went into count as packaged stock on the same batch. Excise only
+    // ever looks at the packaging events, so it never changes.
+    const repackedIn = {};
+    (b.stockCleared || []).forEach((e) =>
+      Object.entries(e.counts || {}).forEach(([k, v]) => {
+        if (e.kind === "repack" && v < 0) repackedIn[k] = (repackedIn[k] || 0) - v;
+        else cleared[k] = (cleared[k] || 0) + v;
+      })
+    );
     // Sold on invoices raised straight in Xero (see planXeroSales).
     (b.xeroSold || []).forEach((e) => (cleared[e.containerKey] = (cleared[e.containerKey] || 0) + (Number(e.qty) || 0)));
     CONTAINERS.forEach((c) => {
-      if ((packaged[c.key] || 0) > 0) {
+      const total = (packaged[c.key] || 0) + (repackedIn[c.key] || 0);
+      if (total > 0) {
         list.push({
           batchId: b.id,
           batchName: b.name,
           batchNumber: b.number,
           containerKey: c.key,
           containerLabel: c.label,
-          packaged: packaged[c.key],
-          available: (packaged[c.key] || 0) - (sold[c.key] || 0) - (consumedByMixedPacks[c.key] || 0) - (cleared[c.key] || 0),
+          packaged: total,
+          repackedIn: repackedIn[c.key] || 0,
+          available: total - (sold[c.key] || 0) - (consumedByMixedPacks[c.key] || 0) - (cleared[c.key] || 0),
         });
       }
     });
