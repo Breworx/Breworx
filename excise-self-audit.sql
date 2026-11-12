@@ -267,3 +267,38 @@ alter table public.costing_settings enable row level security;
 create policy "costing: owner reads" on public.costing_settings for select to authenticated using (company_id = get_my_company_id() and is_company_owner());
 create policy "costing: owner inserts" on public.costing_settings for insert to authenticated with check (company_id = get_my_company_id() and is_company_owner());
 create policy "costing: owner updates" on public.costing_settings for update to authenticated using (company_id = get_my_company_id() and is_company_owner()) with check (company_id = get_my_company_id() and is_company_owner());
+
+-- Sales role: read-only, can't see Xero logins, purchasing or excise.
+create or replace function public.is_sales_user()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from profiles where id = auth.uid() and role = 'sales');
+$$;
+alter table public.companies add column if not exists sales_access jsonb not null default '{}'::jsonb;
+do $$
+declare t text;
+begin
+  for t in select distinct tablename from pg_policies where schemaname = 'public' and cmd = 'ALL' and tablename <> 'activity_log' loop
+    execute format('drop policy if exists "sales read-only insert" on public.%I', t);
+    execute format('drop policy if exists "sales read-only update" on public.%I', t);
+    execute format('drop policy if exists "sales read-only delete" on public.%I', t);
+    execute format('create policy "sales read-only insert" on public.%I as restrictive for insert to authenticated with check (not is_sales_user())', t);
+    execute format('create policy "sales read-only update" on public.%I as restrictive for update to authenticated using (not is_sales_user())', t);
+    execute format('create policy "sales read-only delete" on public.%I as restrictive for delete to authenticated using (not is_sales_user())', t);
+  end loop;
+  foreach t in array array['xero_connections','purchase_orders','suppliers','supplier_documents','excise_returns','excise_item_codes','company_invites','xero_settings'] loop
+    execute format('drop policy if exists "sales cannot read" on public.%I', t);
+    execute format('create policy "sales cannot read" on public.%I as restrictive for select to authenticated using (not is_sales_user())', t);
+  end loop;
+end $$;
+-- Only update_teammate_role (owner) can change a role or company.
+create or replace function public.profiles_protect_role()
+returns trigger language plpgsql as $$
+begin
+  if current_user in ('authenticated', 'anon') and (new.role is distinct from old.role or new.company_id is distinct from old.company_id) then
+    raise exception 'Roles are changed by the account owner in Settings → Team.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists profiles_protect_role on public.profiles;
+create trigger profiles_protect_role before update on public.profiles for each row execute function public.profiles_protect_role();
+-- update_teammate_role now also accepts 'sales'.

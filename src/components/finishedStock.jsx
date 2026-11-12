@@ -452,6 +452,7 @@ export function FinishedGoodsStockView({
   onClearStock,
   onUndoClear,
   onCompareXero,
+  readOnly,
   xeroNeedsReconnect,
 }) {
   const [showSoldOut, setShowSoldOut] = useState(false);
@@ -475,7 +476,7 @@ export function FinishedGoodsStockView({
           Xero has disconnected, so sales from Xero (and Upstock) aren't coming off stock. Go to Settings → Xero and connect it again.
         </div>
       )}
-      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+      {!readOnly && <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <button
           data-tour="page-finishedGoodsStock-stocktake"
           onClick={onStartStockTake}
@@ -497,8 +498,8 @@ export function FinishedGoodsStockView({
             Clear stock…
           </button>
         )}
-      </div>
-      {onCompareXero && (
+      </div>}
+      {!readOnly && onCompareXero && (
         <button
           onClick={onCompareXero}
           style={{ width: "100%", marginTop: -8, marginBottom: 18, background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
@@ -507,7 +508,7 @@ export function FinishedGoodsStockView({
         </button>
       )}
 
-      {clearHistory.length > 0 && (
+      {!readOnly && clearHistory.length > 0 && (
         <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 }}>
           {clearHistory.map((h) => (
             <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", background: "#FBF7EA", border: "1px solid #E8DFC0", borderRadius: 6 }}>
@@ -533,12 +534,12 @@ export function FinishedGoodsStockView({
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14.5, color: "#2A3324" }}>Mixed packs</div>
-          <button
+          {!readOnly && <button
             onClick={onNewMixedPackType}
             style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: 0 }}
           >
             + New mixed pack
-          </button>
+          </button>}
         </div>
         {mixedPackTypes.length === 0 ? (
           <div style={{ color: "#9BA88A", fontSize: 13 }}>
@@ -549,7 +550,7 @@ export function FinishedGoodsStockView({
             {mixedPackStock.map((t) => (
               <div key={t.id} style={{ padding: "10px 14px", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <button onClick={() => onEditMixedPackType(t)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}>
+                  <button onClick={() => !readOnly && onEditMixedPackType(t)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: readOnly ? "default" : "pointer" }}>
                     <div style={{ color: "#2A3324", fontSize: 13.5, fontFamily: "'Inter', sans-serif" }}>{t.name}</div>
                     <div style={{ color: "#9BA88A", fontSize: 11 }}>
                       {t.mode === "fixed" ? "Fixed recipe" : "Built fresh each time"} · {t.totalUnits} units
@@ -560,12 +561,12 @@ export function FinishedGoodsStockView({
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: t.available <= 0 ? "#B5502F" : "#5C9A3C" }}>
                       {t.available} available
                     </span>
-                    <button
+                    {!readOnly && <button
                       onClick={() => onAssembleMixedPack(t)}
                       style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "7px 12px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12, cursor: "pointer" }}
                     >
                       Assemble
-                    </button>
+                    </button>}
                   </div>
                 </div>
               </div>
