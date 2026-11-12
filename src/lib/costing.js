@@ -124,13 +124,57 @@ export function costingAbv(recipe, labelStrengths) {
   return est && est > 0 ? { abv: Math.round(est * 10) / 10, source: "recipe" } : { abv: null, source: "none" };
 }
 
+// ── What goes into a 24-can case ────────────────────────────────────────
+// Can, lid and carton default to the latest price in Consumables (by
+// category); the label is per product, because what a label costs depends
+// on how many you order. Enter a price per label, or the order quantity and
+// the quote total and it works out the price each.
+export const CASE_PARTS = [
+  { key: "can", label: "Can", category: "Can", perCase: 24 },
+  { key: "lid", label: "Lid", category: "Lid", perCase: 24 },
+  { key: "carton", label: "Carton", category: "Box", perCase: 1 },
+  { key: "label", label: "Label", category: "Label", perCase: 24 },
+];
+export function consumablePriceFor(consumables, category) {
+  let best = null;
+  (consumables || []).filter((c) => c.category === category).forEach((c) => {
+    const lots = (c.lots || []).filter((l) => Number(l.unitCost) > 0).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    const price = lots.length ? Number(lots[0].unitCost) : Number(c.costPerUnit) > 0 ? Number(c.costPerUnit) : null;
+    const date = lots.length ? lots[0].date : "";
+    if (price != null && (!best || String(date) > String(best.date))) best = { price, date, name: c.name };
+  });
+  return best;
+}
+export function labelPriceEach(label) {
+  const l = label || {};
+  if (num(l.price) != null) return num(l.price);
+  if (num(l.orderTotal) != null && num(l.orderQty) > 0) return num(l.orderTotal) / num(l.orderQty);
+  return null;
+}
+// Itemised case costs, or null when the costing still uses one lump-sum
+// packaging figure (as the products from the old sheet do).
+export function casePackCost(product, consumables) {
+  const cp = product.casePack;
+  if (!cp) return null;
+  const parts = CASE_PARTS.map((p) => {
+    const own = cp[p.key] || {};
+    let each = null, source = "none", from = null;
+    if (p.key === "label") { each = labelPriceEach(own); source = each != null ? "set" : "none"; }
+    else if (num(own.price) != null) { each = num(own.price); source = "set"; }
+    else { const st = consumablePriceFor(consumables, p.category); if (st) { each = st.price; source = "stock"; from = st; } }
+    return { ...p, each, source, from, total: each != null ? each * p.perCase : 0 };
+  });
+  const other = num(cp.other) || 0;
+  return { parts, other, total: parts.reduce((s, x) => s + x.total, 0) + other, missing: parts.filter((x) => x.each == null).map((x) => x.label) };
+}
+
 // A costing is a product you're pricing: { id, name, productType, yieldL,
 // abv, ingredients: [{ id, name, qty, unit, category }], formats: { key:
 // { price, packaging, delivery, litres } }, recipeFamilyId? }. It can be a
 // brand-new idea that has never been brewed, a product from the costing
 // sheet, or a copy of a recipe. Company defaults fill any packaging or
 // delivery cost the costing doesn't set itself.
-export function costProduct(product, { inventory, costing, todayStr }) {
+export function costProduct(product, { inventory, consumables, costing, todayStr }) {
   const data = costing || {};
   const defaults = { ...DEFAULT_COSTING, ...(data.defaults || {}), formats: { ...DEFAULT_COSTING.formats, ...((data.defaults || {}).formats || {}) } };
   const lines = (product.ingredients || []).map((l) => priceIngredient(l, { inventory, sheetPrices: data.sheetPrices, manualPrices: data.prices }));
@@ -144,7 +188,8 @@ export function costProduct(product, { inventory, costing, todayStr }) {
     const d = defaults.formats[f.key] || {};
     const s = (product.formats || {})[f.key] || {};
     const litres = num(s.litres) ?? num(d.litres) ?? 0;
-    const packaging = num(s.packaging) ?? num(d.packaging) ?? 0;
+    const pack = f.key === "case24" ? casePackCost(product, consumables) : null;
+    const packaging = pack ? pack.total : num(s.packaging) ?? num(d.packaging) ?? 0;
     const delivery = num(s.delivery) ?? num(d.delivery) ?? 0;
     const liquid = ingredientsPerL * litres;
     const excise = (duty.excise + duty.levy) * litres;
@@ -156,6 +201,7 @@ export function costProduct(product, { inventory, costing, todayStr }) {
       marginPct: price ? (margin / price) * 100 : null,
       rrp: f.rrp && price != null ? (price * (1 + markup / 100)) / 4 : null,
       defaults: { litres: num(d.litres), packaging: num(d.packaging), delivery: num(d.delivery) },
+      pack,
     };
   });
   return { lines, ingredients, yieldL, abv, ingredientsPerL, duty, formats, markup, flagged: lines.filter((l) => l.flag) };
