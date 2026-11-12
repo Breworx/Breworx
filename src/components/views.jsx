@@ -531,12 +531,28 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
   const dragRowRectsRef = useRef(null);
   const calendarTanks = tanks.filter((t) => t.type !== "Mash Tun" && t.type !== "Kettle" && t.type !== "Barrel");
   const daysBack = 7;
-  const daysForward = 35;
+  const daysForward = 365;
   const rangeStart = addDays(today(), -daysBack);
   const totalDays = daysBack + daysForward + 1;
   const dayList = Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i));
   const dayWidth = 34;
   const dayIndex = (d) => Math.round((new Date(d + "T00:00:00") - new Date(rangeStart + "T00:00:00")) / 86400000);
+  // Months across the top, and jumping to any month — the calendar runs a
+  // year ahead so brews can be planned well in advance.
+  const calScrollRef = useRef(null);
+  const monthLabel = (d) => new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const monthSpans = [];
+  dayList.forEach((d) => {
+    const key = d.slice(0, 7);
+    const last = monthSpans[monthSpans.length - 1];
+    if (last && last.key === key) last.days++;
+    else monthSpans.push({ key, label: monthLabel(d), days: 1, start: d });
+  });
+  const monthStarts = monthSpans.map((m) => ({ date: m.start, label: m.label }));
+  const scrollToDay = (d) => {
+    const el = calScrollRef.current;
+    if (el) el.scrollTo({ left: Math.max(0, dayIndex(d) * dayWidth), behavior: "smooth" });
+  };
 
   const occupancyForTank = (tankId) =>
     batches
@@ -601,8 +617,24 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
       {calendarTanks.length === 0 ? (
         <EmptyState icon={Calendar} title="No fermenters yet" subtitle="Set up a fermenter in Brewery first, then you can schedule batches against it here." />
       ) : (
-        <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+        <>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <button type="button" onClick={() => scrollToDay(addDays(today(), -2))} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 11px", fontSize: 12.5, color: "#2A3324", cursor: "pointer" }}>Today</button>
+          <select value="" onChange={(e) => e.target.value && scrollToDay(e.target.value)} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 8px", fontSize: 12.5, color: "#2A3324" }}>
+            <option value="">Jump to month…</option>
+            {monthStarts.map((m) => <option key={m.date} value={m.date}>{m.label}</option>)}
+          </select>
+        </div>
+        <div ref={calScrollRef} style={{ overflowX: "auto", paddingBottom: 8 }}>
           <div style={{ minWidth: totalDays * dayWidth + 120, width: "fit-content" }}>
+            <div style={{ display: "flex" }}>
+              <div style={{ width: 120, flexShrink: 0, position: "sticky", left: 0, zIndex: 3, background: "#F5F1E4" }} />
+              {monthSpans.map((m) => (
+                <div key={m.key} style={{ width: m.days * dayWidth, flexShrink: 0, borderLeft: "1px solid #C9D1AC", padding: "3px 6px", boxSizing: "border-box", fontFamily: "'Oswald', sans-serif", fontSize: 12, color: "#2A3324", whiteSpace: "nowrap", overflow: "hidden" }}>
+                  {m.label}
+                </div>
+              ))}
+            </div>
             <div style={{ display: "flex" }}>
               <div style={{ width: 120, flexShrink: 0, position: "sticky", left: 0, zIndex: 3, background: "#F5F1E4" }} />
               {dayList.map((d) => {
@@ -861,6 +893,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
             })}
           </div>
         </div>
+        </>
       )}
       <div style={{ display: "flex", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
         {Object.entries(STAGE_COLOR)
