@@ -1269,7 +1269,7 @@ export function PackageTypeCard({ packageType, onOpen }) {
           {packageType.name}
         </h3>
         <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
-          {packageType.items.length} consumable{packageType.items.length !== 1 ? "s" : ""} per unit
+          {packageType.items.length} consumable{packageType.items.length !== 1 ? "s" : ""} {(packageType.unitsPerPack || 1) > 1 ? `per pack of ${packageType.unitsPerPack}` : "per unit"}
         </div>
       </div>
     </button>
@@ -1278,6 +1278,7 @@ export function PackageTypeCard({ packageType, onOpen }) {
 
 export function AddPackageTypeModal({ onClose, onAdd, consumables }) {
   const [name, setName] = useState("");
+  const [unitsPerPack, setUnitsPerPack] = useState(1);
   const [items, setItems] = useState([{ id: uid(), consumableId: consumables[0]?.id || "", qtyPerUnit: 1, matchLabelByRecipeName: false }]);
   const [saving, setSaving] = useState(false);
 
@@ -1293,15 +1294,20 @@ export function AddPackageTypeModal({ onClose, onAdd, consumables }) {
     const cleanItems = items
       .filter((it) => it.matchLabelByRecipeName || it.consumableId)
       .map((it) => {
+        // Quantities are entered per pack (e.g. per 24-can case); stock is
+        // taken off per unit packaged, so store both.
+        const per = Math.max(1, Number(unitsPerPack) || 1);
+        const qtyPerPack = Number(it.qtyPerUnit) || 0;
+        const qty = { qtyPerPack, qtyPerUnit: qtyPerPack / per };
         if (it.matchLabelByRecipeName) {
-          return { consumableId: null, consumableName: null, matchLabelByRecipeName: true, qtyPerUnit: Number(it.qtyPerUnit) || 0 };
+          return { consumableId: null, consumableName: null, matchLabelByRecipeName: true, ...qty };
         }
         const consumable = consumables.find((c) => c.id === it.consumableId);
-        return { consumableId: it.consumableId, consumableName: consumable ? consumable.name : "", matchLabelByRecipeName: false, qtyPerUnit: Number(it.qtyPerUnit) || 0 };
+        return { consumableId: it.consumableId, consumableName: consumable ? consumable.name : "", matchLabelByRecipeName: false, ...qty };
       });
     if (!name.trim() || cleanItems.length === 0) return;
     setSaving(true);
-    await onAdd({ id: uid(), name: name.trim(), items: cleanItems });
+    await onAdd({ id: uid(), name: name.trim(), items: cleanItems, unitsPerPack: Math.max(1, Number(unitsPerPack) || 1) });
     setSaving(false);
     onClose();
   };
@@ -1310,9 +1316,10 @@ export function AddPackageTypeModal({ onClose, onAdd, consumables }) {
     <Modal title="New package type" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <TextField label="Name" value={name} onChange={setName} />
+        <NumberField label="Units per pack (e.g. 24 cans in a case, 1 for a keg)" value={unitsPerPack} onChange={setUnitsPerPack} step="1" />
 
         <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginTop: 4 }}>
-          Consumables used per unit packaged
+          {Number(unitsPerPack) > 1 ? `Consumables used per pack of ${unitsPerPack}` : "Consumables used per unit packaged"}
         </div>
 
         {consumables.length === 0 && (
@@ -1445,9 +1452,11 @@ export function PackageTypeDetail({ packageType, consumables, onBack, onDelete, 
     const c = consumables.find((c) => c.id === it.consumableId);
     return c && c.costPerUnit != null;
   });
+  const per = Math.max(1, Number(packageType.unitsPerPack) || 1);
+  const packQty = (it) => (it.qtyPerPack != null ? Number(it.qtyPerPack) : (Number(it.qtyPerUnit) || 0) * per);
   const totalCost = costableItems.reduce((sum, it) => {
     const c = consumables.find((c) => c.id === it.consumableId);
-    return sum + (c?.costPerUnit || 0) * (Number(it.qtyPerUnit) || 0);
+    return sum + (c?.costPerUnit || 0) * packQty(it);
   }, 0);
 
   return (
@@ -1497,10 +1506,11 @@ export function PackageTypeDetail({ packageType, consumables, onBack, onDelete, 
       {costableItems.length > 0 && (
         <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
           <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>
-            Cost per unit
+            {per > 1 ? `Cost per pack of ${per}` : "Cost per unit"}
           </div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, color: "#2A3324" }}>
             {allCosted ? `$${totalCost.toFixed(2)}` : `~$${totalCost.toFixed(2)}`}
+            {per > 1 && <span style={{ fontSize: 13, color: "#9BA88A", marginLeft: 10 }}>${(totalCost / per).toFixed(2)} each</span>}
           </div>
           {(!allCosted || hasVariableLabel) && (
             <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 3 }}>
@@ -1512,12 +1522,12 @@ export function PackageTypeDetail({ packageType, consumables, onBack, onDelete, 
       )}
 
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>
-        Consumables used per unit packaged
+        {per > 1 ? `Consumables per pack of ${per}` : "Consumables used per unit packaged"}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
         {packageType.items.map((it, i) => {
           const c = it.consumableId ? consumables.find((c) => c.id === it.consumableId) : null;
-          const lineCost = c?.costPerUnit != null ? c.costPerUnit * (Number(it.qtyPerUnit) || 0) : null;
+          const lineCost = c?.costPerUnit != null ? c.costPerUnit * packQty(it) : null;
           return (
             <div
               key={i}
@@ -1534,7 +1544,7 @@ export function PackageTypeDetail({ packageType, consumables, onBack, onDelete, 
             >
               <span>{it.matchLabelByRecipeName ? "Label (auto-matched by beer name)" : it.consumableName}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>× {it.qtyPerUnit}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>× {Math.round(packQty(it) * 1000) / 1000}</span>
                 {lineCost != null && (
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 12 }}>${lineCost.toFixed(2)}</span>
                 )}

@@ -315,3 +315,6 @@ returns jsonb language sql stable security definer set search_path = public as $
 $$;
 revoke all on function public.xero_connection_status() from public, anon;
 grant execute on function public.xero_connection_status() to authenticated;
+
+-- Package types can be set per pack (e.g. 24 cans in a case).
+alter table public.package_types add column if not exists units_per_pack integer not null default 1;
