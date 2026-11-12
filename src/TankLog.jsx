@@ -11,7 +11,7 @@ import { BatchCard, InventoryItemCard } from "./components/cards";
 import { CiderView } from "./components/cider";
 import { CustomerAccountFlow, CustomerDetail, CustomerFormModal, CustomerPortalPage, CustomersView } from "./components/customers";
 import { ExciseReportView, PackagedView } from "./components/excise";
-import { AssembleMixedPackModal, ClearStockModal, FinishedGoodsStockView, MixedPackTypeModal } from "./components/finishedStock";
+import { AssembleMixedPackModal, ClearStockModal, FinishedGoodsStockView, MixedPackTypeModal, RepackModal } from "./components/finishedStock";
 import { CalibrationModal, FoodSafetyChecklistModal, FoodSafetyDisclaimerModal, FoodSafetyNoteModal, FoodSafetyView, HarvestYeastModal, InternalAuditModal, LabMeasurementModal, LogComplaintModal, LogContractorVisitModal, LogPestCheckModal, LogVerifierVisitModal, MaintenanceModal, MockRecallModal, PestStationsModal, SensoryScoreModal, StaffIllnessModal, StaffTrainingRecordModal, SupplierDocumentsModal, SupplierFormModal, TastingLogModal, TopUpModal, TrainingModal } from "./components/foodSafety";
 import { AiFeedbackReviewModal, AiHelperModal, CHANGELOG, HELP_ARTICLES, HelpGuideModal, LATEST_CHANGELOG_ID, PAGE_TOURS, SpotlightTour, TOUR_STEPS, TankQRModal, WhatsNewModal } from "./components/help";
 import { AddInventoryModal, AddPackageTypeModal, AdjustInventoryModal, BulkOpeningStockModal, InventoryDuplicatesPanel, InventoryItemDetail, PackageTypeCard, PackageTypeDetail, StockTakeHistoryModal, StockTakeModal, StockTakeReportModal, SuppliersModal } from "./components/inventory";
@@ -117,6 +117,7 @@ function TankLogApp() {
   const [triangleTests, setTriangleTests] = useState([]);
   const [exciseReturns, setExciseReturns] = useState([]);
   const [showClearStock, setShowClearStock] = useState(false);
+  const [showRepack, setShowRepack] = useState(false);
   const [editingTriangleTest, setEditingTriangleTest] = useState(null);
   const [showQcApproval, setShowQcApproval] = useState(false);
   const [showLabMeasurement, setShowLabMeasurement] = useState(false);
@@ -1788,6 +1789,32 @@ function TankLogApp() {
     const units = Object.values(perBatch).reduce((s2, c) => s2 + Object.values(c).reduce((a, v) => a + v, 0), 0);
     logActivity("cleared", "stock", "Packaged stock", `Cleared ${units} units of packaged stock — ${reason}`);
     showToast("success", `Cleared ${units.toLocaleString("en-NZ")} units of packaged stock.`);
+    return true;
+  };
+
+  // Beer moved from declared kegs into cans or other kegs — one entry on the
+  // batch: source units off (positive), new units on (negative).
+  const repackStock = async ({ batchId, batchName, fromKey, fromQty, toKey, toQty, lossL, note, summary }) => {
+    const b = batches.find((x) => x.id === batchId);
+    if (!b) return false;
+    const entry = {
+      id: uid(),
+      kind: "repack",
+      date: new Date().toISOString(),
+      user: user?.name || "Someone",
+      reason: note ? `${summary} — ${note}` : summary,
+      counts: { [fromKey]: fromQty, [toKey]: -toQty },
+      repack: { fromKey, fromQty, toKey, toQty, lossL },
+    };
+    const list = [...(b.stockCleared || []), entry];
+    const done = await updateStockCleared([{ id: batchId, stockCleared: list }]);
+    if (!done) {
+      showToast("error", "The repack didn't save — check your connection and try again.");
+      return false;
+    }
+    setBatches((prev) => prev.map((x) => (x.id === batchId ? { ...x, stockCleared: list } : x)));
+    logActivity("repacked", "batch", batchName, summary);
+    showToast("success", summary);
     return true;
   };
 
@@ -5488,11 +5515,13 @@ function TankLogApp() {
                 batches={batches}
                 onClearStock={() => setShowClearStock(true)}
                 onUndoClear={undoStockClear}
+                onRepack={() => setShowRepack(true)}
                 onCompareXero={xeroConnection ? openXeroStockCompare : undefined}
                 xeroNeedsReconnect={!isSales && xeroNeedsReconnect}
                 readOnly={isSales}
               />
             )}
+            {showRepack && <RepackModal availableStock={availableStock} onClose={() => setShowRepack(false)} onConfirm={repackStock} />}
             {showClearStock && (
               <ClearStockModal availableStock={availableStock} batches={batches} onClose={() => setShowClearStock(false)} onConfirm={clearPackagedStock} />
             )}
@@ -6759,6 +6788,13 @@ function TankLogApp() {
             onSavePrice={saveCustomerPrice}
             onGeneratePortalLink={generatePortalLink}
             onInviteToOrderOnline={inviteCustomerToOrderOnline}
+            batches={batches}
+            salesOrders={salesOrders}
+            onOpenBatch={(id) => {
+              setSelectedCustomerId(null);
+              setSelectedId(id);
+              setView("batches");
+            }}
           />
         )}
 

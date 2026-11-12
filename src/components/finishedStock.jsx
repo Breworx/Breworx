@@ -272,7 +272,7 @@ export function stockClearHistory(batches) {
   const byId = {};
   batches.forEach((b) => {
     (b.stockCleared || []).forEach((e) => {
-      if (!byId[e.id]) byId[e.id] = { id: e.id, date: e.date, user: e.user, reason: e.reason, kind: e.kind, counts: {}, batches: 0 };
+      if (!byId[e.id]) byId[e.id] = { id: e.id, date: e.date, user: e.user, reason: e.reason, kind: e.kind, batchName: b.name, counts: {}, batches: 0 };
       const h = byId[e.id];
       h.batches += 1;
       Object.entries(e.counts || {}).forEach(([k, v]) => (h.counts[k] = (h.counts[k] || 0) + v));
@@ -438,6 +438,115 @@ export function ClearStockModal({ availableStock, batches, onClose, onConfirm })
   );
 }
 
+const unitText = (key, n) => (key === "cans330" ? `${canCasesText(n)} (${n} cans)` : `${n} × ${CONTAINERS.find((c) => c.key === key)?.shortLabel || key}`);
+
+// Moves beer that's already packaged (and declared for excise) into other
+// containers — a 50L keg into cans, or into 20L kegs. Saved as one entry on
+// the batch: the source units come off stock and the new ones go on, so
+// sales of the new containers trace back to the same batch. The packaging
+// events behind the excise return never change.
+export function RepackModal({ availableStock, onClose, onConfirm }) {
+  const sources = useMemo(
+    () =>
+      availableStock
+        .filter((s) => s.available > 0 && s.containerKey !== "cans330")
+        .sort((a, b) => a.batchName.localeCompare(b.batchName) || String(b.batchNumber || "").localeCompare(String(a.batchNumber || ""))),
+    [availableStock]
+  );
+  const [sourceId, setSourceId] = useState(sources[0] ? `${sources[0].batchId}::${sources[0].containerKey}` : "");
+  const source = sources.find((s) => `${s.batchId}::${s.containerKey}` === sourceId);
+  const [fromQty, setFromQty] = useState("1");
+  const targets = CONTAINERS.filter((c) => c.key !== source?.containerKey);
+  const [toKey, setToKey] = useState("cans330");
+  const target = targets.find((c) => c.key === toKey) || targets[0];
+  const [toQty, setToQty] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const fromN = Math.max(0, Math.floor(Number(fromQty) || 0));
+  const fromVol = CONTAINERS.find((c) => c.key === source?.containerKey)?.volumeL || 0;
+  const litres = fromN * fromVol;
+  const suggested = target ? Math.floor(litres / target.volumeL) : 0;
+  const toN = toQty === "" ? suggested : Math.max(0, Math.floor(Number(toQty) || 0));
+  const lossL = Math.round((litres - toN * (target?.volumeL || 0)) * 10) / 10;
+  const tooMany = source && fromN > source.available;
+  const canSave = source && target && fromN > 0 && toN > 0 && !tooMany && lossL >= 0 && !saving;
+
+  const save = async () => {
+    setSaving(true);
+    const ok = await onConfirm({
+      batchId: source.batchId,
+      batchName: source.batchName,
+      fromKey: source.containerKey,
+      fromQty: fromN,
+      toKey: target.key,
+      toQty: toN,
+      lossL,
+      note: note.trim(),
+      summary: `Repacked ${unitText(source.containerKey, fromN)} into ${unitText(target.key, toN)}${lossL > 0 ? ` · ${lossL} L lost` : ""}`,
+    });
+    setSaving(false);
+    if (ok) onClose();
+  };
+
+  const labelStyle = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" };
+  const inputStyle = { background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324", boxSizing: "border-box", width: "100%" };
+
+  return (
+    <Modal title="Repack beer" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.55 }}>
+          For beer that's already packaged and declared, moved into cans or other kegs. Stock moves across on the same batch, so the new cans or kegs sell from it. Your excise records don't change.
+        </div>
+        {sources.length === 0 ? (
+          <div style={{ color: "#9BA88A", fontSize: 13 }}>There are no kegs on hand to repack.</div>
+        ) : (
+          <>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={labelStyle}>From</span>
+              <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setToQty(""); }} style={inputStyle}>
+                {sources.map((s) => (
+                  <option key={`${s.batchId}::${s.containerKey}`} value={`${s.batchId}::${s.containerKey}`}>
+                    {s.batchName}{s.batchNumber ? ` #${s.batchNumber}` : ""} — {s.containerLabel} ({s.available} on hand)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={labelStyle}>How many</span>
+              <input type="number" inputMode="numeric" min="1" max={source?.available} value={fromQty} onChange={(e) => { setFromQty(e.target.value); setToQty(""); }} style={inputStyle} />
+              {tooMany && <span style={{ fontSize: 12, color: "#B5502F" }}>Only {source.available} on hand.</span>}
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={labelStyle}>Into</span>
+              <select value={target?.key || ""} onChange={(e) => { setToKey(e.target.value); setToQty(""); }} style={inputStyle}>
+                {targets.map((c) => (
+                  <option key={c.key} value={c.key}>{c.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={labelStyle}>{target?.key === "cans330" ? "Cans filled" : "Kegs filled"}</span>
+              <input type="number" inputMode="numeric" min="1" value={toQty} placeholder={String(suggested)} onChange={(e) => setToQty(e.target.value)} style={inputStyle} />
+              <span style={{ fontSize: 12, color: "#9BA88A" }}>
+                {litres} L in · {target ? unitText(target.key, toN) : ""} out{lossL > 0 ? ` · ${lossL} L lost` : ""}
+                              </span>
+              {lossL < 0 && <span style={{ fontSize: 12, color: "#B5502F" }}>That's more beer out than went in.</span>}
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={labelStyle}>Note (optional)</span>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. canned for the market" style={inputStyle} />
+            </label>
+            <button onClick={save} disabled={!canSave} style={auditPrimaryBtn(canSave)}>
+              {saving ? "Saving…" : "Repack"}
+            </button>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function FinishedGoodsStockView({
   availableStock,
   onStartStockTake,
@@ -451,6 +560,7 @@ export function FinishedGoodsStockView({
   batches = [],
   onClearStock,
   onUndoClear,
+  onRepack,
   onCompareXero,
   readOnly,
   xeroNeedsReconnect,
@@ -490,6 +600,14 @@ export function FinishedGoodsStockView({
         >
           Past reports ({stockTakeCount})
         </button>
+        {onRepack && (
+          <button
+            onClick={onRepack}
+            style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer" }}
+          >
+            Repack…
+          </button>
+        )}
         {onClearStock && (
           <button
             onClick={onClearStock}
@@ -513,13 +631,13 @@ export function FinishedGoodsStockView({
           {clearHistory.map((h) => (
             <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", background: "#FBF7EA", border: "1px solid #E8DFC0", borderRadius: 6 }}>
               <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
-                <strong style={{ color: "#2A3324" }}>{h.kind === "xero-match" ? "Matched to Xero" : "Cleared"} {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {containerCountsLabel(h.counts)}
+                <strong style={{ color: "#2A3324" }}>{h.kind === "xero-match" ? "Matched to Xero" : h.kind === "repack" ? "Repacked" : "Cleared"} {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {h.kind === "repack" ? h.batchName || "" : containerCountsLabel(h.counts)}
                 {h.reason ? <div style={{ color: "#9BA88A" }}>{h.reason}</div> : null}
               </div>
               {onUndoClear && (
                 <button
                   onClick={() => {
-                    if (window.confirm(h.kind === "xero-match" ? "Undo this Xero match? Stock goes back to what it was before." : "Undo this clear-out? That stock will show as on hand again.")) onUndoClear(h.id);
+                    if (window.confirm(h.kind === "xero-match" ? "Undo this Xero match? Stock goes back to what it was before." : h.kind === "repack" ? "Undo this repack? The kegs go back on hand and the new containers come off." : "Undo this clear-out? That stock will show as on hand again.")) onUndoClear(h.id);
                   }}
                   style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "6px 10px", color: "#5C6B54", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
                 >

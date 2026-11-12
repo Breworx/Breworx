@@ -3,7 +3,7 @@ import { ChevronLeft, CheckCircle2, Users } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { rowToBatch, rowToCustomerPrice, rowToSalesOrder } from "../lib/mappers";
 import { BrewpointLoadingMark, EmptyState, Modal, SelectField, TextField } from "./ui";
-import { availableStockList } from "../lib/production";
+import { CONTAINERS, availableStockList } from "../lib/production";
 
 export const CUSTOMER_TYPES = ["Wholesale", "Taproom", "Direct-to-consumer"];
 
@@ -240,7 +240,7 @@ export function CustomerPriceList({ customer, availableStock, customerPrices, on
   );
 }
 
-export function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero, availableStock, customerPrices, onSavePrice, onGeneratePortalLink, onInviteToOrderOnline }) {
+export function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnected, onLinkXero, onUnlinkXero, availableStock, customerPrices, onSavePrice, onGeneratePortalLink, onInviteToOrderOnline, batches, salesOrders, onOpenBatch }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [inviteEmail, setInviteEmail] = useState(customer.email || "");
   const [inviteLink, setInviteLink] = useState(null);
@@ -473,9 +473,7 @@ export function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnect
         <CustomerPriceList customer={customer} availableStock={availableStock} customerPrices={customerPrices} onSavePrice={onSavePrice} />
       )}
 
-      <div style={{ color: "#9BA88A", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px", marginBottom: 20 }}>
-        Order history will show up here once Sales Orders are set up.
-      </div>
+      <CustomerPurchases customer={customer} batches={batches || []} salesOrders={salesOrders || []} onOpenBatch={onOpenBatch} />
 
       <div style={{ display: "flex", gap: 10 }}>
         <button
@@ -853,6 +851,86 @@ export function CustomerAccountFlow() {
           Forgot password?
         </button>
       </div>
+    </div>
+  );
+}
+
+// Everything this customer has bought, one row per invoice or order, with
+// the batch each line came from — built from the Xero sales traced to
+// batches plus Brewpoint's own orders.
+const qtyText = (key, n) => {
+  const c = CONTAINERS.find((x) => x.key === key);
+  if (key === "cans330") return n % 24 === 0 ? `${n / 24} case${n / 24 === 1 ? "" : "s"}` : `${n} cans`;
+  return `${n} × ${c?.shortLabel || key}`;
+};
+
+export function CustomerPurchases({ customer, batches, salesOrders, onOpenBatch }) {
+  const [showAll, setShowAll] = useState(false);
+  const norm = (n) => String(n || "").trim().toLowerCase();
+  const names = new Set([norm(customer.name), norm(customer.xeroContactName)].filter(Boolean));
+  const docs = {};
+  batches.forEach((b) =>
+    [...(b.xeroSold || []), ...(b.salesHistory || [])].forEach((e) => {
+      if (!names.has(norm(e.customer)) || !Number(e.qty)) return;
+      const key = `x:${e.docNumber || e.date}`;
+      if (!docs[key]) docs[key] = { key, date: e.date, ref: e.docNumber ? `Xero ${e.docNumber}` : "Xero", lines: [] };
+      docs[key].lines.push({ batch: b, containerKey: e.containerKey, qty: Number(e.qty) });
+    })
+  );
+  salesOrders
+    .filter((o) => o.customerId === customer.id && o.status !== "Draft" && o.status !== "Cancelled")
+    .forEach((o) => {
+      const key = `o:${o.id}`;
+      docs[key] = {
+        key,
+        date: o.orderDate || o.createdAt || "",
+        ref: o.orderNumber ? `Order ${o.orderNumber}` : "Order",
+        lines: (o.lines || []).map((l) => ({ batch: batches.find((b) => b.id === l.batchId), containerKey: l.containerKey, qty: Number(l.qty) || 0 })),
+      };
+    });
+  const list = Object.values(docs).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const shown = showAll ? list : list.slice(0, 12);
+  const litres = list.reduce((t, d) => t + d.lines.reduce((s2, l) => s2 + l.qty * (CONTAINERS.find((c) => c.key === l.containerKey)?.volumeL || 0), 0), 0);
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginBottom: 8 }}>
+        What they've bought{list.length ? ` · ${list.length} invoice${list.length === 1 ? "" : "s"} · about ${Math.round(litres).toLocaleString("en-NZ")} L` : ""}
+      </div>
+      {list.length === 0 ? (
+        <div style={{ color: "#9BA88A", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "12px 14px" }}>
+          Nothing yet. Sales from Xero and Brewpoint orders show up here with the batch they came from.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {shown.map((d) => (
+            <div key={d.key} style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "9px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#9BA88A", marginBottom: 4 }}>
+                <span>{String(d.date).slice(0, 10)}</span>
+                <span>{d.ref}</span>
+              </div>
+              {d.lines.map((l, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, color: "#2A3324", padding: "2px 0" }}>
+                  <button
+                    onClick={() => l.batch && onOpenBatch && onOpenBatch(l.batch.id)}
+                    style={{ background: "none", border: "none", padding: 0, textAlign: "left", color: "#2A3324", fontSize: 13, cursor: l.batch && onOpenBatch ? "pointer" : "default", textDecoration: l.batch && onOpenBatch ? "underline dotted" : "none" }}
+                  >
+                    {l.batch ? `${l.batch.name}${l.batch.number ? ` #${l.batch.number}` : ""}` : "Batch not recorded"}
+                  </button>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, whiteSpace: "nowrap", color: l.qty < 0 ? "#B5502F" : "#2A3324" }}>
+                    {l.qty < 0 ? `${qtyText(l.containerKey, -l.qty)} credited` : qtyText(l.containerKey, l.qty)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {list.length > 12 && (
+            <button onClick={() => setShowAll((v) => !v)} style={{ background: "none", border: "1px dashed #C9D1AC", borderRadius: 5, padding: "8px", color: "#5C6B54", fontSize: 12.5, cursor: "pointer" }}>
+              {showAll ? "Show fewer" : `Show all ${list.length}`}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
