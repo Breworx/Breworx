@@ -305,7 +305,7 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
     const planned = [];
     const target = pr.ratePerDay * pr.coverWeeks * 7;
     const base = pr.stockL + pr.incoming.reduce((t, i) => t + i.litres, 0);
-    for (let d = 0, guard = 0; d <= s.horizonWeeks * 7 && guard < 40; guard++) {
+    for (let d = 0, guard = 0; d <= s.horizonWeeks * 7 && guard < 150; guard++) {
       const position = base + planned.reduce((t, x) => t + x.litres, 0) - pr.ratePerDay * d;
       if (position >= target) {
         // Jump ahead to the day the position drops below target.

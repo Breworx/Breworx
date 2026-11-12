@@ -221,7 +221,7 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Plan ahead</span>
             <select value={s.horizonWeeks} onChange={(e) => save({ horizonWeeks: Number(e.target.value) })} style={sel}>
-              {[4, 8, 12, 16, 26].map((w) => <option key={w} value={w}>{w} weeks</option>)}
+              {[4, 8, 12, 16, 26, 39, 52].map((w) => <option key={w} value={w}>{w === 52 ? "A year (52 weeks)" : `${w} weeks`}</option>)}
             </select>
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
