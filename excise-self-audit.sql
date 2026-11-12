@@ -302,3 +302,16 @@ end $$;
 drop trigger if exists profiles_protect_role on public.profiles;
 create trigger profiles_protect_role before update on public.profiles for each row execute function public.profiles_protect_role();
 -- update_teammate_role now also accepts 'sales'.
+
+-- Xero tokens owner-only; others read safe details via xero_connection_status().
+create policy "xero tokens owner only (read)" on public.xero_connections as restrictive for select to authenticated using (is_company_owner());
+create policy "xero tokens owner only (delete)" on public.xero_connections as restrictive for delete to authenticated using (is_company_owner());
+create or replace function public.xero_connection_status()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select case when is_sales_user() then null else (
+    select jsonb_build_object('company_id', company_id, 'tenant_name', tenant_name, 'connected_by', connected_by,
+      'connected_at', connected_at, 'last_keepalive_at', last_keepalive_at, 'keepalive_failed_at', keepalive_failed_at)
+    from xero_connections where company_id = get_my_company_id()) end;
+$$;
+revoke all on function public.xero_connection_status() from public, anon;
+grant execute on function public.xero_connection_status() to authenticated;
