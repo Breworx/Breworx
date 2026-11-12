@@ -6001,14 +6001,32 @@ function TankLogApp() {
                       </div>
                     ) : xeroConnection ? (
                       <>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <CheckCircle2 size={15} color="#D9A441" />
-                          <span style={{ color: "#2A3324", fontSize: 15, fontFamily: "'Oswald', sans-serif" }}>Connected</span>
-                        </div>
-                        <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 12 }}>
-                          {xeroConnection.tenant_name}
-                          {xeroConnection.connected_by ? ` · connected by ${xeroConnection.connected_by}` : ""}
-                        </div>
+                        {xeroNeedsReconnect ? (
+                          <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "10px 12px", marginBottom: 12 }}>
+                            <div style={{ color: "#7A3E1D", fontSize: 15, fontFamily: "'Oswald', sans-serif", marginBottom: 4 }}>Disconnected — Xero needs you to sign in again</div>
+                            <div style={{ color: "#7A3E1D", fontSize: 12.5, lineHeight: 1.5, marginBottom: 10 }}>
+                              Your matches and settings are kept. Sign in to Xero and allow access to {xeroConnection.tenant_name}.
+                            </div>
+                            <button
+                              onClick={() => { setXeroConnecting(true); window.location.href = buildXeroAuthUrl(profile.companyId); }}
+                              disabled={xeroConnecting}
+                              style={{ background: "#13B5EA", border: "none", borderRadius: 5, padding: "10px", color: "#0B2E3A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer", width: "100%" }}
+                            >
+                              {xeroConnecting ? "Redirecting to Xero…" : "Reconnect to Xero"}
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <CheckCircle2 size={15} color="#D9A441" />
+                              <span style={{ color: "#2A3324", fontSize: 15, fontFamily: "'Oswald', sans-serif" }}>Connected</span>
+                            </div>
+                            <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 12 }}>
+                              {xeroConnection.tenant_name}
+                              {xeroConnection.connected_by ? ` · connected by ${xeroConnection.connected_by}` : ""}
+                            </div>
+                          </>
+                        )}
 
                         <div style={{ borderTop: "1px solid #DDE0C8", paddingTop: 12, marginBottom: 12 }}>
                           <div style={{ fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 8 }}>
@@ -6070,7 +6088,7 @@ function TankLogApp() {
                           </div>
                           {xeroNeedsReconnect && (
                             <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 5, padding: "8px 10px", color: "#7A3E1D", fontSize: 12.5, marginBottom: 10, lineHeight: 1.5 }}>
-                              Xero has disconnected (it does this if the link isn't used for 60 days), so sales aren't coming through. Disconnect and connect Xero again above.
+                              Xero has disconnected, so sales aren't coming through. Tap Reconnect to Xero above.
                             </div>
                           )}
                           {xeroSettings?.sales_sync_enabled ? (
