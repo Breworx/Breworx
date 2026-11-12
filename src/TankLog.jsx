@@ -189,10 +189,13 @@ function TankLogApp() {
   // Matches the existing role check already used for inviting/removing
   // teammates and deleting the company — anyone who isn't specifically
   // the owner is treated as staff for financial and destructive actions.
-  const isOwner = profile?.role === "owner";
+  // Owners can switch on "View as Sales" to see exactly what a Sales login
+  // sees (their own access in the database is unchanged).
+  const [viewAsSales, setViewAsSales] = useState(false);
+  const isOwner = profile?.role === "owner" && !viewAsSales;
   // Sales logins are read-only (enforced in the database too): finished
   // stock, tanks and the calendar, plus whatever the owner turns on.
-  const isSales = profile?.role === "sales";
+  const isSales = profile?.role === "sales" || (profile?.role === "owner" && viewAsSales);
   const [salesAccess, setSalesAccess] = useState({});
   useEffect(() => {
     if (!isSales) return;
@@ -4634,6 +4637,12 @@ function TankLogApp() {
             zoom: textScale,
           }}
         >
+        {viewAsSales && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: "#2A3324", color: "#F5F1E4", borderRadius: 6, padding: "9px 12px", marginBottom: 14, fontSize: 13 }}>
+            <span>Viewing as Sales — this is what your sales login sees.</span>
+            <button type="button" onClick={() => { setViewAsSales(false); setView("settings"); }} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "6px 10px", color: "#16191A", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" }}>Exit</button>
+          </div>
+        )}
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && !selectedCustomerId && !selectedSalesOrderId && (
           <div key={view} className="bp-view-fade">
             <style>{`
@@ -6305,6 +6314,9 @@ function TankLogApp() {
                       <div style={{ fontSize: 13, color: "#5C6B54", lineHeight: 1.5, marginBottom: 10 }}>
                         Sales logins always see finished stock, what's in the tanks and the calendar, and can't change anything. Turn on more here.
                       </div>
+                      <button type="button" onClick={() => { setViewAsSales(true); setView("finishedGoodsStock"); }} style={{ background: "#EBE8D6", border: "1px solid #C9D1AC", borderRadius: 5, padding: "8px 12px", color: "#2A3324", fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
+                        View as Sales
+                      </button>
                       {[
                         ["batches", "Batch pages", "Open a batch to see its details and where it went"],
                         ["customersOrders", "Customers & orders", "Brewpoint's customer list and orders"],
