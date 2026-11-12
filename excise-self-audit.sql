@@ -318,3 +318,6 @@ grant execute on function public.xero_connection_status() to authenticated;
 
 -- Package types can be set per pack (e.g. 24 cans in a case).
 alter table public.package_types add column if not exists units_per_pack integer not null default 1;
+
+-- One-off Xero catch-up the app runs by itself when set.
+alter table public.xero_settings add column if not exists catch_up_requested boolean not null default false;
