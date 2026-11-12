@@ -19,6 +19,7 @@ import { BrewPlannerView } from "./components/planner";
 import { AddPOModal, POCard, PODetail } from "./components/purchasing";
 import { QcApprovalModal, QualityControlView, TriangleTestModal } from "./components/quality";
 import { CostingView } from "./components/costing";
+import { SalesTanksView } from "./components/salesViews";
 import { AddRecipeModal, MissingIngredientsModal, RecipeAnalyticsView, RecipeCard, RecipeDetail, ScaleRecipeModal } from "./components/recipes";
 import { AddKegsModal, AddSalesOrderModal, KegDetail, KegsView, PrintableOrderModal, RecordFulfillmentModal, SalesAnalyticsView, SalesOrderDetail, SalesOrdersView } from "./components/sales";
 import { AddTankModal, AssignTankModal, ConfirmDeleteBatchModal, ConfirmDeleteRecipeModal, ConfirmDeleteSupplierModal, ConfirmDeleteTankModal, EditSplitTanksModal, EditTankModal, TankHistoryModal, TransferToFermenterModal, VesselTransferModal } from "./components/tanks";
@@ -189,6 +190,17 @@ function TankLogApp() {
   // teammates and deleting the company — anyone who isn't specifically
   // the owner is treated as staff for financial and destructive actions.
   const isOwner = profile?.role === "owner";
+  // Sales logins are read-only (enforced in the database too): finished
+  // stock, tanks and the calendar, plus whatever the owner turns on.
+  const isSales = profile?.role === "sales";
+  const [salesAccess, setSalesAccess] = useState({});
+  useEffect(() => {
+    if (!isSales) return;
+    const allowed = ["finishedGoodsStock", "salesTanks", "production",
+      salesAccess.batches && "batches", salesAccess.customersOrders && "customers", salesAccess.customersOrders && "salesOrders",
+      salesAccess.ingredientStock && "inventory", salesAccess.recipes && "recipes"].filter(Boolean);
+    if (!allowed.includes(view)) setView("finishedGoodsStock");
+  }, [isSales, view, salesAccess]);
   const [auditShareScope, setAuditShareScope] = useState(null);
 
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
@@ -417,7 +429,7 @@ function TankLogApp() {
       setProfile(myProfile);
 
       const [companyRes, teammatesRes, batchesRes, inventoryRes, consumablesRes, packageTypesRes, poRes, recipesRes, tanksRes, stockTakesRes, foodSafetyRes, xeroRes, xeroSettingsRes, xeroMappingsRes, suppliersRes, supplierDocsRes, activityRes, customersRes, salesOrdersRes, remindersRes, customerPricesRes, yeastHarvestsRes, mixedPackTypesRes, mixedPackAssembliesRes, pestStationsRes, exciseItemCodesRes, aiFeedbackRes, kegsRes, triangleTestsRes, exciseReturnsRes] = await Promise.all([
-        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled, excise_abv_method").eq("id", myProfile.companyId).single(),
+        supabase.from("companies").select("name, logo_url, food_safety_disclaimer_accepted_at, food_safety_disclaimer_accepted_by, sales_module_enabled, barrel_aging_module_enabled, excise_abv_method, sales_access").eq("id", myProfile.companyId).single(),
         supabase.from("profiles").select("*").eq("company_id", myProfile.companyId),
         supabase.from("batches").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_items").select("*").order("created_at", { ascending: false }),
@@ -460,6 +472,7 @@ function TankLogApp() {
         setSalesModuleEnabled(companyRes.data.sales_module_enabled !== false);
         setBarrelAgingModuleEnabled(companyRes.data.barrel_aging_module_enabled !== false);
         setExciseAbvMethod(companyRes.data.excise_abv_method || "measured");
+        setSalesAccess(companyRes.data.sales_access || {});
       }
       if (teammatesRes.error) console.error(teammatesRes.error);
       else setTeammates(teammatesRes.data.map(rowToProfile));
@@ -693,7 +706,7 @@ function TankLogApp() {
     if (error) { showToast("error", `Couldn't update ${teammate.name}'s role: ${error.message || "unknown error"}`); return; }
     setTeammates((prev) => prev.map((t) => (t.id === teammate.id ? { ...t, role: newRole } : t)));
     if (teammate.id === user.id) setProfile((prev) => (prev ? { ...prev, role: newRole } : prev));
-    showToast("success", `${teammate.name} is now ${newRole === "owner" ? "an owner" : "a member"}.`);
+    showToast("success", `${teammate.name} is now ${newRole === "owner" ? "an owner" : newRole === "sales" ? "Sales (view only)" : "a member"}.`);
   };
 
   const removeTeammate = (teammate) => {
@@ -4447,7 +4460,21 @@ function TankLogApp() {
           </button>
 
           <div data-tour="nav-groups" style={{ display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
-            {[
+            {(isSales ? [
+              {
+                label: "Sales",
+                items: [
+                  ["finishedGoodsStock", "Stock", Package],
+                  ["salesTanks", "Tanks", Warehouse],
+                  ["production", "Calendar", Calendar],
+                  salesAccess.batches && ["batches", "Batches", Droplet],
+                  salesAccess.customersOrders && ["customers", "Customers", Users],
+                  salesAccess.customersOrders && ["salesOrders", "Orders", Truck],
+                  salesAccess.ingredientStock && ["inventory", "Ingredient stock", LayoutGrid],
+                  salesAccess.recipes && ["recipes", "Recipes", Beaker],
+                ].filter(Boolean),
+              },
+            ] : [
               { items: [["home", "Home", Home]] },
               {
                 label: "Production",
@@ -4508,7 +4535,7 @@ function TankLogApp() {
                 ].filter(Boolean),
               },
               { items: [["settings", "Settings", Settings]] },
-            ].filter(Boolean).map((group, gi) => (
+            ]).filter(Boolean).map((group, gi) => (
               <div key={gi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {group.label && (
                   <div
@@ -4617,7 +4644,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "brewPlanner" && view !== "costing" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
+              {!isSales && view !== "salesTanks" && view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "brewPlanner" && view !== "costing" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -5402,7 +5429,8 @@ function TankLogApp() {
                 onClearStock={() => setShowClearStock(true)}
                 onUndoClear={undoStockClear}
                 onCompareXero={xeroConnection ? openXeroStockCompare : undefined}
-                xeroNeedsReconnect={xeroNeedsReconnect}
+                xeroNeedsReconnect={!isSales && xeroNeedsReconnect}
+                readOnly={isSales}
               />
             )}
             {showClearStock && (
@@ -5707,26 +5735,30 @@ function TankLogApp() {
               </div>
             )}
 
+            {!loadingData && view === "salesTanks" && (
+              <SalesTanksView tanks={tanks} batches={batches} onOpenBatch={isSales && !salesAccess.batches ? null : (id) => { setSelectedId(id); setView("batches"); }} />
+            )}
+
             {!loadingData && view === "production" && (
               <>
                 <ProductionManagerView
                   tanks={tanks}
                   batches={batches}
-                  onOpenBatch={(id) => {
+                  onOpenBatch={isSales && !salesAccess.batches ? null : (id) => {
                     setSelectedId(id);
                     setView("batches");
                   }}
-                  onScheduleTank={(tankId, startDate) => {
+                  onScheduleTank={isSales ? null : (tankId, startDate) => {
                     setBatchPreset({ tankId, startDate });
                     setShowScheduleModal(true);
                   }}
-                  onEditScheduled={setEditScheduledBatchId}
+                  onEditScheduled={isSales ? null : setEditScheduledBatchId}
                   reminders={reminders}
-                  onOpenDay={setActiveReminderDay}
+                  onOpenDay={isSales ? null : setActiveReminderDay}
                   recipes={recipes}
                   inventory={inventory}
-                  onCheckIngredients={() => setShowIngredientsNeeded(true)}
-                  onReschedule={(batch, patch) => updateScheduledBatch(batch.id, { ...batch, ...patch })}
+                  onCheckIngredients={isSales ? null : () => setShowIngredientsNeeded(true)}
+                  onReschedule={isSales ? null : (batch, patch) => updateScheduledBatch(batch.id, { ...batch, ...patch })}
                 />
               </>
             )}
@@ -6231,22 +6263,16 @@ function TankLogApp() {
                             <span style={{ color: "#9BA88A", fontSize: 11 }}>Joined {t.createdAt.slice(0, 10)}</span>
                           )}
                           {profile?.role === "owner" && t.id !== user.id ? (
-                            <button
-                              onClick={() => updateTeammateRole(t, t.role === "owner" ? "member" : "owner")}
-                              style={{
-                                fontFamily: "'JetBrains Mono', monospace",
-                                color: "#5C9A3C",
-                                fontSize: 11,
-                                textTransform: "uppercase",
-                                background: "none",
-                                border: "1px solid #C9D1AC",
-                                borderRadius: 10,
-                                padding: "2px 8px",
-                                cursor: "pointer",
-                              }}
+                            <select
+                              value={t.role}
+                              onChange={(e) => updateTeammateRole(t, e.target.value)}
+                              aria-label={`Role for ${t.name}`}
+                              style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C9A3C", fontSize: 11, textTransform: "uppercase", background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 10, padding: "2px 6px", cursor: "pointer" }}
                             >
-                              {t.role} — tap to {t.role === "owner" ? "make member" : "make owner"}
-                            </button>
+                              <option value="owner">Owner</option>
+                              <option value="member">Member</option>
+                              <option value="sales">Sales (view only)</option>
+                            </select>
                           ) : (
                             <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9BA88A", fontSize: 11, textTransform: "uppercase" }}>
                               {t.role}
@@ -6271,6 +6297,41 @@ function TankLogApp() {
                       : "Only the account owner can invite new teammates."}
                   </div>
                 </div>
+
+                {isOwner && (
+                  <div>
+                    <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>What Sales can see</div>
+                    <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "14px 16px" }}>
+                      <div style={{ fontSize: 13, color: "#5C6B54", lineHeight: 1.5, marginBottom: 10 }}>
+                        Sales logins always see finished stock, what's in the tanks and the calendar, and can't change anything. Turn on more here.
+                      </div>
+                      {[
+                        ["batches", "Batch pages", "Open a batch to see its details and where it went"],
+                        ["customersOrders", "Customers & orders", "Brewpoint's customer list and orders"],
+                        ["ingredientStock", "Ingredient stock", "Malt, hops, yeast and other ingredients"],
+                        ["recipes", "Recipes", "Recipes and ingredients"],
+                      ].map(([key, label, hint]) => (
+                        <label key={key} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!salesAccess[key]}
+                            onChange={async (e) => {
+                              const next = { ...salesAccess, [key]: e.target.checked };
+                              setSalesAccess(next);
+                              const { data, error } = await supabase.from("companies").update({ sales_access: next }).eq("id", profile.companyId).select("id");
+                              if (error || !data || !data.length) { setSalesAccess(salesAccess); showToast("error", "Something didn't save — check your connection and try again."); }
+                            }}
+                            style={{ marginTop: 3, accentColor: "#5C9A3C" }}
+                          />
+                          <span>
+                            <span style={{ fontSize: 13.5, color: "#2A3324" }}>{label}</span>
+                            <span style={{ display: "block", fontSize: 11.5, color: "#9BA88A" }}>{hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {isOwner && (
                   <button

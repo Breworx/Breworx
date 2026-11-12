@@ -675,7 +675,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                   return (
                     <div
                       key={d}
-                      onClick={() => onOpenDay(d)}
+                      onClick={() => onOpenDay && onOpenDay(d)}
                       style={{
                         width: dayWidth,
                         minHeight: 40,
@@ -746,7 +746,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                         key={d}
                         onClick={() => {
                           const covered = occ.some((o) => d >= o.start && d <= o.end);
-                          if (!covered) onScheduleTank(tank.id, d);
+                          if (!covered && onScheduleTank) onScheduleTank(tank.id, d);
                         }}
                         style={{
                           width: dayWidth,
@@ -768,7 +768,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                       const dragOffsetPx = snappedDeltaDays * dayWidth;
 
                       const handlePointerDown = (e) => {
-                        if (!isScheduled) return;
+                        if (!isScheduled || !onReschedule) return;
                         e.currentTarget.setPointerCapture(e.pointerId);
                         dragRowRectsRef.current = calendarTanks.map((t) => {
                           const el = rowRefs.current[t.id];
@@ -826,7 +826,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                           key={batch.id}
                           onClick={() => {
                             if (justDraggedRef.current) { justDraggedRef.current = false; return; }
-                            isScheduled ? onEditScheduled(batch.id) : onOpenBatch(batch.id);
+                            if (isScheduled) { if (onEditScheduled) onEditScheduled(batch.id); } else if (onOpenBatch) onOpenBatch(batch.id);
                           }}
                           onPointerDown={handlePointerDown}
                           onPointerMove={handlePointerMove}
@@ -844,12 +844,12 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                             opacity: isEstimate ? 0.6 : 1,
                             border: blocker ? "1px solid #B5502F" : isScheduled ? "1px dashed #9B8F6F" : isEstimate ? `1px dashed ${STAGE_COLOR[batch.stage] || "#5C9A3C"}` : "none",
                             borderRadius: 5,
-                            cursor: isScheduled ? "grab" : "pointer",
+                            cursor: isScheduled && onReschedule ? "grab" : onOpenBatch ? "pointer" : "default",
                             display: "flex",
                             alignItems: "center",
                             padding: "0 8px",
                             overflow: "hidden",
-                            touchAction: isScheduled ? "none" : "auto",
+                            touchAction: isScheduled && onReschedule ? "none" : "auto",
                             zIndex: isDragging ? 5 : 1,
                             boxShadow: isDragging ? "0 4px 10px rgba(0,0,0,0.25)" : "none",
                           }}
