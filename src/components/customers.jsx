@@ -878,7 +878,7 @@ export function CustomerPurchases({ customer, batches, salesOrders, onOpenBatch 
     })
   );
   salesOrders
-    .filter((o) => o.customerId === customer.id && o.status !== "Draft" && o.status !== "Cancelled")
+    .filter((o) => o.customerId === customer.id && o.status !== "Draft" && o.status !== "Cancelled" && o.source !== "xero")
     .forEach((o) => {
       const key = `o:${o.id}`;
       docs[key] = {

@@ -31,6 +31,7 @@ import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, fi
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
 import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, planXeroSales, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
 import { downloadCSV, downloadJSON, insertByDate, today, withStageDate } from "./lib/utils";
+import { planXeroOrders } from "./lib/xeroOrders";
 
 
 function TankLogApp() {
@@ -618,7 +619,7 @@ function TankLogApp() {
     return `PO-${Math.max(100, ...nums) + 1}`;
   }, [purchaseOrders]);
   const nextSalesOrderNumber = useMemo(() => {
-    const nums = salesOrders.map((o) => parseInt(((o.orderNumber || "").match(/\d+/) || [0])[0], 10) || 0);
+    const nums = salesOrders.filter((o) => o.source !== "xero").map((o) => parseInt(((o.orderNumber || "").match(/\d+/) || [0])[0], 10) || 0);
     return `SO-${Math.max(100, ...nums) + 1}`;
   }, [salesOrders]);
   const [selectedSalesOrderId, setSelectedSalesOrderId] = useState(null);
@@ -1848,6 +1849,51 @@ function TankLogApp() {
 
   // Read older Xero invoices (before the sales check's start date) and
   // record who got which batch — for tracing only, stock isn't touched.
+  // Every invoice raised in Xero becomes a read-only Fulfilled order with
+  // the batch on each line, so customers, analytics and recalls all match.
+  // Re-running just updates them (keyed by the Xero invoice id).
+  const syncXeroOrders = async (docs, batchesNow) => {
+    let customersNow = customers;
+    const plan0 = planXeroOrders({ docs, batches: batchesNow, salesMap: xeroSalesMap, itemMappings: xeroItemMappings, customers: customersNow, brewpointOrderNumbers: salesOrders.filter((o) => o.source !== "xero").map((o) => o.orderNumber) });
+    if (plan0.newContacts.length) {
+      const rows = plan0.newContacts.map((c) => {
+        const row = customerToRow({ name: c.name, xeroContactId: c.contactId, xeroContactName: c.name, notes: "Imported from Xero" }, profile.companyId);
+        delete row.id;
+        return row;
+      });
+      const { data, error } = await supabase.from("customers").insert(rows).select();
+      if (error) console.error(error);
+      else {
+        const added = data.map(rowToCustomer);
+        customersNow = [...customers, ...added];
+        setCustomers((prev) => [...prev, ...added].sort((a, b) => a.name.localeCompare(b.name)));
+      }
+    }
+    const plan = plan0.newContacts.length
+      ? planXeroOrders({ docs, batches: batchesNow, salesMap: xeroSalesMap, itemMappings: xeroItemMappings, customers: customersNow, brewpointOrderNumbers: salesOrders.filter((o) => o.source !== "xero").map((o) => o.orderNumber) })
+      : plan0;
+    const rows = plan.orders.map(({ contactId: _c, contactName: _n, ...o }) => {
+      const row = salesOrderToRow(o, profile.companyId);
+      delete row.id;
+      delete row.proofs_of_delivery;
+      return { ...row, user_id: user?.id || null };
+    });
+    const saved = [];
+    for (let i = 0; i < rows.length; i += 100) {
+      const { data, error } = await supabase.from("sales_orders").upsert(rows.slice(i, i + 100), { onConflict: "company_id,xero_doc_id" }).select();
+      if (error) { console.error(error); return { orders: saved.length, failed: true }; }
+      saved.push(...data.map(rowToSalesOrder));
+    }
+    if (plan.removeDocIds.length) {
+      const gone = salesOrders.filter((o) => o.source === "xero" && plan.removeDocIds.includes(o.xeroDocId)).map((o) => o.id);
+      if (gone.length) await supabase.from("sales_orders").delete().in("id", gone);
+    }
+    const removed = new Set(plan.removeDocIds);
+    const savedIds = new Set(saved.map((o) => o.xeroDocId));
+    setSalesOrders((prev) => [...prev.filter((o) => !(o.source === "xero" && (removed.has(o.xeroDocId) || savedIds.has(o.xeroDocId)))), ...saved]);
+    return { orders: saved.length, failed: false };
+  };
+
   const importXeroSalesHistory = async (fromDate) => {
     const beforeDate = xeroSettings?.sales_sync_from || today();
     if (!fromDate || fromDate >= beforeDate) { showToast("error", `Pick a date before ${beforeDate}.`); return false; }
@@ -1871,7 +1917,9 @@ function TankLogApp() {
     }
     const byId = Object.fromEntries(changes.map((c) => [c.id, c.salesHistory]));
     setBatches((prev) => prev.map((b) => (byId[b.id] ? { ...b, salesHistory: byId[b.id] } : b)));
+    const orderResult = await syncXeroOrders(data.docs || [], batches.map((b) => (byId[b.id] ? { ...b, salesHistory: byId[b.id] } : b)));
     const parts = [`${summary.lines} invoice line${summary.lines === 1 ? "" : "s"} traced to batches`];
+    parts.push(orderResult.failed ? "orders didn't all save" : `${orderResult.orders} Xero invoice${orderResult.orders === 1 ? "" : "s"} added as orders`);
     if (summary.unmapped.length) parts.push(`${summary.unmapped.length} item code${summary.unmapped.length === 1 ? "" : "s"} not matched (${summary.unmapped.slice(0, 5).join(", ")}${summary.unmapped.length > 5 ? "…" : ""})`);
     if (summary.unplaced > 0) parts.push(`${summary.unplaced} unit${summary.unplaced === 1 ? "" : "s"} couldn't be placed on a batch`);
     showToast("success", parts.join(" · ") + ". Stock levels weren't changed.");
@@ -1925,6 +1973,14 @@ function TankLogApp() {
         if (!ok && !quiet) showToast("error", "Some stock didn't update — check your connection and try again.");
         const byId = Object.fromEntries(plan.batchChanges.map((c) => [c.id, c.xeroSold]));
         setBatches((prev) => prev.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)));
+      }
+      {
+        const byId = Object.fromEntries(plan.batchChanges.map((c) => [c.id, c.xeroSold]));
+        const known = new Set(salesOrders.filter((o) => o.source === "xero").map((o) => o.xeroDocId));
+        // Only invoices that are new, changed stock, or were voided.
+        const touched = new Set(plan.rows.map((r) => r.xero_doc_id));
+        const docs = (data.docs || []).filter((d) => touched.has(d.docId) || !known.has(d.docId) || (d.status !== "AUTHORISED" && d.status !== "PAID" && known.has(d.docId)));
+        if (docs.length) await syncXeroOrders(docs, batches.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)));
       }
       const unmatchedLedger = (ledgerRes.data || []).filter((r) => r.status === "unmapped" && !plan.rows.some((x) => x.xero_line_id === r.xero_line_id)).map((r) => r.item_code);
       setXeroUnmatched([...new Set([...Object.keys(plan.unmatched), ...unmatchedLedger])].filter(Boolean));

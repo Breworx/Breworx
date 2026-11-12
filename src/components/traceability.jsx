@@ -99,8 +99,9 @@ export function traceLot(item, lotNumber, batches, salesOrders, mixedPackAssembl
       // left the building — same definition of "sold" used everywhere
       // else in the app. Matters a lot here specifically, since this
       // feeds both the Traceability report and Mock Recall.
+      // Xero invoices show through xeroSales below, so they're left out here.
       const directOrders = salesOrders
-        .filter((o) => o.status !== "Draft" && o.status !== "Cancelled")
+        .filter((o) => o.status !== "Draft" && o.status !== "Cancelled" && o.source !== "xero")
         .flatMap((o) =>
           (o.lines || [])
             .filter((l) => l.batchId === batch.id)
@@ -156,7 +157,7 @@ export function CustomerTrace({ inventory, batches, salesOrders, customers }) {
       })
     );
     salesOrders
-      .filter((o) => o.status !== "Draft" && o.status !== "Cancelled" && norm(customers.find((c) => c.id === o.customerId)?.name) === norm(picked))
+      .filter((o) => o.status !== "Draft" && o.status !== "Cancelled" && o.source !== "xero" && norm(customers.find((c) => c.id === o.customerId)?.name) === norm(picked))
       .forEach((o) =>
         (o.lines || []).forEach((l) => {
           const b = batches.find((x) => x.id === l.batchId);

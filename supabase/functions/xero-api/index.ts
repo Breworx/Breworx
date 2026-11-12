@@ -210,7 +210,16 @@ Deno.serve(async (req) => {
             if (!["AUTHORISED", "PAID", "VOIDED", "DELETED"].includes(status)) return;
             const lines = (doc.LineItems || [])
               .filter((l) => l.ItemCode && Number(l.Quantity))
-              .map((l) => ({ lineId: l.LineItemID, itemCode: l.ItemCode, description: l.Description || "", qty: Number(l.Quantity) }));
+              .map((l) => ({
+                lineId: l.LineItemID,
+                itemCode: l.ItemCode,
+                description: l.Description || "",
+                qty: Number(l.Quantity),
+                unitAmount: Number(l.UnitAmount) || 0,
+                lineAmount: Number(l.LineAmount) || 0,
+                taxAmount: Number(l.TaxAmount) || 0,
+                discountRate: Number(l.DiscountRate) || 0,
+              }));
             if (lines.length === 0) return;
             docs.push({
               docId: doc.InvoiceID || doc.CreditNoteID,
@@ -220,6 +229,8 @@ Deno.serve(async (req) => {
               date: doc.DateString ? String(doc.DateString).slice(0, 10) : null,
               status,
               contactName: doc.Contact ? doc.Contact.Name : "",
+              contactId: doc.Contact ? doc.Contact.ContactID : "",
+              lineAmountTypes: doc.LineAmountTypes || "Exclusive",
               lines,
             });
           });
