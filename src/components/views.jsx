@@ -15,7 +15,7 @@ import { ingredientsNeededForScheduled } from "./traceability";
 import { ConfirmDialogModal, EmptyState, FirstVisitTip, Modal, NumberField, TextField } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
 import { monthKeyFromDate, monthLabelFromKey } from "../lib/excise";
-import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
+import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, isScheduledBatch, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
 import { addDays, daysBetween, today } from "../lib/utils";
 
 export function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inventory, consumables, suppliers, foodSafetyRecords, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank, onOpenInventory, onOpenConsumable, onOpenSupplier, onOpenFoodSafety }) {
@@ -583,7 +583,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
   // covers the day it's meant to start — the actual thing worth warning
   // about, versus mere lane-packing which just handles the display.
   const conflictFor = (occ, entry) => {
-    if (entry.batch.startDate <= today()) return null;
+    if (!isScheduledBatch(entry.batch)) return null;
     const blocker = occ.find((o) => o.batch.id !== entry.batch.id && o.start <= entry.start && o.end >= entry.start);
     return blocker ? blocker.batch : null;
   };
@@ -729,7 +729,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                     {occ.map(({ batch, start, end, isEstimate, lane }) => {
                       const startIdx = Math.max(0, dayIndex(start));
                       const endIdx = Math.min(totalDays - 1, dayIndex(end));
-                      const isScheduled = batch.startDate > today();
+                      const isScheduled = isScheduledBatch(batch);
                       const blocker = isScheduled ? conflictFor(occ, { batch, start, end }) : null;
                       const isDragging = dragState && dragState.batchId === batch.id && dragState.sourceTankId === tank.id;
                       const snappedDeltaDays = isDragging ? Math.round(dragState.deltaX / dayWidth) : 0;
@@ -1262,14 +1262,14 @@ export function HomeView({
   const lowStock = inventory.filter((it) => it.qty <= it.threshold);
   const openOrders = purchaseOrders.filter((po) => po.status === "Sent");
   const upcomingScheduled = batches
-    .filter((b) => b.startDate > today() && b.stage === "Brewing")
+    .filter((b) => isScheduledBatch(b))
     .sort((a, b) => (a.startDate < b.startDate ? -1 : 1))
     .slice(0, 4);
 
   const daysSince = (dateStr) => Math.floor((new Date(today()) - new Date(dateStr)) / 86400000);
 
   const brewTasks = [...fermentingBatches, ...conditioningBatches]
-    .filter((b) => b.startDate <= today())
+    .filter((b) => !isScheduledBatch(b))
     .map((b) => ({ batch: b, next: (b.schedule || []).find((s) => !s.done) }))
     .filter((x) => x.next);
 

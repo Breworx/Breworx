@@ -652,3 +652,18 @@ export function unitFactor(from, to) {
   if (!a || !b || a[0] !== b[0]) return null;
   return a[1] / b[1];
 }
+
+// A planned brew stays "scheduled" (movable on the calendar) on its own day
+// until something is actually done to it: ingredients taken, a reading, a
+// brew day logged, an OG or packaging. Before, it counted as started the
+// moment its date arrived, so it couldn't be dragged on the day.
+export function isScheduledBatch(b) {
+  if (!b || b.stage !== "Brewing") return false;
+  const t = today();
+  if (b.startDate > t) return true;
+  if (b.startDate !== t) return false;
+  const touched =
+    (b.ingredients || []).length > 0 || Number(b.ingredientCost) > 0 || (b.readings || []).length > 0 ||
+    (b.brewDays || []).length > 0 || !!b.og || packagingEvents(b).length > 0;
+  return !touched;
+}
