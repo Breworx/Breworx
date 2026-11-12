@@ -26,7 +26,7 @@ import { AddTankModal, AssignTankModal, ConfirmDeleteBatchModal, ConfirmDeleteRe
 import { TraceabilityView, deductFromLotsFIFO, planXeroSalesHistory } from "./components/traceability";
 import { APP_VERSION, BreworxMark, BrewpointErrorBoundary, BrewpointLoadingMark, ConfirmDialogModal, EmptyState, OfflineBanner, SkeletonList, ToastStack, UpdateBanner, stampForDate } from "./components/ui";
 import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeededModal, ProductionManagerView, QuickJumpModal, ReminderDayModal, YeastView } from "./components/views";
-import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, planXeroStockMatch } from "./components/xero";
+import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, compareXeroStock, planXeroStockMatch } from "./components/xero";
 import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, findMissingIngredients, latestReading } from "./lib/config";
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
 import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, planXeroSales, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
@@ -2002,6 +2002,51 @@ function TankLogApp() {
     showToast("success", `Brewpoint now matches Xero for ${rows.length} product${rows.length === 1 ? "" : "s"}.`);
     return true;
   };
+
+  // ── Bring Xero up to date in one go ─────────────────────────────────────
+  // 1) take off sales since the sync start, 2) set Brewpoint's finished
+  // stock to Xero's stock on hand (the chiller count), 3) add the last
+  // year's sales for tracing. Steps run one render apart so each sees the
+  // stock the previous one left. Runs by itself once when requested
+  // (xero_settings.catch_up_requested), or from the button in Settings.
+  const [xeroCatchUp, setXeroCatchUp] = useState(null);
+  const xeroCatchUpStarted = useRef(false);
+  const xeroCatchUpReport = useRef([]);
+  useEffect(() => {
+    if (xeroCatchUpStarted.current || loadingData || !isOwner || !xeroConnection || xeroNeedsReconnect) return;
+    if (!xeroSettings?.catch_up_requested) return;
+    xeroCatchUpStarted.current = true;
+    xeroCatchUpReport.current = [];
+    setXeroCatchUp("sync");
+  }, [loadingData, isOwner, xeroConnection, xeroNeedsReconnect, xeroSettings?.catch_up_requested]);
+  useEffect(() => {
+    if (!xeroCatchUp) return;
+    let stop = false;
+    (async () => {
+      if (xeroCatchUp === "sync") {
+        await syncSalesFromXero(true);
+        if (!stop) setXeroCatchUp("match");
+      } else if (xeroCatchUp === "match") {
+        const data = await callXeroApi("listAllItems");
+        if (data.error) { showToast("error", "Couldn't read stock from Xero — try Bring Xero up to date again in Settings."); setXeroCatchUp(null); return; }
+        const { rows } = compareXeroStock({ xeroItems: data.items || [], salesMap: xeroSalesMap, itemMappings: xeroItemMappings, availableStock });
+        const toFix = rows.filter((r) => r.diff !== 0 && r.inXero && r.inBrewpoint);
+        if (toFix.length) await matchStockToXero(toFix);
+        xeroCatchUpReport.current.push(toFix.length ? `stock matched to Xero for ${toFix.length} product${toFix.length === 1 ? "" : "s"}` : "stock already matched Xero");
+        if (!stop) setXeroCatchUp("history");
+      } else if (xeroCatchUp === "history") {
+        const before = xeroSettings?.sales_sync_from || today();
+        const d = new Date(`${before}T00:00:00`);
+        d.setFullYear(d.getFullYear() - 1);
+        await importXeroSalesHistory(d.toISOString().slice(0, 10));
+        await supabase.from("xero_settings").update({ catch_up_requested: false }).eq("company_id", profile.companyId);
+        setXeroSettings((prev) => ({ ...(prev || {}), catch_up_requested: false }));
+        setXeroCatchUp(null);
+        showToast("success", `Xero is up to date: sales taken off, ${xeroCatchUpReport.current.join(", ")}, last year's sales added for tracing.`);
+      }
+    })();
+    return () => { stop = true; };
+  }, [xeroCatchUp]);
 
   // Finished stock isn't a single stored number the way ingredients or
   // consumables are — it's worked out from packaging events minus sales
@@ -4638,6 +4683,11 @@ function TankLogApp() {
             zoom: textScale,
           }}
         >
+        {xeroCatchUp && (
+          <div style={{ background: "#EAF3FA", border: "1px solid #9CCBE6", color: "#0B2E3A", borderRadius: 6, padding: "9px 12px", marginBottom: 14, fontSize: 13 }}>
+            Bringing Xero up to date — {xeroCatchUp === "sync" ? "taking off recent sales…" : xeroCatchUp === "match" ? "matching stock to Xero…" : "adding past sales for tracing…"} Leave the app open for a minute.
+          </div>
+        )}
         {viewAsSales && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: "#2A3324", color: "#F5F1E4", borderRadius: 6, padding: "9px 12px", marginBottom: 14, fontSize: 13 }}>
             <span>Viewing as Sales — this is what your sales login sees.</span>
@@ -6105,6 +6155,13 @@ function TankLogApp() {
                                   Sold in Xero but not matched to a beer yet: {xeroUnmatched.join(", ")}. Match them and they'll come off stock on the next check.
                                 </div>
                               )}
+                              <button
+                                onClick={() => { if (!xeroCatchUp) { xeroCatchUpReport.current = []; setXeroCatchUp("sync"); } }}
+                                disabled={!!xeroCatchUp}
+                                style={{ width: "100%", background: "#13B5EA", border: "none", borderRadius: 5, padding: "9px", color: "#0B2E3A", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", marginBottom: 10 }}
+                              >
+                                {xeroCatchUp ? "Bringing Xero up to date…" : "Bring everything up to date with Xero"}
+                              </button>
                               <XeroHistoryImport before={xeroSettings.sales_sync_from || today()} onImport={importXeroSalesHistory} />
                               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                 <button
