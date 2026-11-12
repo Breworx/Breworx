@@ -443,7 +443,7 @@ function TankLogApp() {
         supabase.from("tanks").select("*").order("created_at", { ascending: false }),
         supabase.from("stock_takes").select("*").order("created_at", { ascending: false }),
         supabase.from("food_safety_records").select("*").order("created_at", { ascending: false }),
-        supabase.from("xero_connections").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
+        supabase.rpc("xero_connection_status"),
         supabase.from("xero_settings").select("*").eq("company_id", myProfile.companyId).maybeSingle(),
         supabase.from("xero_item_mappings").select("*").eq("company_id", myProfile.companyId),
         supabase.from("suppliers").select("*").order("name", { ascending: true }),
@@ -1307,8 +1307,9 @@ function TankLogApp() {
   };
 
   const disconnectXero = async () => {
-    const { error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId);
+    const { data, error } = await supabase.from("xero_connections").delete().eq("company_id", profile.companyId).select("company_id");
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (!data || !data.length) { showToast("error", "Only the account owner can disconnect Xero."); return; }
     setXeroConnection(null);
   };
 
