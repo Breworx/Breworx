@@ -2,7 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { AgingTankVesselIcon, BarrelVesselIcon, BrewDayVesselIcon } from "./tanks";
 import { attenuation } from "../lib/brewing";
 import { CATEGORY_COLOR, STEP_FOR_UNIT, latestReading } from "../lib/config";
-import { BREW_STAGE_INFO, CONTAINERS, STAGE_COLOR, aggregatePackagingCounts, batchTankIds, batchTankSummary, formatQty, inventoryItemValue, remainingVolume, totalPackagedVolume } from "../lib/production";
+import { BREW_STAGE_INFO, CONTAINERS, STAGE_COLOR, aggregatePackagingCounts, batchTankIds, batchTankSummary, formatQty, inventoryItemValue, isScheduledBatch, remainingVolume, totalPackagedVolume } from "../lib/production";
 import { daysBetween, today } from "../lib/utils";
 
 export function Tank({ batch, vesselType, tankCapacity }) {
@@ -95,7 +95,7 @@ export function BatchCard({ batch, onOpen, tanks }) {
   const days = daysBetween(batch.startDate, today());
   const vesselType = tanks ? tanks.find((t) => t.id === batch.tankId)?.type : null;
   const tankCapacity = tanks ? batchTankIds(batch).reduce((sum, id) => sum + (tanks.find((t) => t.id === id)?.capacity || 0), 0) : 0;
-  const isScheduled = batch.startDate > today();
+  const isScheduled = isScheduledBatch(batch);
   const inMashTun = batch.stage === "Brewing" && vesselType === "Mash Tun";
   const inKettle = batch.stage === "Brewing" && vesselType === "Kettle";
   const brewStageInfo = (inMashTun || inKettle) && batch.brewStage && BREW_STAGE_INFO[batch.brewStage] ? BREW_STAGE_INFO[batch.brewStage] : null;
