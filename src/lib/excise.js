@@ -36,7 +36,12 @@ export function exciseRateOn(band, date) {
   return band.rate;
 }
 
-export function exciseBandForAbv(abv) {
+// Beer (99.10.50G) has one band above 2.5%: every litre of alcohol at the
+// beer rate, however strong. The 6–9% and 9–14% per-litre bands are for
+// other products (cider, RTDs and so on), not beer.
+export const BEER_STRONG_BAND = { min: 2.5, max: Infinity, rate: 38.999, basis: "alcohol", beer: true };
+export function exciseBandForAbv(abv, productType = "Beer") {
+  if ((productType || "Beer") === "Beer" && abv > 2.5) return BEER_STRONG_BAND;
   return NZ_EXCISE_BANDS.find((b) => abv > b.min && abv <= b.max) || NZ_EXCISE_BANDS[0];
 }
 
@@ -121,7 +126,7 @@ export function exciseRowsForBatches(batches, abvMethod) {
     // No label strength and no gravity to measure from — left out here and
     // flagged by the self-audit instead.
     if (abv == null || abv <= 0) return;
-    const band = exciseBandForAbv(abv);
+    const band = exciseBandForAbv(abv, b.productType || "Beer");
     packagingEvents(b).forEach((e) => {
       const volumeL = packagedVolume(e);
       if (volumeL <= 0) return;

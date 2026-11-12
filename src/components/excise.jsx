@@ -1421,7 +1421,7 @@ export function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, 
                   {Object.values(g.byBand).sort((a, b) => a.band.min - b.band.min).map((b) => (
                     <div key={`${b.band.min}-${b.band.max}`} style={{ display: "flex", justifyContent: "space-between", padding: "7px 10px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 4, fontSize: 12.5, color: "#2A3324" }}>
                       <span>
-                        {b.band.min}–{b.band.max === Infinity ? "23+" : b.band.max}% ABV
+                        {b.band.beer ? "Over 2.5" : `${b.band.min}–${b.band.max === Infinity ? "23+" : b.band.max}`}% ABV
                         <span style={{ color: "#9BA88A", fontSize: 11 }}> · {Math.round(b.volumeL * 100) / 100} L</span>
                       </span>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>${b.duty.toFixed(2)}</span>
