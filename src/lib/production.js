@@ -153,6 +153,8 @@ export function soldTotalsByContainer(batchId, salesOrders) {
   CONTAINERS.forEach((c) => (totals[c.key] = 0));
   (salesOrders || []).forEach((so) => {
     if (so.status === "Draft" || so.status === "Cancelled") return;
+    // Orders brought in from Xero invoices: the Xero sync already took that stock.
+    if (so.source === "xero") return;
     (so.lines || []).forEach((line) => {
       if (line.batchId === batchId && totals[line.containerKey] != null) {
         totals[line.containerKey] += Number(line.qty) || 0;

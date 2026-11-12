@@ -687,6 +687,8 @@ export function rowToSalesOrder(row) {
     paid: !!row.paid,
     createdAt: row.created_at || null,
     proofsOfDelivery: row.proofs_of_delivery || [],
+    source: row.source || null,
+    xeroDocId: row.xero_doc_id || null,
   };
 }
 export function salesOrderToRow(order, companyId) {
@@ -701,6 +703,8 @@ export function salesOrderToRow(order, companyId) {
     notes: order.notes || null,
     paid: !!order.paid,
     proofs_of_delivery: order.proofsOfDelivery || [],
+    source: order.source || null,
+    xero_doc_id: order.xeroDocId || null,
   };
 }
 

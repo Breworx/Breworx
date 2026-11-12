@@ -321,3 +321,8 @@ alter table public.package_types add column if not exists units_per_pack integer
 
 -- One-off Xero catch-up the app runs by itself when set.
 alter table public.xero_settings add column if not exists catch_up_requested boolean not null default false;
+
+-- Orders brought in from Xero invoices (history + ongoing). Never touch stock.
+alter table sales_orders add column if not exists source text, add column if not exists xero_doc_id text;
+create unique index if not exists sales_orders_company_xero_doc on sales_orders (company_id, xero_doc_id);
+alter table sales_orders add constraint sales_orders_company_xero_doc_key unique using index sales_orders_company_xero_doc;

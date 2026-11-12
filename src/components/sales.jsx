@@ -8,7 +8,7 @@ import { Plus, ChevronLeft, X, Truck, CheckCircle2, Trash2, FileText, Box } from
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { BackdateField, EmptyState, Modal, NumberField, StageDateModal, TextField } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
-import { batchCostPerContainer, uid } from "../lib/production";
+import { batchCostPerContainer, canonicalBeerName, uid } from "../lib/production";
 import { today } from "../lib/utils";
 
 export function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, mixedPackStock, nextOrderNumber }) {
@@ -304,13 +304,15 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner })
       const revenue = qty * (Number(l.unitPrice) || 0);
       orderRevenue += revenue;
 
-      const key = l.mixedPackTypeId ? `mp:${l.mixedPackTypeId}` : `${l.batchId}:${l.containerKey}`;
-      const label = l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`;
+      // One row per beer and container, however many batches it came from.
+      const beer = l.mixedPackTypeId ? "" : canonicalBeerName(l.batchName || "");
+      const key = l.mixedPackTypeId ? `mp:${l.mixedPackTypeId}` : `${beer.toLowerCase()}:${l.containerKey}`;
+      const label = l.mixedPackTypeId ? l.mixedPackTypeName : `${beer} — ${l.containerLabel}`;
       if (!productMap[key]) productMap[key] = { label, qty: 0, revenue: 0, cogs: 0, hasCost: true };
       productMap[key].qty += qty;
       productMap[key].revenue += revenue;
       if (!l.mixedPackTypeId) {
-        const batch = batches.find((b) => b.id === l.batchId);
+        const batch = l.batchId ? batches.find((b) => b.id === l.batchId) : null;
         const costEach = batch ? batchCostPerContainer(batch, l.containerKey) : null;
         if (costEach != null) productMap[key].cogs += costEach * qty;
         else productMap[key].hasCost = false;
@@ -1062,6 +1064,8 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
   const total = salesOrderTotal(order);
   const nextStatus = order.status === "Draft" ? "Confirmed" : null;
   const canFulfill = order.status === "Confirmed" || order.status === "Partially fulfilled";
+  // Invoices raised in Xero: Xero is in charge of them, so they're read-only here.
+  const fromXero = order.source === "xero";
 
   return (
     <div>
@@ -1086,7 +1090,11 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
         {(order.lines || []).map((l) => (
           <div key={l.id} style={{ padding: "10px 12px", background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, fontSize: 13.5, color: "#2A3324" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}</span>
+              <span>
+                {l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}
+                {l.batchNumber ? <span style={{ color: "#9BA88A" }}> · batch #{l.batchNumber}</span> : null}
+                {fromXero && l.noBatch ? <span style={{ color: "#B5502F" }}> · batch not recorded</span> : null}
+              </span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>
                 {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
               </span>
@@ -1110,7 +1118,13 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
         </div>
       )}
 
-      {order.status !== "Cancelled" && (
+      {fromXero && (
+        <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 16, background: "#EEF4F8", border: "1px solid #C9DCE6", borderRadius: 5, padding: "10px 12px", lineHeight: 1.5 }}>
+          This is a Xero invoice. Change or void it in Xero and Brewpoint follows. Stock for it was already taken off by the Xero sync.
+        </div>
+      )}
+
+      {order.status !== "Cancelled" && !fromXero && (
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
           {nextStatus && (
             <button
@@ -1167,7 +1181,7 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
         </button>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        {order.status !== "Cancelled" && order.status !== "Fulfilled" && (
+        {order.status !== "Cancelled" && order.status !== "Fulfilled" && !fromXero && (
           <button
             onClick={() => onCancel(order.id)}
             style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px", color: "#B5502F", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
@@ -1175,7 +1189,7 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
             Cancel order
           </button>
         )}
-        {onDelete && (
+        {onDelete && !fromXero && (
           <button
             onClick={() => onDelete(order)}
             style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "11px 16px", color: "#5C6B54", fontFamily: "'Inter', sans-serif", fontSize: 13.5, cursor: "pointer" }}
