@@ -254,9 +254,9 @@ function CostingDetail({ product, result, data, inventory, onBack, onChange, onS
                 <div><span style={label}>{f.packagingLabel}</span><Field value={fs.packaging} placeholder={f.defaults.packaging != null ? String(f.defaults.packaging) : ""} onCommit={(v) => setFormat(f.key, "packaging", v)} prefix="$" /></div>
                 <div><span style={label}>Delivery</span><Field value={fs.delivery} placeholder={f.defaults.delivery != null ? String(f.defaults.delivery) : ""} onCommit={(v) => setFormat(f.key, "delivery", v)} prefix="$" /></div>
                 <div>
-                  <span style={label}>Price for margin</span>
+                  <span style={label}>Target margin</span>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <Field value={targets[f.key] ?? ""} onCommit={(v) => setTargets((t) => ({ ...t, [f.key]: v }))} suffix="%" />
+                    <Field value={targets[f.key] ?? ""} placeholder="e.g. 35" onCommit={(v) => setTargets((t) => ({ ...t, [f.key]: v }))} suffix="%" />
                   </div>
                 </div>
               </div>
