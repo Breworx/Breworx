@@ -224,6 +224,12 @@ function CostingDetail({ product, result, data, inventory, onBack, onChange, onS
           <div>Per litre <span style={{ ...mono, color: "#2A3324" }}>{r.yieldL ? money(r.ingredientsPerL) : "set litres"}</span></div>
           <div>Excise + levy per litre <span style={{ ...mono, color: "#2A3324" }}>{product.abv ? money(dutyPerL) : "set ABV"}</span></div>
         </div>
+        {product.abv > 0 && r.duty.basis && r.duty.basis !== "exempt" && (
+          <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 6, lineHeight: 1.5 }}>
+            {product.abv}% {(product.productType || "Beer").toLowerCase()}: excise {r.duty.basis === "alcohol" ? `$${r.duty.rate} per litre of alcohol × ${product.abv}%` : `$${r.duty.rate} per litre`} = {money(r.duty.excise, 3)}/L, plus Pae Ora levy {money(r.duty.levy, 3)}/L. Today's rates.
+          </div>
+        )}
+        {product.abv > 0 && (!r.duty.basis || r.duty.basis === "exempt") && <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 6 }}>No excise at {product.abv}%.</div>}
         {product.sheetExcisePerL != null && (
           <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 6 }}>
             Your sheet used {money(product.sheetExcisePerL)}/L excise{product.abv ? "" : " — enter the ABV to work it out at today's rate"}.

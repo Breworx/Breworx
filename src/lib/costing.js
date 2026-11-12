@@ -107,12 +107,12 @@ export function priceIngredient(line, { inventory, sheetPrices, manualPrices }) 
 }
 
 // Excise + Pae Ora levy (ex GST) per litre of product at this strength, today.
-export function dutyPerLitre(abv, dateStr) {
-  if (!abv || abv <= 0) return { excise: 0, levy: 0 };
-  const band = exciseBandForAbv(abv);
+export function dutyPerLitre(abv, dateStr, productType = "Beer") {
+  if (!abv || abv <= 0) return { excise: 0, levy: 0, rate: 0, basis: null };
+  const band = exciseBandForAbv(abv, productType);
   const rate = exciseRateOn(band, dateStr);
   const excise = band.basis === "alcohol" ? rate * (abv / 100) : band.basis === "beverage" ? rate : 0;
-  return { excise, levy: levyRateOn(abv, dateStr) || 0 };
+  return { excise, levy: levyRateOn(abv, dateStr) || 0, rate, basis: band.basis };
 }
 
 // Strength used for duty: the label strength set for this beer, else the
@@ -137,7 +137,7 @@ export function costProduct(product, { inventory, costing, todayStr }) {
   const ingredients = lines.reduce((s, l) => s + l.cost, 0);
   const yieldL = num(product.yieldL) || 0;
   const abv = num(product.abv);
-  const duty = dutyPerLitre(abv, todayStr);
+  const duty = dutyPerLitre(abv, todayStr, product.productType || "Beer");
   const ingredientsPerL = yieldL > 0 ? ingredients / yieldL : 0;
   const markup = num(product.rrpMarkupPct) ?? num(defaults.rrpMarkupPct) ?? 35;
   const formats = COSTING_FORMATS.map((f) => {
