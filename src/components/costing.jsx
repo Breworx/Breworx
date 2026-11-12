@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChevronLeft, Plus, Trash2, Copy, AlertTriangle, Settings as SettingsIcon } from "lucide-react";
-import { COSTING_FORMATS, DEFAULT_COSTING, costProduct, costingFromRecipe, priceForMargin } from "../lib/costing";
+import { COSTING_FORMATS, DEFAULT_COSTING, costProduct, costingFromRecipe, priceForMargin, labelPriceEach } from "../lib/costing";
 import { normItemName, uid } from "../lib/production";
 import { PRODUCT_TYPES } from "../lib/excise";
 import { today } from "../lib/utils";
@@ -60,7 +60,7 @@ const flagText = (l) => {
 };
 const sourceText = (l) => (l.source === "stock" ? `stock${l.stockDate ? ` · ${String(l.stockDate).slice(0, 10)}` : ""}` : l.source === "sheet" ? "sheet" : l.source === "manual" ? "set by you" : "");
 
-export function CostingView({ costing, inventory, recipes, labelStrengths, onSave, onFixStockPrice }) {
+export function CostingView({ costing, inventory, consumables, recipes, labelStrengths, onSave, onFixStockPrice }) {
   const data = costing || {};
   const products = data.products || [];
   const [openId, setOpenId] = useState(null);
@@ -73,8 +73,8 @@ export function CostingView({ costing, inventory, recipes, labelStrengths, onSav
   const addProduct = (p) => { save({ products: [p, ...products] }); setOpenId(p.id); };
 
   const costed = useMemo(
-    () => products.map((p) => ({ p, c: costProduct(p, { inventory, costing: data, todayStr }) })),
-    [products, inventory, data, todayStr],
+    () => products.map((p) => ({ p, c: costProduct(p, { inventory, consumables, costing: data, todayStr }) })),
+    [products, inventory, consumables, data, todayStr],
   );
   const open = costed.find((x) => x.p.id === openId);
   const activeRecipes = recipes.filter((r) => r.isActive !== false).sort((a, b) => a.name.localeCompare(b.name));
@@ -110,13 +110,13 @@ export function CostingView({ costing, inventory, recipes, labelStrengths, onSav
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        <button type="button" style={btn} onClick={() => addProduct({ id: uid(), name: "New product", productType: "Beer", yieldL: null, abv: null, ingredients: [], formats: {}, source: "new", createdAt: todayStr })}>
+        <button type="button" style={btn} onClick={() => addProduct({ id: uid(), name: "New product", productType: "Beer", yieldL: null, abv: null, ingredients: [], formats: {}, casePack: {}, source: "new", createdAt: todayStr })}>
           <Plus size={15} /> New costing
         </button>
         <select value={fromRecipe} onChange={(e) => {
           const r = recipes.find((x) => x.id === e.target.value);
           setFromRecipe("");
-          if (r) addProduct({ ...costingFromRecipe(r, labelStrengths, uid), createdAt: todayStr });
+          if (r) addProduct({ ...costingFromRecipe(r, labelStrengths, uid), casePack: {}, createdAt: todayStr });
         }} style={{ ...input, width: "auto", flex: "1 1 180px", fontSize: 13 }}>
           <option value="">Start from a recipe…</option>
           {activeRecipes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -251,7 +251,7 @@ function CostingDetail({ product, result, data, inventory, onBack, onChange, onS
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginTop: 8 }}>
                 <div><span style={label}>Sale price</span><Field value={fs.price} onCommit={(v) => setFormat(f.key, "price", v)} prefix="$" /></div>
-                <div><span style={label}>{f.packagingLabel}</span><Field value={fs.packaging} placeholder={f.defaults.packaging != null ? String(f.defaults.packaging) : ""} onCommit={(v) => setFormat(f.key, "packaging", v)} prefix="$" /></div>
+                {!f.pack && <div><span style={label}>{f.packagingLabel}</span><Field value={fs.packaging} placeholder={f.defaults.packaging != null ? String(f.defaults.packaging) : ""} onCommit={(v) => setFormat(f.key, "packaging", v)} prefix="$" /></div>}
                 <div><span style={label}>Delivery</span><Field value={fs.delivery} placeholder={f.defaults.delivery != null ? String(f.defaults.delivery) : ""} onCommit={(v) => setFormat(f.key, "delivery", v)} prefix="$" /></div>
                 <div>
                   <span style={label}>Target margin</span>
@@ -266,8 +266,14 @@ function CostingDetail({ product, result, data, inventory, onBack, onChange, onS
                   <button type="button" style={{ ...btn2, padding: "4px 9px" }} onClick={() => setFormat(f.key, "price", Math.round(priceForMargin(f.cost, Number(targets[f.key])) * 100) / 100)}>Use this price</button>
                 </div>
               )}
+              {f.key === "case24" && f.pack && <CasePack pack={f.pack} casePack={product.casePack} onChange={(cp) => onChange({ casePack: cp })} />}
+              {f.key === "case24" && !f.pack && (
+                <button type="button" onClick={() => onChange({ casePack: {} })} style={{ background: "none", border: "none", color: "#5C9A3C", cursor: "pointer", fontSize: 12, padding: 0, marginTop: 6, textDecoration: "underline" }}>
+                  Break this into can, lid, carton and label
+                </button>
+              )}
               <div style={{ fontSize: 12, color: "#9BA88A", marginTop: 6, lineHeight: 1.5 }}>
-                Cost {money(f.cost)} = liquid {money(f.liquid)} + excise {money(f.excise)} + {f.packagingLabel.toLowerCase()} {money(f.packaging)} + delivery {money(f.delivery)} · {f.litres}L
+                Cost {money(f.cost)} = liquid {money(f.liquid)} + excise {money(f.excise)} + {f.pack ? "cans, lids, carton & labels" : f.packagingLabel.toLowerCase()} {money(f.packaging)} + delivery {money(f.delivery)} · {f.litres}L
                 {f.rrp != null && <> · RRP 6-pack {money(f.rrp)} (at {r.markup}% markup)</>}
               </div>
             </div>
@@ -375,5 +381,52 @@ function PriceSetter({ line, onSet }) {
       )}
       <button type="button" aria-label="Cancel" onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 14 }}>×</button>
     </span>
+  );
+}
+
+// Can, lid, carton and label for one 24-can case. Stock prices fill in
+// unless you type your own; the label is always this product's own, as
+// a price each or an order quantity and quote.
+function CasePack({ pack, casePack, onChange }) {
+  const cp = casePack || {};
+  const set = (key, patch) => onChange({ ...cp, [key]: { ...(cp[key] || {}), ...patch } });
+  const lab = cp.label || {};
+  const each = labelPriceEach(lab);
+  const cents = (n) => (n == null ? "—" : n < 1 ? `${(n * 100).toFixed(1)}c` : money(n));
+  return (
+    <div style={{ background: "#F8F7EE", border: "1px solid #EEF0E2", borderRadius: 5, padding: "10px 10px", marginTop: 8 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5C6B54", marginBottom: 6 }}>Per case</div>
+      {pack.parts.filter((p) => p.key !== "label").map((p) => (
+        <div key={p.key} style={{ display: "grid", gridTemplateColumns: "70px minmax(0,1fr) 110px", gap: 6, alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 13, color: "#2A3324" }}>{p.label}</div>
+          <div style={{ fontSize: 11.5, color: "#9BA88A" }}>
+            {p.source === "stock" ? `${cents(p.each)} each from stock (${p.from.name})` : p.source === "set" ? `${cents(p.each)} each, set by you` : "No stock price — type one"} × {p.perCase} = <span style={{ ...mono, color: "#2A3324" }}>{money(p.total)}</span>
+          </div>
+          <Field value={(cp[p.key] || {}).price} placeholder={p.source === "stock" ? p.each.toFixed(3) : "each"} onCommit={(v) => set(p.key, { price: v })} prefix="$" />
+        </div>
+      ))}
+      <div style={{ borderTop: "1px solid #EEF0E2", paddingTop: 8, marginTop: 4 }}>
+        <div style={{ fontSize: 13, color: "#2A3324", marginBottom: 4 }}>Labels</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 6 }}>
+          <div><span style={label}>Price each</span><Field value={lab.price} placeholder={each != null && lab.price == null ? each.toFixed(4) : ""} onCommit={(v) => set("label", { price: v })} prefix="$" /></div>
+          <div><span style={label}>or order qty</span><Field value={lab.orderQty} onCommit={(v) => set("label", { orderQty: v, price: null })} /></div>
+          <div><span style={label}>quote total</span><Field value={lab.orderTotal} onCommit={(v) => set("label", { orderTotal: v, price: null })} prefix="$" /></div>
+        </div>
+        <div style={{ fontSize: 11.5, color: each == null ? "#B5502F" : "#9BA88A", marginTop: 4 }}>
+          {each == null ? "No label price yet" : `${cents(each)} a label${lab.price == null && lab.orderQty ? ` (${money(Number(lab.orderTotal))} ÷ ${lab.orderQty})` : ""} × 24 = ${money(each * 24)}`}
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 110px", gap: 6, alignItems: "center", marginTop: 8 }}>
+        <div style={{ fontSize: 12.5, color: "#5C6B54" }}>Anything else per case (4-pack holders, shrink…)</div>
+        <Field value={cp.other} onCommit={(v) => onChange({ ...cp, other: v })} prefix="$" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 13 }}>
+        <span style={{ color: "#5C6B54" }}>Packaging per case{pack.missing.length ? ` (missing ${pack.missing.join(", ").toLowerCase()})` : ""}</span>
+        <span style={{ ...mono, color: "#2A3324" }}>{money(pack.total)}</span>
+      </div>
+      <button type="button" onClick={() => onChange(null)} style={{ background: "none", border: "none", color: "#9BA88A", cursor: "pointer", fontSize: 11.5, padding: 0, marginTop: 6, textDecoration: "underline" }}>
+        Use one figure instead
+      </button>
+    </div>
   );
 }

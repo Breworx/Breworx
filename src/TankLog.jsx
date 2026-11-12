@@ -4795,6 +4795,7 @@ function TankLogApp() {
               <CostingView
                 costing={costingData}
                 inventory={inventory}
+                consumables={consumables}
                 recipes={recipes}
                 labelStrengths={labelStrengths}
                 onSave={saveCosting}
