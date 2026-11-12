@@ -1,3 +1,4 @@
+import { batchFullCost } from "../lib/batchCost";
 import React, { useState } from "react";
 import { Plus, Droplet, ChevronLeft, X, TrendingDown, Package, CheckCircle2, Trash2, FileText, FlaskConical, RotateCcw, Thermometer, Gauge } from "lucide-react";
 import { BrewDayTimers, DumpLogCheckbox, SplitTankFaultsSection, SplitTankNotesSection, SplitTankReadingsSection, barToPsi, psiToBar } from "./batches";
@@ -12,7 +13,7 @@ import { CATEGORY_COLOR, latestReading } from "../lib/config";
 import { BREW_STAGE_INFO, COMMON_FAULTS, CONTAINERS, FAULT_SEVERITY_COLOR, STAGE_COLOR, aggregatePackagingCounts, batchTankIds, batchTankSummary, compareScheduleItems, currentFaults, formatQty, packagedVolume, packagingDiscarded, packagingEvents, remainingVolume, totalPackagedVolume } from "../lib/production";
 import { daysBetween, today } from "../lib/utils";
 
-export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner, onOpenCiderTools }) {
+export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner, onOpenCiderTools, consumables, costing, exciseAbvMethod }) {
   // Cider gets its own version of this page: no mash, boil, hop or
   // diacetyl sections; juice, additions, back-sweetening and blends instead.
   const isCider = batch.productType === "Cider/Perry";
@@ -488,22 +489,42 @@ export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading
               ))}
             </div>
 
-            {isOwner && batch.ingredientCost > 0 && (() => {
-              const totalVolumePackaged = CONTAINERS.reduce((sum, c) => sum + (totals[c.key] || 0) * c.volumeL, 0);
-              if (totalVolumePackaged <= 0) return null;
-              const costPerLitre = batch.ingredientCost / totalVolumePackaged;
+            {isOwner && (() => {
+              const fc = batchFullCost(batch, { consumables, costing, abvMethod: exciseAbvMethod, recipes });
+              if (!fc) return null;
+              const m = (n) => (n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`);
+              const col = (p) => (p == null ? "#9BA88A" : p < 15 ? "#B5502F" : p < 30 ? "#8A6D0B" : "#3F7A2A");
               return (
                 <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 6, padding: "10px 12px", marginBottom: 12 }}>
-                  <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 6 }}>
-                    Ingredient cost — ${batch.ingredientCost.toFixed(2)} total
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9BA88A" }}>What this batch cost</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, color: "#2A3324" }}>{m(fc.total)}</div>
                   </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                    {CONTAINERS.filter((c) => (totals[c.key] || 0) > 0).map((c) => (
-                      <div key={c.key} style={{ fontSize: 12.5, color: "#5C6B54" }}>
-                        {c.shortLabel}: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#2A3324" }}>${(costPerLitre * c.volumeL).toFixed(2)}</span>
+                  {fc.containers.map((c) => (
+                    <div key={c.key} style={{ borderTop: "1px solid #EBE8D6", padding: "7px 0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
+                        <span style={{ color: "#2A3324" }}>{c.key === "cans330" ? `24-can case (${c.count} cans)` : `${c.shortLabel} × ${c.count}`}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                          {m(c.each)} each
+                          {c.price != null && <span style={{ color: col(c.marginPct) }}> · {c.marginPct.toFixed(0)}%</span>}
+                        </span>
                       </div>
-                    ))}
+                      <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 2, lineHeight: 1.45 }}>
+                        Beer + excise {m(c.liquid)} + {c.key === "cans330" ? "cans, lids, labels & carton" : "keg hire"} {m(c.packaging)} + delivery {m(c.delivery)}
+                        {c.key === "cans330" && <> · {m(c.perCan)} a can</>}
+                        {c.price != null && <> · sells at {m(c.price)}, margin {m(c.margin)}</>}
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 4, lineHeight: 1.5 }}>
+                    {fc.totalL.toFixed(0)}L packaged · ingredients {m(fc.ingredients)} · excise {m(fc.excise)} · levy {m(fc.levy)}. Ex GST.
+                    {fc.product ? ` Prices and keg costs from the "${fc.product.name}" costing.` : " No matching costing, so no margins — keg hire and delivery from Costing defaults."}
                   </div>
+                  {(fc.noIngredients || fc.missing.length > 0) && (
+                    <div style={{ fontSize: 11.5, color: "#8A6D0B", marginTop: 4 }}>
+                      Not counted: {[fc.noIngredients && "ingredients (no cost recorded)", ...fc.missing].filter(Boolean).join(", ")}.
+                    </div>
+                  )}
                 </div>
               );
             })()}
