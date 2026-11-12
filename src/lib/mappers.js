@@ -783,6 +783,7 @@ export function rowToPackageType(row) {
     id: row.id,
     name: row.name,
     items: row.items || [],
+    unitsPerPack: Number(row.units_per_pack) || 1,
   };
 }
 
@@ -793,6 +794,7 @@ export function packageTypeToRow(packageType, userId, companyId) {
     company_id: companyId,
     name: packageType.name,
     items: packageType.items || [],
+    units_per_pack: Number(packageType.unitsPerPack) || 1,
   };
 }
 
