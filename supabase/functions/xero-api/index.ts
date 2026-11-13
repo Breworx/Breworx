@@ -169,6 +169,8 @@ Deno.serve(async (req) => {
         Type: direction === "increase" ? "ACCPAY" : "ACCPAYCREDIT",
         Contact: { ContactID: contactId },
         Date: new Date().toISOString().slice(0, 10),
+        // Xero refuses a bill without a due date when the contact has no default terms.
+        DueDate: new Date().toISOString().slice(0, 10),
         Status: "AUTHORISED",
         LineAmountTypes: "NoTax",
         Reference: reference || "Brewpoint packaging sync",
