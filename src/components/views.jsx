@@ -15,7 +15,7 @@ import { ingredientsNeededForScheduled } from "./traceability";
 import { ConfirmDialogModal, EmptyState, FirstVisitTip, Modal, NumberField, TextField } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
 import { monthKeyFromDate, monthLabelFromKey } from "../lib/excise";
-import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, isScheduledBatch, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
+import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, isScheduledBatch, learnedTankDays, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
 import { addDays, daysBetween, today } from "../lib/utils";
 
 export function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inventory, consumables, suppliers, foodSafetyRecords, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank, onOpenInventory, onOpenConsumable, onOpenSupplier, onOpenFoodSafety }) {
@@ -554,13 +554,15 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
     if (el) el.scrollTo({ left: Math.max(0, dayIndex(d) * dayWidth), behavior: "smooth" });
   };
 
+  const tankDays = useMemo(() => learnedTankDays(batches), [batches]);
   const occupancyForTank = (tankId) =>
     batches
       .filter((b) => batchTankIds(b).includes(tankId) && b.stage !== "Aging")
       .map((b) => {
         const events = packagingEvents(b);
         const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
-        const estimatedEnd = b.plannedDays ? addDays(b.startDate, b.plannedDays) : addDays(today(), 1);
+        const estDays = tankDays.daysFor(b);
+        const estimatedEnd = estDays ? addDays(b.startDate, estDays) : addDays(today(), 1);
         // Once the estimate has passed, keep the bar growing day by day
         // for as long as the batch is genuinely still here — batchTankIds
         // above already stops matching the moment it's actually moved to
@@ -569,7 +571,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
         const end = fullyDone
           ? (events.length > 0 ? events[events.length - 1].date : b.startDate)
           : (estimatedEnd > liveFloor ? estimatedEnd : liveFloor);
-        return { batch: b, start: b.startDate, end, isEstimate: !fullyDone && !!b.plannedDays };
+        return { batch: b, start: b.startDate, end, isEstimate: !fullyDone && !!estDays };
       })
       .filter((o) => o.end >= rangeStart && o.start <= dayList[dayList.length - 1]);
 
@@ -923,6 +925,8 @@ export function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave
   const [volume, setVolume] = useState(batch ? batch.volume : 20);
   const [startDate, setStartDate] = useState(batch ? batch.startDate : presetStartDate || today());
   const [plannedDays, setPlannedDays] = useState(batch ? batch.plannedDays ?? "" : "");
+  const tankDays = useMemo(() => learnedTankDays(batches || []), [batches]);
+  const learnedForName = tankDays.forName(name);
   const [brewDaysPlanned, setBrewDaysPlanned] = useState(batch ? batch.brewDaysPlanned || 1 : 1);
   const [tankId, setTankId] = useState(batch ? batch.tankId || "" : presetTankId || "");
   const [recipeId, setRecipeId] = useState(batch ? batch.recipeId || "" : "");
@@ -945,7 +949,8 @@ export function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave
       if (!batchTankIds(otherBatch).some((id) => checkTankIds.includes(id))) continue;
       const fullyDone = otherBatch.stage === "Packaged" && remainingVolume(otherBatch) === 0;
       if (fullyDone) continue;
-      const estimatedEnd = otherBatch.plannedDays ? addDays(otherBatch.startDate, otherBatch.plannedDays) : addDays(today(), 1);
+      const otherDays = tankDays.daysFor(otherBatch);
+      const estimatedEnd = otherDays ? addDays(otherBatch.startDate, otherDays) : addDays(today(), 1);
       const liveFloor = addDays(today(), 1);
       const end = estimatedEnd > liveFloor ? estimatedEnd : liveFloor;
       if (otherBatch.startDate <= startDate && end >= startDate) return otherBatch;
@@ -1067,7 +1072,13 @@ export function EditScheduledBatchModal({ batch, tanks, batches, recipes, onSave
           />
         </label>
 
-        <NumberField label="Estimated days in tank (optional)" value={plannedDays} onChange={setPlannedDays} step="1" suffix="days" />
+        {learnedForName ? (
+          <div style={{ fontSize: 12.5, color: "#5C6B54", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 11px", lineHeight: 1.45 }}>
+            Days in tank: <strong>{learnedForName.days} days</strong>, the average from the last {learnedForName.count} {name.trim() || "brew"}{learnedForName.count === 1 ? "" : "s"}. Updates by itself each time one is packaged.
+          </div>
+        ) : (
+          <NumberField label={`Estimated days in tank — a first guess${tankDays.overall ? ` (your usual is ${tankDays.overall})` : ""}`} value={plannedDays} onChange={setPlannedDays} step="1" suffix="days" />
+        )}
         <div>
           <NumberField label="Batches to fill tank" value={brewDaysPlanned} onChange={setBrewDaysPlanned} step="1" />
           <div style={{ color: "#9BA88A", fontSize: 11, marginTop: 4 }}>

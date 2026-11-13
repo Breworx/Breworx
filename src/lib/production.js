@@ -725,3 +725,44 @@ export function isScheduledBatch(b) {
     (b.brewDays || []).length > 0 || !!b.og || packagingEvents(b).length > 0;
   return !touched;
 }
+
+// ─── Days in tank, learned ───────────────────────────────────────────────────
+// How long a beer usually takes from brew day to packaging, from its own
+// past brews: the average of the last 6, leaving out any that are way off
+// the usual (a brew left sitting, say). It updates every time a batch is
+// packaged, so estimates follow what really happens instead of a typed guess.
+export function typicalDays(list) {
+  const xs = (list || []).filter((d) => d > 0 && d < 365);
+  if (!xs.length) return null;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = sorted[Math.floor(sorted.length / 2)];
+  const kept = xs.filter((d) => d >= mid * 0.5 && d <= mid * 1.75);
+  const use = kept.length ? kept : xs;
+  return Math.round(use.reduce((a, b) => a + b, 0) / use.length);
+}
+
+export function learnedTankDays(batches) {
+  const byBeer = {};
+  const all = [];
+  (batches || [])
+    .filter((b) => !b.mergedIntoBatchId && b.startDate)
+    .map((b) => {
+      const first = packagingEvents(b).map((e) => e.date).filter(Boolean).sort()[0];
+      return first ? { b, days: daysBetween(b.startDate, first) } : null;
+    })
+    .filter((x) => x && x.days > 0 && x.days < 365)
+    .sort((x, y) => String(y.b.startDate).localeCompare(String(x.b.startDate)))
+    .forEach(({ b, days }) => {
+      const k = canonicalBeerName(b.name).trim().toLowerCase();
+      (byBeer[k] = byBeer[k] || []).push(days);
+      all.push(days);
+    });
+  const learned = {};
+  Object.entries(byBeer).forEach(([k, list]) => (learned[k] = { days: typicalDays(list.slice(0, 6)), count: Math.min(6, list.length) }));
+  const overall = typicalDays(all.slice(0, 30));
+  const forName = (name) => learned[canonicalBeerName(name || "").trim().toLowerCase()] || null;
+  // Days to use for a batch: its beer's learned average; a typed guess only
+  // when the beer has never been packaged; else the brewery-wide average.
+  const daysFor = (b) => forName(b?.name)?.days || b?.plannedDays || overall || null;
+  return { forName, daysFor, overall };
+}

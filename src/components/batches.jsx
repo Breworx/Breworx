@@ -6,7 +6,7 @@ import { BackdateField, ConfirmDialogModal, Modal, NumberField, SelectField, Sta
 import { buildScheduleLabel, formatHistoryStamp } from "../lib/brewing";
 import { latestReading } from "../lib/config";
 import { PRODUCT_TYPES } from "../lib/excise";
-import { CANS_PER_CASE, COMMON_FAULTS, CONTAINERS, FAULT_SEVERITY_COLOR, activeRecipesByFamily, currentFaults, currentFaultsList, occupyingBatch, remainingVolume, sameItemName, sortedTanks, tankIsOccupied, uid } from "../lib/production";
+import { CANS_PER_CASE, COMMON_FAULTS, CONTAINERS, FAULT_SEVERITY_COLOR, activeRecipesByFamily, currentFaults, currentFaultsList, learnedTankDays, occupyingBatch, remainingVolume, sameItemName, sortedTanks, tankIsOccupied, uid } from "../lib/production";
 import { today } from "../lib/utils";
 
 // A single-field rename, reusable anywhere an item's name was locked in
@@ -564,13 +564,17 @@ export function AddBatchModal({ onClose, onAdd, nextNumber: beerNextNumber, next
             Defaults to the next number in sequence — change it to start counting from somewhere else.
           </span>
         </label>
-        <NumberField
-          label="Estimated days in tank (optional)"
-          value={plannedDays}
-          onChange={setPlannedDays}
-          step="1"
-          suffix="days"
-        />
+        {(() => {
+          const td = learnedTankDays(batches || []);
+          const l = td.forName(name);
+          return l ? (
+            <div style={{ fontSize: 12.5, color: "#5C6B54", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 5, padding: "9px 11px", lineHeight: 1.45 }}>
+              Days in tank: <strong>{l.days} days</strong>, the average from the last {l.count} brew{l.count === 1 ? "" : "s"} of this beer. Updates by itself each time one is packaged.
+            </div>
+          ) : (
+            <NumberField label={`Estimated days in tank — a first guess${td.overall ? ` (your usual is ${td.overall})` : ""}`} value={plannedDays} onChange={setPlannedDays} step="1" suffix="days" />
+          );
+        })()}
         {tanks.length > 0 && (
           <div>
             {!splitMode ? (

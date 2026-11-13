@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { addDaysISO, nzPublicHolidays, planBrews, productKeyForBatch } from "../lib/brewPlanner";
 import { monthLabelFromKey } from "../lib/excise";
-import { CONTAINERS, availableStockList, batchTankIds, draftOrderAllocations, packagedVolume, packagingEvents, productKeyFor, remainingVolume, uid } from "../lib/production";
+import { CONTAINERS, availableStockList, batchTankIds, draftOrderAllocations, learnedTankDays, packagedVolume, packagingEvents, productKeyFor, remainingVolume, uid } from "../lib/production";
 import { today } from "../lib/utils";
 
 // ─── Brew planner ───────────────────────────────────────────────────────────
@@ -9,6 +9,7 @@ import { today } from "../lib/utils";
 export function brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies) {
   const famById = Object.fromEntries(recipes.map((r) => [r.id, r.familyId || r.id]));
   const keyById = {};
+  const tankDays = learnedTankDays(batches);
   const litresOf = (containerKey, qty) => (CONTAINERS.find((c) => c.key === containerKey)?.volumeL || 0) * (Number(qty) || 0);
   const list = batches
     .filter((b) => !b.mergedIntoBatchId)
@@ -30,7 +31,8 @@ export function brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemb
           byContainer: Object.fromEntries(CONTAINERS.filter((c) => e[c.key] > 0).map((c) => [c.key, e[c.key] * c.volumeL])),
         })),
         xeroSold: (b.xeroSold || []).map((e) => ({ date: e.date, litres: litresOf(e.containerKey, e.qty), containerKey: e.containerKey })),
-        plannedDays: b.plannedDays || null,
+        // Learned from this beer's past brews; typed only for a beer never packaged.
+        plannedDays: tankDays.forName(b.name)?.days || b.plannedDays || null,
         tankIds: batchTankIds(b),
         recipeId: b.recipeId || null,
         brewDaysPlanned: b.brewDaysPlanned || 1,
@@ -386,11 +388,14 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
                     </label>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                       <PlannerNumber label="Cover wk" value={ps.coverWeeks ?? p.learnedCover} onCommit={(v) => (v == null ? clearProduct(p.key, "coverWeeks") : saveProduct(p.key, { coverWeeks: v }))} step="0.5" />
-                      <PlannerNumber label="Lead days" value={ps.leadDays ?? p.leadDays} onCommit={(v) => (v == null ? clearProduct(p.key, "leadDays") : saveProduct(p.key, { leadDays: v }))} step="1" />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span style={{ fontSize: 11, color: "#5C6B54" }}>Lead days</span>
+                        <span style={{ fontSize: 14, color: "#2A3324", padding: "7px 0" }}>{p.leadDays} <span style={{ fontSize: 11, color: "#9BA88A" }}>{p.learnedLead != null ? "learned" : "first guess"}</span></span>
+                      </div>
                       <PlannerNumber label="Brew L" value={ps.batchL ?? p.batchL} onCommit={(v) => (v == null ? clearProduct(p.key, "batchL") : saveProduct(p.key, { batchL: v }))} step="10" />
                     </div>
                     <div style={note}>
-                      {s.defaultBatchL ? `Brew size follows the ${s.defaultBatchL}L setting unless you change it here. ` : ""}From history: cover {p.learnedCover} wk{p.cv ? ` (sales vary ${Math.round(p.cv * 100)}% month to month)` : ""}, lead {p.learnedLead != null ? `${Math.round(p.learnedLead)} days brew to packaged` : "not enough history (using 14)"}, brew {p.learnedBatch != null ? `${p.learnedBatch}L` : "—"}, {Math.round(p.yieldF * 100)}% of tank volume ends up packaged.
+                      {s.defaultBatchL ? `Brew size follows the ${s.defaultBatchL}L setting unless you change it here. ` : ""}From history: cover {p.learnedCover} wk{p.cv ? ` (sales vary ${Math.round(p.cv * 100)}% month to month)` : ""}, lead {p.learnedLead != null ? `${Math.round(p.learnedLead)} days brew to packaged (average of recent brews, updates after each packaging)` : "no packaged brews yet (using 14)"}, brew {p.learnedBatch != null ? `${p.learnedBatch}L` : "—"}, {Math.round(p.yieldF * 100)}% of tank volume ends up packaged.
                       {(ps.coverWeeks != null || ps.leadDays != null || ps.batchL != null) && (
                         <button type="button" onClick={() => save({ products: { ...s.products, [p.key]: { include: ps.include, combineInto: ps.combineInto } } })} style={{ background: "none", border: "none", color: "#5C9A3C", textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 6 }}>
                           Use history again
