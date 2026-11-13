@@ -332,7 +332,7 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, backO
   // ── Fit each brew into a brew day and a free fermenter ────────────────
   const fermenters = tanks.filter((t) => t.type === "Fermenter" || t.type === "Brite Tank" || t.type === "Unitank").filter((t) => Number(t.capacity) > 0);
   const busy = {}; // tankId -> [[start, end]]
-  const occupy = (id, a, b) => (busy[id] || (busy[id] = [])).push([a, b]);
+  const occupy = (id, a, b, batchId = null) => (busy[id] || (busy[id] = [])).push([a, b, batchId]);
   batches.forEach((b) => {
     if (!b.tankIds || !b.tankIds.length) return;
     const done = b.stage === "Packaged" && !(b.remainingL > 0);
@@ -340,15 +340,63 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, backO
     const days = b.plannedDays || list.find((x) => x.key === finalKey(b.key))?.leadDays || 14;
     let end = addDaysISO(b.startDate, days);
     if (b.startDate <= todayStr && end <= todayStr) end = addDaysISO(todayStr, 2);
-    b.tankIds.forEach((id) => occupy(id, b.startDate, end));
+    b.tankIds.forEach((id) => occupy(id, b.startDate, end, b.id));
   });
-  const isFree = (id, a, b) => !(busy[id] || []).some(([x, y]) => a <= y && b >= x);
+  const isFree = (id, a, b, exceptBatchId = null) => !(busy[id] || []).some(([x, y, bid]) => a <= y && b >= x && (!exceptBatchId || bid !== exceptBatchId));
   const brewLoad = {};
   batches.forEach((b) => {
     if (b.startDate > todayStr) brewLoad[b.startDate] = (brewLoad[b.startDate] || 0) + (b.brewDaysPlanned || 1);
   });
   const weekday = (iso) => new Date(iso + "T00:00:00Z").getUTCDay();
   const firstDay = addDaysISO(todayStr, 1);
+
+  // ── Back orders first: are they covered, and can a scheduled brew come
+  // sooner? A back order is owed now, so a brew already on the calendar for
+  // that beer moves to the earliest brew day with a free tank.
+  const findSlot = (volume, leadDays, from, exceptBatchId, keepTankIds) => {
+    const brewDays = Math.max(1, Math.ceil(volume / (s.kitLitres || 240) - 0.05));
+    for (let i = 0; i < 60; i++) {
+      const day = addDaysISO(from, i);
+      if (!s.brewWeekdays.includes(weekday(day))) continue;
+      if (dayOffReason(day, s)) continue;
+      if ((brewLoad[day] || 0) + brewDays > s.brewsPerDay && brewDays <= s.brewsPerDay) continue;
+      const end = addDaysISO(day, leadDays);
+      // Same tanks if they're free that early; otherwise the smallest free one that fits.
+      if (keepTankIds && keepTankIds.length && keepTankIds.every((id) => isFree(id, day, end, exceptBatchId))) return { day, end, tankIds: keepTankIds, same: true };
+      const free = fermenters.filter((t) => isFree(t.id, day, end, exceptBatchId));
+      const single = free.filter((t) => Number(t.capacity) >= volume * 0.98).sort((a, b) => Number(a.capacity) - Number(b.capacity))[0];
+      if (single) return { day, end, tankIds: [single.id], tanks: [{ tankId: single.id, tankName: single.name, volume: Math.round(volume) }], same: false };
+    }
+    return null;
+  };
+  const backOrders = [];
+  list.filter((pr) => pr.backOrderL > 0).forEach((pr) => {
+    const inTank = pr.incoming.filter((i) => !i.scheduled).sort((a, b) => a.date.localeCompare(b.date));
+    const sched = pr.incoming.filter((i) => i.scheduled).sort((a, b) => a.date.localeCompare(b.date));
+    const owed = Math.max(0, pr.backOrderL - pr.stockL);
+    let got = 0;
+    let coveredBy = null;
+    for (const i of inTank) { got += i.litres; if (got >= owed) { coveredBy = { kind: "tank", date: i.date, batchId: i.batchId }; break; } }
+    const entry = { key: pr.key, name: pr.name, litres: Math.round(pr.backOrderL), coveredBy, move: null, needsBrew: false };
+    if (!coveredBy) {
+      for (const i of sched) {
+        got += i.litres;
+        const b = batches.find((x) => x.id === i.batchId);
+        const slot = b ? findSlot(b.volume || pr.batchL, b.plannedDays || pr.leadDays, firstDay, b.id, b.tankIds) : null;
+        if (b && slot && slot.day < b.startDate) {
+          entry.move = { batchId: b.id, from: b.startDate, to: slot.day, readyFrom: i.date, readyTo: addDaysISO(slot.day, b.plannedDays || pr.leadDays), tankIds: slot.tankIds, tanks: slot.tanks || null, sameTanks: slot.same };
+          // Free its old slot and hold the new one so suggestions work around it.
+          Object.keys(busy).forEach((id) => (busy[id] = busy[id].filter((e) => e[2] !== b.id)));
+          slot.tankIds.forEach((id) => occupy(id, slot.day, slot.end, b.id));
+          if (brewLoad[b.startDate]) brewLoad[b.startDate] = Math.max(0, brewLoad[b.startDate] - (b.brewDaysPlanned || 1));
+          brewLoad[slot.day] = (brewLoad[slot.day] || 0) + (b.brewDaysPlanned || 1);
+        }
+        if (got >= owed) { entry.coveredBy = { kind: "scheduled", date: entry.move ? entry.move.readyTo : i.date, batchId: i.batchId }; break; }
+      }
+      if (!entry.coveredBy) entry.needsBrew = true;
+    }
+    backOrders.push(entry);
+  });
 
   const suggestions = [];
   needs.sort((a, b) => a.needDate.localeCompare(b.needDate) || b.product.ratePerDay - a.product.ratePerDay);
@@ -450,5 +498,5 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, backO
       notNeeded.push({ batchId: last.batchId, key: pr.key, name: pr.name, startDate: b?.startDate || null, readyDate: last.date });
     }
   });
-  return { products: list.sort((a, b) => b.ratePerDay - a.ratePerDay), suggestions, notNeeded, periodStart, xeroMonths: [...xeroMonths].sort() };
+  return { products: list.sort((a, b) => b.ratePerDay - a.ratePerDay), suggestions, notNeeded, backOrders, periodStart, xeroMonths: [...xeroMonths].sort() };
 }

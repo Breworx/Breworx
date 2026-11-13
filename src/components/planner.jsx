@@ -138,7 +138,7 @@ function DaysOffEditor({ s, save, horizonWeeks, sel, btn2, note }) {
   );
 }
 
-export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, onRemoveScheduled, nextNumber, nextCiderNumber }) {
+export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, onRemoveScheduled, onMoveScheduled, nextNumber, nextCiderNumber }) {
   const s = { periodMonths: 3, horizonWeeks: 12, baseCoverWeeks: 4, brewWeekdays: [1, 2, 3, 4, 5], brewsPerDay: 2, kitLitres: 240, products: {}, ...(settings || {}) };
   const [editing, setEditing] = useState(null); // product key being edited
   const [added, setAdded] = useState({}); // suggestion id -> true
@@ -219,6 +219,10 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
       <div style={{ ...note, marginBottom: 16 }}>
         Suggests what to brew and when, from how fast each beer sells, what's packaged, what's in tank and what's already scheduled. Nothing goes in the calendar until you add it.
       </div>
+      {(plan.backOrders || []).length > 0 && (
+        <BackOrderCard plan={plan} batches={batches} tanks={tanks} card={card} head={head} note={note} btn2={btn2} added={added} busy={busy} setBusy={setBusy} onMove={onMoveScheduled} onAdd={(sug) => addOne(sug, numberFor(sug))} />
+      )}
+
 
       <div style={card}>
         <div style={head}>Settings</div>
@@ -400,6 +404,77 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Back orders from Xero drafts: what covers each one, and one tap to bring a
+// calendar brew forward or add the brew it needs.
+function BackOrderCard({ plan, batches, tanks, card, head, note, btn2, added, busy, setBusy, onMove, onAdd }) {
+  const [moved, setMoved] = useState({});
+  const moveOne = async (m) => {
+    const b = batches.find((x) => x.id === m.batchId);
+    if (!b || !onMove) return;
+    const patch = { startDate: m.to };
+    if (!m.sameTanks && m.tanks && m.tanks[0]) {
+      const t = tanks.find((x) => x.id === m.tanks[0].tankId);
+      Object.assign(patch, { tankId: m.tanks[0].tankId, tankName: t?.name || m.tanks[0].tankName, splitTanks: [] });
+    }
+    await onMove(b, patch);
+    setMoved((p) => ({ ...p, [m.batchId]: true }));
+  };
+  const sugFor = (key) => plan.suggestions.find((x) => x.key === key && x.startDate);
+  const todo = plan.backOrders.filter((e) => (e.move && !moved[e.move.batchId] && onMove) || (e.needsBrew && sugFor(e.key) && !added[sugFor(e.key).id]));
+  const doAll = async () => {
+    setBusy(true);
+    for (const e of todo) {
+      if (e.move && !moved[e.move.batchId]) await moveOne(e.move);
+      else if (e.needsBrew) await onAdd(sugFor(e.key));
+    }
+    setBusy(false);
+  };
+  return (
+    <div style={{ ...card, borderColor: "#E8C9A8", background: "#FFFBF5" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+        <div style={{ ...head, marginBottom: 0, color: "#9A5A2E" }}>Back orders ({plan.backOrders.length})</div>
+        {todo.length > 1 && (
+          <button type="button" disabled={busy} onClick={doAll} style={{ background: "#5C9A3C", border: "none", borderRadius: 5, padding: "8px 12px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 13, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "Working…" : `Sort all ${todo.length}`}
+          </button>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {plan.backOrders.map((e) => {
+          const sug = e.needsBrew ? sugFor(e.key) : null;
+          return (
+            <div key={e.key} style={{ border: "1px solid #EBE8D6", background: "#FFFFFF", borderRadius: 5, padding: "9px 11px" }}>
+              <div style={{ fontSize: 14, color: "#2A3324", fontWeight: 500 }}>{e.name} · {e.litres} L owed</div>
+              <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 3, lineHeight: 1.45 }}>
+                {e.move ? (
+                  moved[e.move.batchId] ? (
+                    <>Brew moved to {fmtDay(e.move.to)}, ready about {fmtDay(e.move.readyTo)}.</>
+                  ) : (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span>The brew on {fmtDay(e.move.from)} can come forward to {fmtDay(e.move.to)}{e.move.sameTanks ? "" : ` in ${e.move.tanks?.[0]?.tankName}`}: ready about {fmtDay(e.move.readyTo)} instead of {fmtDay(e.move.readyFrom)}.</span>
+                      {onMove && <button type="button" disabled={busy} onClick={() => moveOne(e.move)} style={{ ...btn2, whiteSpace: "nowrap" }}>Move</button>}
+                    </div>
+                  )
+                ) : e.coveredBy ? (
+                  <>Covered by {e.coveredBy.kind === "tank" ? "beer already in tank" : "a brew on the calendar"}, ready about {fmtDay(e.coveredBy.date)}.</>
+                ) : sug ? (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span>Nothing in tank or on the calendar covers it. First free slot: {fmtDay(sug.startDate)}, ready about {fmtDay(sug.readyDate)}.</span>
+                    <button type="button" disabled={added[sug.id] || busy} onClick={() => onAdd(sug)} style={{ ...btn2, whiteSpace: "nowrap", opacity: added[sug.id] ? 0.6 : 1 }}>{added[sug.id] ? "Added ✓" : "Add brew"}</button>
+                  </div>
+                ) : (
+                  <>Nothing covers it yet and there's no free tank in the next 2 months.</>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ ...note, marginTop: 8 }}>From draft invoices in Xero (Upstock). If a draft is deleted, it drops off here, and any brew it no longer needs shows under "not needed any more".</div>
     </div>
   );
 }
