@@ -561,11 +561,13 @@ export function FinishedGoodsStockView({
   onClearStock,
   onUndoClear,
   onRepack,
+  onAdjust,
   onCompareXero,
   readOnly,
   xeroNeedsReconnect,
 }) {
   const [showSoldOut, setShowSoldOut] = useState(false);
+  const [adjusting, setAdjusting] = useState(null);
   // On hand means available right now — sold-out and cleared lines stay
   // hidden unless asked for.
   const everPackaged = availableStock.filter((s) => s.packaged > 0);
@@ -579,8 +581,10 @@ export function FinishedGoodsStockView({
   });
   const beerNames = Object.keys(grouped).sort();
 
+  const adjustModal = adjusting && onAdjust ? <AdjustOneStockModal row={adjusting} onClose={() => setAdjusting(null)} onSave={onAdjust} /> : null;
   return (
     <div>
+      {adjustModal}
       {xeroNeedsReconnect && (
         <div style={{ background: "#FBE5D2", border: "1px solid #E3B37A", borderRadius: 6, padding: "10px 12px", color: "#7A3E1D", fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
           Xero has disconnected, so sales from Xero (and Upstock) aren't coming off stock. Go to Settings → Xero and connect it again.
@@ -631,7 +635,7 @@ export function FinishedGoodsStockView({
           {clearHistory.map((h) => (
             <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", background: "#FBF7EA", border: "1px solid #E8DFC0", borderRadius: 6 }}>
               <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
-                <strong style={{ color: "#2A3324" }}>{h.kind === "xero-match" ? "Matched to Xero" : h.kind === "repack" ? "Repacked" : "Cleared"} {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {h.kind === "repack" ? h.batchName || "" : containerCountsLabel(h.counts)}
+                <strong style={{ color: "#2A3324" }}>{h.kind === "xero-match" ? "Matched to Xero" : h.kind === "repack" ? "Repacked" : h.kind === "adjust" ? "Adjusted" : "Cleared"} {String(h.date).slice(0, 10)}</strong> by {h.user || "someone"} — {h.kind === "repack" ? h.batchName || "" : h.kind === "adjust" ? `${h.batchName}: ${containerCountsLabel(h.counts)}` : containerCountsLabel(h.counts)}
                 {h.reason ? <div style={{ color: "#9BA88A" }}>{h.reason}</div> : null}
               </div>
               {onUndoClear && (
@@ -714,8 +718,11 @@ export function FinishedGoodsStockView({
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {grouped[name].map((s) => (
                 <div
-                  key={s.containerKey}
+                  key={`${s.batchId}-${s.containerKey}`}
+                  role={!readOnly && onAdjust ? "button" : undefined}
+                  onClick={!readOnly && onAdjust ? () => setAdjusting(s) : undefined}
                   style={{
+                    cursor: !readOnly && onAdjust ? "pointer" : "default",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
@@ -725,7 +732,10 @@ export function FinishedGoodsStockView({
                     borderRadius: 6,
                   }}
                 >
-                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>{s.containerKey === "cans330" ? "330ml Cans (cases of 24)" : s.containerLabel}</span>
+                  <span style={{ color: "#2A3324", fontSize: 13.5 }}>
+                    {s.containerKey === "cans330" ? "330ml Cans (cases of 24)" : s.containerLabel}
+                    {s.batchNumber ? <span style={{ color: "#9BA88A", fontSize: 11.5 }}> · #{s.batchNumber}</span> : null}
+                  </span>
                   <span
                     style={{
                       fontFamily: "'JetBrains Mono', monospace",
@@ -748,5 +758,59 @@ export function FinishedGoodsStockView({
         ))
       )}
     </div>
+  );
+}
+
+// Tap a stock line to fix just that one: say what's really there (or how
+// many went), with a reason. Saved like a clear-out, so it can be undone and
+// never touches the batch's packaging or excise figures.
+export function AdjustOneStockModal({ row, onClose, onSave }) {
+  const isCans = row.containerKey === "cans330";
+  const [count, setCount] = useState(String(row.available));
+  const [reason, setReason] = useState("Sold — not recorded in Xero");
+  const [other, setOther] = useState("");
+  const [saving, setSaving] = useState(false);
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  const diff = row.available - n; // positive: comes off; negative: put back
+  const why = reason === "Other" ? other.trim() : reason;
+  const can = diff !== 0 && !!why && !saving;
+  const unit = (v) => (isCans ? `${canCasesText(v)} (${v} cans)` : `${v} × ${row.containerLabel}`);
+  const save = async () => {
+    setSaving(true);
+    const ok = await onSave({ batchId: row.batchId, batchName: row.batchName, containerKey: row.containerKey, diff, reason: why, label: unit(Math.abs(diff)) });
+    setSaving(false);
+    if (ok) onClose();
+  };
+  const inputStyle = { background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 15, color: "#2A3324", boxSizing: "border-box", width: "100%" };
+  return (
+    <Modal title="Adjust stock" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 14, color: "#2A3324" }}>
+          <strong>{row.batchName}</strong>{row.batchNumber ? ` #${row.batchNumber}` : ""} — {row.containerLabel}
+          <div style={{ fontSize: 12.5, color: "#5C6B54", marginTop: 2 }}>Brewpoint has {unit(row.available)} on hand{row.reserved > 0 ? `, plus ${row.reserved} held for Xero drafts` : ""}.</div>
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Actually on hand{isCans ? " (cans)" : ""}</span>
+          <input type="number" inputMode="numeric" min="0" value={count} onChange={(e) => setCount(e.target.value)} style={inputStyle} />
+          {isCans && <span style={{ fontSize: 11.5, color: "#9BA88A" }}>1 case = 24 cans</span>}
+        </label>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {row.available > 0 && <button type="button" onClick={() => setCount("0")} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>None left</button>}
+          {row.available > 0 && <button type="button" onClick={() => setCount(String(Math.max(0, row.available - (isCans ? 24 : 1))))} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>One {isCans ? "case" : "keg"} less</button>}
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Why</span>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle}>
+            {["Sold — not recorded in Xero", "Sold under a different Xero item", "Damaged or spilled", "Used in the taproom / samples", "Stock count", "Found more than recorded", "Other"].map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+          {reason === "Other" && <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="What happened?" style={inputStyle} />}
+        </label>
+        <div style={{ fontSize: 12.5, color: diff > 0 ? "#B5502F" : diff < 0 ? "#5C9A3C" : "#9BA88A" }}>
+          {diff > 0 ? `${unit(diff)} will come off stock.` : diff < 0 ? `${unit(-diff)} will go back on stock.` : "No change yet."}
+          {" "}This doesn't change your excise records, and Xero isn't touched.
+        </div>
+        <button type="button" onClick={save} disabled={!can} style={auditPrimaryBtn(can)}>{saving ? "Saving…" : "Save"}</button>
+      </div>
+    </Modal>
   );
 }
