@@ -11,16 +11,30 @@ const card = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius:
 const btn = { background: "#5C9A3C", border: "none", borderRadius: 5, padding: "7px 12px", color: "#16191A", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 const btn2 = { background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "7px 12px", color: "#2A3324", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 
-export function OrderListModal({ plan, onClose, onNewPO }) {
+export function OrderListModal({ plan, onClose, onNewPO, onSettings }) {
   const [showCovered, setShowCovered] = useState(false);
   const bySupplier = {};
   plan.toOrder.forEach((r) => (bySupplier[r.supplier || "No supplier set"] = bySupplier[r.supplier || "No supplier set"] || []).push(r));
   const covered = plan.items.filter((r) => r.shortfall <= 0);
   return (
-    <Modal title="Order list — next month" onClose={onClose}>
+    <Modal title={`Order list — next ${plan.days % 30 === 0 ? `${plan.days / 30} month${plan.days === 30 ? "" : "s"}` : `${plan.days} days`}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {onSettings && (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: "#5C6B54" }}>
+            <label>Order covers{" "}
+              <select value={plan.days} onChange={(e) => onSettings({ orderEveryDays: Number(e.target.value) })} style={{ fontSize: 13, padding: "4px 6px" }}>
+                {[30, 45, 60, 90].map((d) => <option key={d} value={d}>{d === 45 ? "6 weeks" : `${d / 30} month${d === 30 ? "" : "s"}`}</option>)}
+              </select>
+            </label>
+            <label>Extra for growth{" "}
+              <select value={plan.bufferPct} onChange={(e) => onSettings({ orderBufferPct: Number(e.target.value) })} style={{ fontSize: 13, padding: "4px 6px" }}>
+                {[0, 5, 10, 15, 20, 25].map((p) => <option key={p} value={p}>{p}%</option>)}
+              </select>
+            </label>
+          </div>
+        )}
         <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.5 }}>
-          Every brew from now to {fmt(plan.end)} — {plan.brews.filter((b) => b.kind === "scheduled").length} on the calendar and {plan.brews.filter((b) => b.kind === "suggested").length} the brew planner suggests — checked against what's in stock, in date order. "Order by" allows for each supplier's usual delivery time (7 days if there's no history yet).
+          Order amounts include {plan.bufferPct}% extra in case sales pick up. Every brew from now to {fmt(plan.end)} — {plan.brews.filter((b) => b.kind === "scheduled").length} on the calendar and {plan.brews.filter((b) => b.kind === "suggested").length} the brew planner suggests — checked against what's in stock, in date order. "Order by" allows for each supplier's usual delivery time (7 days if there's no history yet).
         </div>
         {plan.toOrder.length === 0 ? (
           <div style={{ fontSize: 13, color: "#5C9A3C" }}>Nothing to order — you've got enough of everything for the next month.</div>
@@ -33,7 +47,7 @@ export function OrderListModal({ plan, onClose, onNewPO }) {
                   <div key={r.key} style={{ background: r.late ? "#FBE5D2" : "#FFFBF5", border: `1px solid ${r.late ? "#E3B37A" : "#E8C9A8"}`, borderRadius: 5, padding: "9px 11px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13.5, color: "#2A3324" }}>
                       <span style={{ fontWeight: 500 }}>{r.name}{!r.inStock && <span style={{ color: "#B5502F", fontSize: 11 }}> · not in stock list</span>}</span>
-                      <strong style={{ whiteSpace: "nowrap" }}>order {num(r.shortfall)} {r.unit}</strong>
+                      <strong style={{ whiteSpace: "nowrap" }}>order {num(Math.ceil(r.shortfall * 10) / 10)} {r.unit}</strong>
                     </div>
                     <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 2 }}>
                       Need {num(r.needed)} {r.unit}, have {num(r.onHand)}. Runs out for the {fmt(r.shortBy)} brew
@@ -126,7 +140,7 @@ export function HomeAlerts({ brewPlan, ingPlan, backOrders = [], customers = [],
         <div style={{ ...card, borderColor: urgent.length ? "#E3B37A" : "#DDE0C8" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 14, color: "#2A3324", fontWeight: 500 }}>{toOrder.length} ingredient{toOrder.length === 1 ? "" : "s"} to order for the next month</div>
+              <div style={{ fontSize: 14, color: "#2A3324", fontWeight: 500 }}>{toOrder.length} ingredient{toOrder.length === 1 ? "" : "s"} to order for the next {ingPlan.days === 60 ? "2 months" : ingPlan.days === 90 ? "3 months" : ingPlan.days === 30 ? "month" : `${ingPlan.days} days`}</div>
               <div style={{ fontSize: 12, color: urgent.length ? "#B5502F" : "#5C6B54", marginTop: 2 }}>
                 {urgent.length
                   ? `Order now: ${urgent.slice(0, 4).map((r) => r.name).join(", ")}${urgent.length > 4 ? "…" : ""}`

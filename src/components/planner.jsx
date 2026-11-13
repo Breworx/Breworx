@@ -311,7 +311,7 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
         </div>
         {onOpenOrderList && (
           <button type="button" onClick={onOpenOrderList} style={{ ...btn2, width: "100%", marginBottom: 10 }}>
-            {orderCount > 0 ? `Order list: ${orderCount} ingredient${orderCount === 1 ? "" : "s"} to order for the next month` : "Order list: you're stocked for the next month"}
+            {orderCount > 0 ? `Order list: ${orderCount} ingredient${orderCount === 1 ? "" : "s"} to order` : "Order list: you're stocked for the next order period"}
           </button>
         )}
         {plan.suggestions.length === 0 && <div style={note}>Nothing needs brewing in the next {s.horizonWeeks} weeks at current sales.</div>}

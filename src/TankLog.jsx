@@ -647,7 +647,7 @@ function TankLogApp() {
     [isSales, brewPlanSettings, loadingData, batches, recipes, tanks, salesOrders, mixedPackAssemblies]
   );
   const ingPlan = useMemo(
-    () => (brewPlanAll ? ingredientPlan({ batches, recipes, inventory, suggestions: brewPlanAll.suggestions, suppliers, purchaseOrders, recipeForSuggestion }) : null),
+    () => (brewPlanAll ? ingredientPlan({ batches, recipes, inventory, suggestions: brewPlanAll.suggestions, suppliers, purchaseOrders, recipeForSuggestion, days: brewPlanSettings?.orderEveryDays ?? 60, bufferPct: brewPlanSettings?.orderBufferPct ?? 10 }) : null),
     [brewPlanAll, batches, recipes, inventory, suppliers, purchaseOrders]
   );
   const draftAlloc = useMemo(() => draftOrderAllocations(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
@@ -4929,7 +4929,7 @@ function TankLogApp() {
               />
             )}
             {showOrderList && ingPlan && (
-              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} />
+              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} onSettings={isOwner ? (patch) => saveBrewPlanSettings({ ...(brewPlanSettings || {}), ...patch }) : undefined} />
             )}
             {!loadingData && view === "home" && (
               <HomeView
