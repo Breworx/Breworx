@@ -44,6 +44,29 @@ export function juiceLotSg(l) {
   return null;
 }
 
+// Pectic enzyme rate (g per 100L) — product-specific, so whatever was last
+// typed is remembered on this device and used as the default next time.
+const ENZYME_KEY = "bp.cider.enzymeRate";
+const DEFAULT_ENZYME_RATE = "3";
+function savedEnzymeRate() {
+  try { return localStorage.getItem(ENZYME_KEY) || DEFAULT_ENZYME_RATE; } catch { return DEFAULT_ENZYME_RATE; }
+}
+function rememberEnzymeRate(v) {
+  try { if (v) localStorage.setItem(ENZYME_KEY, v); } catch { /* storage unavailable */ }
+}
+// Most recent pH on the batch: tank readings, lab measurements, then the juice.
+function latestBatchPh(batch) {
+  if (!batch) return null;
+  const pts = [
+    ...(batch.readings || []).filter((r) => r && r.ph != null && !isNaN(Number(r.ph))).map((r) => ({ at: r.date || r.at || "", ph: Number(r.ph) })),
+    ...(batch.labMeasurements || []).filter((m) => m && m.ph != null && m.ph !== "" && !isNaN(Number(m.ph))).map((m) => ({ at: m.date || m.at || "", ph: Number(m.ph) })),
+  ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  if (pts.length) return pts[0].ph;
+  const j = juiceSummary(batch.juiceIntake);
+  return j.ph != null ? j.ph : null;
+}
+const ASSUMED_PH = 3.5;
+
 export function juiceSummary(lots) {
   const parts = (lots || []).map((l) => ({ litres: Number(l.litres) || 0, sg: juiceLotSg(l), ph: cnum(l.ph), ta: cnum(l.ta) }));
   const litres = parts.reduce((s, p) => s + p.litres, 0);
@@ -217,7 +240,8 @@ export function CiderAdditionsTab({ batch, inventory, onLogAddition }) {
   const [existingFree, setExistingFree] = useState("");
   const [targetAbv, setTargetAbv] = useState("");
   const [fg, setFg] = useState("1.000");
-  const [enzymeRate, setEnzymeRate] = useState("");
+  const [enzymeRate, setEnzymeRateRaw] = useState(savedEnzymeRate);
+  const setEnzymeRate = (v) => { setEnzymeRateRaw(v); rememberEnzymeRate(v); };
   const [nutrientRate, setNutrientRate] = useState("");
   const L = cnum(litres) || 0;
   const phN = cnum(ph);
@@ -564,7 +588,8 @@ export function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }
   const [litres, setLitres] = useState(batch ? String(remainingVolume(batch) || batch.volume || "") : "");
   const [sg, setSg] = useState(curSg != null ? String(curSg) : "");
   const [abv, setAbv] = useState(batch && batch.og && curSg ? String(r1(calcABV(batch.og, curSg))) : "");
-  const [ph, setPh] = useState(j.ph != null ? j.ph.toFixed(2) : "");
+  const knownPh = latestBatchPh(batch);
+  const [ph, setPh] = useState(knownPh != null ? knownPh.toFixed(2) : "");
   const planned = batch?.dayRecipe?.plan || null;
   const [targetSg, setTargetSg] = useState(planned?.targetSg != null ? Number(planned.targetSg).toFixed(3) : "1.010");
   const [targetAbv, setTargetAbv] = useState(planned?.abv != null ? String(planned.abv) : "");
@@ -587,7 +612,9 @@ export function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }
   const [existingFree, setExistingFree] = useState("");
   const [saved, setSaved] = useState(false);
   const L = cnum(litres) || 0;
-  const sgN = cnum(sg), tgt = cnum(targetSg), abvN = cnum(abv), phN = cnum(ph);
+  const sgN = cnum(sg), tgt = cnum(targetSg), abvN = cnum(abv);
+  const phAssumed = cnum(ph) == null;
+  const phN = phAssumed ? ASSUMED_PH : cnum(ph);
   const jRows = juices.map((x) => ({ ...x, item: inventory.find((i) => i.id === x.itemId) || null, sgV: cnum(x.sg), fixedL: cnum(x.litres) })).filter((x) => x.sgV != null && x.sgV > 1);
   const fixedRows = jRows.filter((x) => x.fixedL != null && x.fixedL > 0);
   const autoRows = jRows.filter((x) => !(x.fixedL != null && x.fixedL > 0));
@@ -750,7 +777,9 @@ export function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }
         <div style={{ ...ciderNote, marginTop: 6 }}>150–250 mg/L sorbate is the usual range; use more at lower ABV.</div>
         <DoseRow label="Potassium sorbate" grams={sorbateG} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/sorbate/i} />
         <DoseRow label="Potassium metabisulfite" grams={kmeta} detail={freeNeeded != null ? `For ${Math.round(freeNeeded)} mg/L free SO₂ at pH ${phN.toFixed(2)}` : null} batch={batch} inventory={inventory} onLogAddition={onLogAddition} guess={/metabisul|k-?meta|campden/i} />
-        {phN == null && <div style={ciderNote}>Enter the pH to work out the sulphite.</div>}
+        {kmeta != null && finalL > 0 && <div style={ciderNote}>That's {r1((kmeta / finalL) * 100)} g per 100L ({Math.round((kmeta * 0.576 * 1000) / finalL)} mg/L SO₂). Dissolve it in a little cooled boiled water and stir it through — add it with the sorbate, after the sweetening.</div>}
+        {phAssumed && <div style={ciderWarn}>No pH on this batch yet, so this uses pH {ASSUMED_PH}. Measure it and type it in above — the dose changes a lot with pH.</div>}
+        {freeNeeded != null && freeNeeded > 120 && <div style={ciderWarn}>That's a lot of sulphite (cider is limited to 200 mg/kg total SO₂). Lowering the pH first means far less is needed.</div>}
       </div>
       {batch && (
         <div style={ciderCard}>
@@ -849,7 +878,8 @@ export function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate,
   const [fg, setFg] = useState(prefill?.fg != null ? Number(prefill.fg).toFixed(3) : "1.000");
   const [targetAbv, setTargetAbv] = useState(prefill?.targetAbvFerm != null ? String(prefill.targetAbvFerm) : "");
   const [molecular, setMolecular] = useState("0.8");
-  const [enzymeRate, setEnzymeRate] = useState("");
+  const [enzymeRate, setEnzymeRateRaw] = useState(savedEnzymeRate);
+  const setEnzymeRate = (v) => { setEnzymeRateRaw(v); rememberEnzymeRate(v); };
   const [nutrientRate, setNutrientRate] = useState("");
   const [adds, setAdds] = useState([]); // { id, role, itemId, qty }
   const [notes, setNotes] = useState(() =>
@@ -1101,6 +1131,9 @@ export function CiderDaySheet({ batches, inventory, tanks, nextNumber, onCreate,
           </div>
         ) : null))}
         {freeSo2 != null && <div style={ciderNote}>Sulphite for {Math.round(freeSo2)} mg/L free SO₂ at pH {sum.ph.toFixed(2)}.</div>}
+        {calc.enzyme > 0 && L > 0 && <div style={ciderNote}>Pectic enzyme: {dose(calc.enzyme)} for {r1(L)}L at {enzymeRate} g/100L. Stir it into the juice at the start (fine alongside the sulphite) and give it a few hours, ideally overnight, before pitching. Set the rate to your product's label once and it's remembered.</div>}
+        {!(calc.enzyme > 0) && L > 0 && <div style={ciderNote}>Put your pectic enzyme's rate (g per 100L, from the label) in "Enzyme g/hL" to get the dose.</div>}
+        {sum.ph == null && L > 0 && <div style={ciderNote}>Add the juice pH above to work out the sulphite.</div>}
 
         <div style={sub}>Yeast</div>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, alignItems: "end" }}>
