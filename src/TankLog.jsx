@@ -2750,17 +2750,38 @@ function TankLogApp() {
     });
   };
 
-  const assignBatchTank = async (batchId, tank, brewStage) => {
+  const assignBatchTank = async (batchId, tank, brewStage, swap) => {
     const batch = batches.find((b) => b.id === batchId);
+    if (swap) {
+      // Swap: clear the other batch off first, then move both, so the two
+      // tanks never look double-booked part way through.
+      const other = batches.find((b) => b.id === swap.batchId);
+      const otherTank = swap.tank || null;
+      const r1 = await supabase.from("batches").update({ tank_id: tank.id, tank_name: tank.name, brew_stage: brewStage ?? null }).eq("id", batchId);
+      const r2 = r1.error ? r1 : await supabase.from("batches").update({ tank_id: otherTank ? otherTank.id : null, tank_name: otherTank ? otherTank.name : null }).eq("id", swap.batchId);
+      if (r1.error || r2.error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+      setBatches((prev) =>
+        prev.map((b) =>
+          b.id === batchId ? { ...b, tankId: tank.id, tankName: tank.name, brewStage: brewStage ?? null }
+          : b.id === swap.batchId ? { ...b, tankId: otherTank ? otherTank.id : null, tankName: otherTank ? otherTank.name : null }
+          : b
+        )
+      );
+      resetTankClean(tank.id, batch);
+      if (otherTank && other) resetTankClean(otherTank.id, other);
+      showToast("success", otherTank ? `Swapped — ${batch?.name} is in ${tank.name}, ${other?.name} is in ${otherTank.name}.` : `${batch?.name} is in ${tank.name}; ${other?.name} is now unassigned.`);
+      return true;
+    }
     const { error } = await supabase
       .from("batches")
       .update({ tank_id: tank ? tank.id : null, tank_name: tank ? tank.name : null, brew_stage: brewStage ?? null })
       .eq("id", batchId);
-    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
     setBatches((prev) =>
       prev.map((b) => (b.id === batchId ? { ...b, tankId: tank ? tank.id : null, tankName: tank ? tank.name : null, brewStage: brewStage ?? null } : b))
     );
     if (tank) resetTankClean(tank.id, batch);
+    return true;
   };
 
   // Splitting a batch that's already fermenting into multiple tanks — same
@@ -6859,7 +6880,7 @@ function TankLogApp() {
             onOpenPackaging={setPackagingTarget}
             onUndoPackagingEvent={undoPackagingEvent}
             onDiscardRemaining={setDiscardTarget}
-            onAssignTank={setAssignTankTarget}
+            onAssignTank={(b, mode) => setAssignTankTarget(mode ? { ...b, _mode: mode } : b)}
             onToggleScheduleStep={toggleScheduleStep}
             onDeleteBatch={isOwner ? setDeleteBatchTarget : undefined}
             stages={stages}
@@ -7604,7 +7625,7 @@ function TankLogApp() {
         <AdjustInventoryModal item={consumableAdjustTarget} onClose={() => setConsumableAdjustTarget(null)} onSave={adjustConsumableWithNote} />
       )}
       {assignTankTarget && (
-        <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={assignBatchTank} />
+        <AssignTankModal batch={assignTankTarget} tanks={tanks} batches={batches} onClose={() => setAssignTankTarget(null)} onSave={async (id, t, st, sw) => { const ok = await assignBatchTank(id, t, st, sw); if (ok && assignTankTarget._mode === "rack" && t) await logDump(id, "yeastDumpLog", today()); }} />
       )}
       {vesselTransferTarget && (
         <VesselTransferModal
