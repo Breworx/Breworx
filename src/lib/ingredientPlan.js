@@ -9,7 +9,9 @@ import { addDays, today } from "./utils";
 
 const round = (n) => Math.round(n * 1000) / 1000;
 
-export function ingredientPlan({ batches, recipes, inventory, suggestions = [], suppliers = [], purchaseOrders = [], recipeForSuggestion, days = 30 }) {
+// days: how far ahead one order should cover (default 2 months); bufferPct:
+// extra on top in case sales pick up. Run-out dates use the real amounts.
+export function ingredientPlan({ batches, recipes, inventory, suggestions = [], suppliers = [], purchaseOrders = [], recipeForSuggestion, days = 60, bufferPct = 10 }) {
   const start = today();
   const end = addDays(start, days);
   const brews = [];
@@ -52,10 +54,11 @@ export function ingredientPlan({ batches, recipes, inventory, suggestions = [], 
     });
   });
   const list = Object.values(items).map((r) => {
-    const shortfall = round(Math.max(0, r.needed - r.onHand));
+    const withBuffer = r.needed * (1 + (Number(bufferPct) || 0) / 100);
+    const shortfall = r.needed > r.onHand ? round(Math.max(0, withBuffer - r.onHand)) : 0;
     const orderBy = r.shortBy ? addDays(r.shortBy, -(r.leadDays ?? 7)) : null;
     return { ...r, needed: round(r.needed), shortfall, orderBy, late: orderBy ? orderBy < start : false };
   });
   list.sort((a, b) => (b.shortfall > 0) - (a.shortfall > 0) || String(a.orderBy || "9999").localeCompare(String(b.orderBy || "9999")) || a.name.localeCompare(b.name));
-  return { brews, items: list, toOrder: list.filter((r) => r.shortfall > 0), perBrew, noRecipe, start, end };
+  return { brews, items: list, toOrder: list.filter((r) => r.shortfall > 0), perBrew, noRecipe, start, end, days, bufferPct };
 }
