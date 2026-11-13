@@ -17,6 +17,8 @@ export const addDaysISO = (iso, n) => {
   return d.toISOString().slice(0, 10);
 };
 export const daysBetweenISO = (a, b) => Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / DAY);
+import { typicalDays } from "./production";
+
 const median = (xs) => {
   const s = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   if (!s.length) return null;
@@ -226,7 +228,8 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, backO
       const first = [...b.packagedEvents].map((e) => e.date).filter(Boolean).sort()[0];
       return first ? daysBetweenISO(b.startDate, first) : null;
     }).filter((d) => d != null && d > 0 && d < 365);
-    const learnedLead = median(leads);
+    // Average of the last 6 (odd ones left out), learned afresh after every packaging.
+    const learnedLead = typicalDays(leads);
     // Yield: litres packaged per litre into tank.
     const yields = packagedOnes.slice(0, 6).map((b) => {
       const out = b.packagedEvents.reduce((t, e) => t + (e.litres || 0), 0);
@@ -253,7 +256,7 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, backO
     }
     const learnedCover = Math.round(Math.min(s.baseCoverWeeks * 2, s.baseCoverWeeks * (1 + 0.5 * cv)) * 2) / 2;
     const ratePerDay = p.soldInPeriod / periodDays;
-    const leadDays = Math.round(ps.leadDays ?? learnedLead ?? latest?.plannedDays ?? 14);
+    const leadDays = Math.round(learnedLead ?? latest?.plannedDays ?? 14);
     // One brew size for every beer when set; a beer's own size still wins.
     const batchL = ps.batchL ?? s.defaultBatchL ?? learnedBatch ?? s.kitLitres;
     const coverWeeks = ps.coverWeeks ?? learnedCover;

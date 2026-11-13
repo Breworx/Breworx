@@ -1,5 +1,5 @@
 import { addDays } from "../lib/utils";
-import { batchTankIds, isScheduledBatch, sortedTanks, occupyingBatch } from "../lib/production";
+import { batchTankIds, isScheduledBatch, learnedTankDays, sortedTanks, occupyingBatch } from "../lib/production";
 import { TankWallCard } from "./tanks";
 
 // ─── Sales: what's in each tank and what's coming ───────────────────────────
@@ -14,7 +14,8 @@ const head = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase"
 export function SalesTanksView({ tanks, batches, onOpenBatch }) {
   const planned = batches.filter((b) => !b.mergedIntoBatchId && isScheduledBatch(b)).sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
   const vessels = sortedTanks(tanks).filter((t) => t.type === "Fermenter" || t.type === "Brite Tank");
-  const ready = (b) => (b.plannedDays ? addDays(b.startDate, b.plannedDays) : null);
+  const tankDays = learnedTankDays(batches);
+  const ready = (b) => { const d = tankDays.daysFor(b); return d ? addDays(b.startDate, d) : null; };
   const tankNames = (b) => batchTankIds(b).map((id) => tanks.find((t) => t.id === id)?.name).filter(Boolean).join(" + ");
 
   return (
