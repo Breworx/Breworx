@@ -339,6 +339,40 @@ export function TankQRModal({ tank, onClose }) {
   );
 }
 
+// ─── Sales login: its own guide and welcome tour ───────────────────────────
+export const SALES_HELP_ARTICLES = [
+  { category: "Getting around", question: "What can I see with a Sales login?", answer: "Four pages: Stock (what you can sell now), Upstock orders (open orders and back orders), Tanks (what's brewing and when it's ready) and Calendar (what's brewing over the coming weeks and months). It's view only — nothing you tap changes stock, orders or the brew schedule. Steve can switch on extra pages for you (batch pages, customers & orders, ingredient stock, recipes) if you need them." },
+  { category: "Getting around", question: "Do I need to refresh?", answer: "No. The pages update by themselves every minute while they're open, and orders from Upstock show up within seconds of reaching Xero. If something looks out of date, reload the page." },
+  { category: "Getting around", question: "Can I use it on my phone?", answer: "Yes — it works in any browser. On a phone or iPad, Share → Add to Home Screen and it opens like an app." },
+  { category: "Stock", question: "What does \"available\" mean?", answer: "What you can sell right now: everything packaged, minus what's been sold, minus what's held for orders that haven't gone out yet. Cans are shown as cases of 24 plus any loose cans." },
+  { category: "Stock", question: "What does \"held for Xero drafts\" mean?", answer: "That stock is already promised to an Upstock order still sitting as a draft invoice in Xero. It isn't in the available number, so it can't be sold twice. When the order is approved in Xero it becomes a sale; if the order is deleted it goes back to available." },
+  { category: "Stock", question: "Why are there batch numbers?", answer: "Each line shows which brew it came from (e.g. #1030). A beer can have stock from more than one batch; the oldest is used first." },
+  { category: "Stock", question: "Where's a beer that's run out?", answer: "Sold-out lines are hidden. Tap \"Show sold out\" at the bottom of the Stock page to see them." },
+  { category: "Upstock orders & back orders", question: "What's on the Upstock orders page?", answer: "Every order still waiting as a draft invoice in Xero — usually Upstock orders that haven't been approved and sent. At the top, Back orders: each beer that's owed but not in stock, how much, which customers, and roughly when it'll be ready. Below, Open orders: each order line shows how much is in stock (held, and from which batch) and how much is on back order." },
+  { category: "Upstock orders & back orders", question: "What is a back order?", answer: "Beer that's been ordered but isn't in stock yet. It fills by itself: when that beer is packaged, the new stock goes to the oldest waiting order first, and the line changes from Back order to In stock." },
+  { category: "Upstock orders & back orders", question: "How do I read the ready date?", answer: "\"In tank, ready about…\" — the beer is already brewing. \"Brew on the calendar, ready about…\" — a brew is planned. \"Not on the calendar yet — earliest ready about…\" — no brew is scheduled yet; that's the earliest it could be ready if Steve brews it at the next free slot. Treat all of these as a guide, not a promise — check with Steve before committing a date to a customer." },
+  { category: "Upstock orders & back orders", question: "Who gets stock first?", answer: "The oldest order. Stock is held for orders in date order, so a new order can't take beer already held for an earlier one." },
+  { category: "How it links to Upstock & Xero", question: "What happens when I put an order through Upstock?", answer: "1) Upstock creates a draft invoice in Xero. 2) Xero tells Brewpoint straight away, and the order appears on Upstock orders within seconds (a check every 2 minutes is the backup). 3) If the beer's in stock, it's held for the order from the oldest batch; anything short goes on back order. 4) When the invoice is approved in Xero, the held stock comes off as a sale from those batches. 5) If the draft is deleted or voided in Xero, the stock goes back to available and any back order disappears." },
+  { category: "How it links to Upstock & Xero", question: "What if an order is changed in Xero?", answer: "Brewpoint follows Xero. Change the quantities on the draft and the held stock and back order update; approve it and it becomes a sale; delete it and it's gone." },
+  { category: "How it links to Upstock & Xero", question: "Why doesn't Xero's stock match Brewpoint's available?", answer: "Xero doesn't count stock held for draft invoices — Brewpoint does. So Brewpoint's available can be lower than Xero's stock on hand by exactly what's held for Upstock orders. Brewpoint's number is the one to sell from." },
+  { category: "How it links to Upstock & Xero", question: "What about sales invoiced straight in Xero?", answer: "Approved Xero invoices — from Upstock or made directly in Xero — come off Brewpoint's stock automatically, against the batch they came from." },
+  { category: "Tanks & calendar", question: "What do the tank cards show?", answer: "Each fermenter and brite tank: the beer in it now, how far along it is, \"Ready ~date\" for when it should be ready to package, and \"Next:\" for the brew planned into that tank after it. \"Coming up\" lists every planned brew in date order." },
+  { category: "Tanks & calendar", question: "How are ready dates worked out?", answer: "From the brewery's own history: for each beer, the average number of days from brew day to packaging over its last 6 brews (odd ones left out). It updates every time a beer is packaged, so it gets more accurate over time. If Steve moves a brew on the calendar, the ready dates move with it." },
+  { category: "Tanks & calendar", question: "Can I change the calendar?", answer: "No — it's view only for Sales. Ask Steve if a brew needs to move for an order." },
+  { category: "Common questions", question: "A customer asks if we have something — where do I look?", answer: "Stock → find the beer → the green \"available\" number is what you can promise now. If it's 0, check Upstock orders → Back orders, or Tanks, for when more is coming." },
+  { category: "Common questions", question: "A customer asks when their back order will arrive", answer: "Upstock orders → Back orders → find the beer: the ready date is when it should be packaged. Allow time for delivery on top, and confirm with Steve before giving a firm date." },
+  { category: "Common questions", question: "Something looks wrong", answer: "Reload the page first. If the stock or an order still doesn't look right, tell Steve — he can check it against Xero and correct it." },
+];
+
+export const SALES_TOUR_STEPS = [
+  { title: "Welcome to Brewpoint", body: "This is your view of the brewery: what's in stock, what's held for orders, what's on back order, and when more beer will be ready. It's view only, and it updates by itself as orders come through Upstock and Xero.", target: null },
+  { title: "Stock", body: "What you can sell right now, by beer and container. Anything \"held for Xero drafts\" is already promised to an Upstock order, so it isn't in the available number.", target: "nav-finishedGoodsStock", needsSidebar: true },
+  { title: "Upstock orders", body: "Every Upstock order still waiting in Xero: what's held for it, what's on back order, and roughly when the back-ordered beer will be ready.", target: "nav-salesUpstock", needsSidebar: true },
+  { title: "Tanks", body: "What's brewing in each tank and when it should be ready, plus what's coming up next.", target: "nav-salesTanks", needsSidebar: true },
+  { title: "Calendar", body: "The production calendar: every brew over the coming weeks and months.", target: "nav-production", needsSidebar: true },
+  { title: "Help any time", body: "Tap Help guide for how it all works — including how orders flow from Upstock to Xero to Brewpoint, and how ready dates are worked out.", target: "help-guide-btn", needsSidebar: true },
+];
+
 export const TOUR_STEPS = [
   {
     title: "Welcome to Brewpoint",
@@ -737,10 +771,10 @@ export function SpotlightTour({ steps, onClose, setSidebarOpen, showLogoOnFirst 
 }
 
 
-export function HelpGuideModal({ onClose }) {
+export function HelpGuideModal({ onClose, articles = HELP_ARTICLES }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const filtered = HELP_ARTICLES.filter(
+  const filtered = articles.filter(
     (a) => !q || a.question.toLowerCase().includes(q) || a.answer.toLowerCase().includes(q) || a.category.toLowerCase().includes(q)
   );
   const categories = [...new Set(filtered.map((a) => a.category))];
