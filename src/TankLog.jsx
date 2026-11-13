@@ -1737,25 +1737,48 @@ function TankLogApp() {
     let nextInventory = [...inventory];
 
     for (const line of lines) {
-      if (line.discrepancy === 0) continue;
+      if (line.discrepancy === 0 && !line.lotChanges) continue;
       const idx = nextInventory.findIndex((it) => it.id === line.itemId);
       if (idx < 0) continue;
       const item = nextInventory[idx];
+      // Keep the lots in step with the count, so batch tracing and FIFO
+      // costing stay right: lots counted one by one are saved as counted
+      // (with any lot numbers fixed); otherwise a shortfall comes off the
+      // oldest lots first and a surplus is added as a "Stock take" lot.
+      let lots = item.lots || [];
+      const renamed = [];
+      const latestCost = [...lots].reverse().find((l) => l.unitCost != null)?.unitCost ?? null;
+      if (line.lotCounts) {
+        const byId = Object.fromEntries(line.lotCounts.filter((l) => l.id).map((l) => [l.id, l]));
+        lots = lots.map((l) => {
+          const c = byId[l.id];
+          if (!c) return l;
+          if ((c.lotNumber || "") !== (l.lotNumber || "")) renamed.push(`${l.lotNumber || "no number"} → ${c.lotNumber || "no number"}`);
+          return { ...l, lotNumber: c.lotNumber, remainingQty: Math.max(0, c.count) };
+        });
+        line.lotCounts.filter((l) => !l.id && l.count > 0).forEach((l) => {
+          lots = [...lots, { id: uid(), lotNumber: l.lotNumber || `Stock take ${date}`, qty: l.count, remainingQty: l.count, date, poNumber: null, unitCost: latestCost }];
+        });
+      } else if (line.discrepancy < 0) {
+        lots = deductFromLotsFIFO(lots, -line.discrepancy).updatedLots;
+      } else if (line.discrepancy > 0) {
+        lots = [...lots, { id: uid(), lotNumber: `Stock take ${date}`, qty: line.discrepancy, remainingQty: line.discrepancy, date, poNumber: null, unitCost: latestCost }];
+      }
       const historyEntry = {
         id: uid(),
         date: new Date().toISOString(),
         user: user.name,
         type: "stocktake",
         delta: line.discrepancy,
-        note: `Stock take ${date}`,
+        note: `Stock take ${date}${renamed.length ? ` · lot numbers fixed: ${renamed.join(", ")}` : ""}`,
       };
       const newHistory = [...(item.history || []), historyEntry];
-      const { error } = await supabase.from("inventory_items").update({ qty: line.countedQty, history: newHistory }).eq("id", item.id);
+      const { error } = await supabase.from("inventory_items").update({ qty: line.countedQty, lots, history: newHistory }).eq("id", item.id);
       if (error) {
         showToast("error", "Something didn't save — check your connection and try again.");
         continue;
       }
-      nextInventory[idx] = { ...item, qty: line.countedQty, history: newHistory };
+      nextInventory[idx] = { ...item, qty: line.countedQty, lots, history: newHistory };
     }
     setInventory(nextInventory);
 
@@ -7258,7 +7281,7 @@ function TankLogApp() {
         />
       )}
       {showStockTake && (
-        <StockTakeModal inventory={inventory} onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
+        <StockTakeModal inventory={inventory} withLots onClose={() => setShowStockTake(false)} onComplete={completeStockTake} />
       )}
       {showStockTakeHistory && (
         <StockTakeHistoryModal

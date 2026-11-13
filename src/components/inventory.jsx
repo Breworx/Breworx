@@ -116,7 +116,7 @@ export function SuppliersModal({ suppliers, purchaseOrders, onClose, onAddNew, o
   );
 }
 
-export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredient" }) {
+export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "ingredient", withLots = false }) {
   const [counts, setCounts] = useState(() => {
     const init = {};
     inventory.forEach((it) => (init[it.id] = String(it.qty)));
@@ -124,6 +124,25 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
   });
 
   const updateCount = (id, val) => setCounts((prev) => ({ ...prev, [id]: val }));
+  // Lots (supplier batch numbers) per item, opened on demand: fix a wrong
+  // lot number, count each lot, or add a lot that was never recorded. The
+  // item's count then becomes the total of its lots.
+  const [lotEdits, setLotEdits] = useState({}); // itemId -> [{ id, lotNumber, origNumber, count, orig, isNew }]
+  const openLots = (it) =>
+    setLotEdits((prev) =>
+      prev[it.id]
+        ? prev
+        : { ...prev, [it.id]: (it.lots || []).filter((l) => (l.remainingQty ?? l.qty) > 0).map((l) => ({ id: l.id, lotNumber: l.lotNumber || "", origNumber: l.lotNumber || "", count: String(l.remainingQty ?? l.qty), orig: l.remainingQty ?? l.qty })) }
+    );
+  const closeLots = (id) => setLotEdits((prev) => { const n = { ...prev }; delete n[id]; return n; });
+  const setLot = (itemId, lotId, patch) =>
+    setLotEdits((prev) => {
+      const list = prev[itemId].map((l) => (l.id === lotId ? { ...l, ...patch } : l));
+      const total = Math.round(list.reduce((t, l) => t + (Number(l.count) || 0), 0) * 1000) / 1000;
+      setCounts((c) => ({ ...c, [itemId]: String(total) }));
+      return { ...prev, [itemId]: list };
+    });
+  const addLot = (itemId) => setLotEdits((prev) => ({ ...prev, [itemId]: [...(prev[itemId] || []), { id: `new-${Math.random().toString(36).slice(2, 8)}`, lotNumber: "", origNumber: "", count: "", orig: 0, isNew: true }] }));
   // Grouped by category (Grain, Hops, Yeast, Juice, Other, then any others),
   // A–Z within each, so you can count one area of the brewery at a time.
   const [closed, setClosed] = useState({});
@@ -145,6 +164,10 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
   const submit = () => {
     const lines = inventory.map((it) => {
       const counted = counts[it.id] === "" ? it.qty : Number(counts[it.id]);
+      const edits = lotEdits[it.id];
+      const lotChanges = edits
+        ? edits.filter((l) => l.isNew ? Number(l.count) > 0 : l.lotNumber.trim() !== l.origNumber || Math.round(((Number(l.count) || 0) - l.orig) * 1000) !== 0)
+        : [];
       return {
         itemId: it.id,
         itemName: it.name,
@@ -152,6 +175,7 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
         systemQty: it.qty,
         countedQty: counted,
         discrepancy: Math.round((counted - it.qty) * 100) / 100,
+        ...(edits ? { lotCounts: edits.map((l) => ({ id: l.isNew ? null : l.id, lotNumber: l.lotNumber.trim(), count: Number(l.count) || 0 })), lotChanges: lotChanges.length } : {}),
       };
     });
     onComplete(lines);
@@ -239,6 +263,28 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
                     </span>
                   )}
                 </div>
+                )}
+                {withLots && !it.casePack && (
+                  lotEdits[it.id] ? (
+                    <div style={{ marginTop: 8, borderTop: "1px dashed #DDE0C8", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ fontSize: 11.5, color: "#5C6B54" }}>Lots on hand — fix a lot/batch number or count each one. The total above follows.</div>
+                      {lotEdits[it.id].map((l) => (
+                        <div key={l.id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <input value={l.lotNumber} onChange={(e) => setLot(it.id, l.id, { lotNumber: e.target.value })} placeholder="Lot / batch no." style={{ flex: 2, minWidth: 0, boxSizing: "border-box", background: "#FFFFFF", border: `1px solid ${l.lotNumber.trim() !== l.origNumber ? "#E3D3A0" : "#DDE0C8"}`, borderRadius: 4, padding: "7px 8px", fontSize: 13, color: "#2A3324" }} />
+                          <input type="number" step="0.01" inputMode="decimal" value={l.count} onChange={(e) => setLot(it.id, l.id, { count: e.target.value })} placeholder="0" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "7px 8px", fontSize: 13, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }} />
+                          <span style={{ fontSize: 11.5, color: "#5C6B54", width: 26 }}>{it.unit}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button type="button" onClick={() => addLot(it.id)} style={{ background: "none", border: "none", padding: 0, color: "#5C9A3C", fontSize: 12, cursor: "pointer" }}>+ Add a lot</button>
+                        <button type="button" onClick={() => closeLots(it.id)} style={{ background: "none", border: "none", padding: 0, color: "#9BA88A", fontSize: 12, cursor: "pointer" }}>Undo lot changes</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => openLots(it)} style={{ marginTop: 6, background: "none", border: "none", padding: 0, color: "#5C6B54", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                      {(it.lots || []).filter((l) => (l.remainingQty ?? l.qty) > 0).length ? `Lot / batch numbers (${(it.lots || []).filter((l) => (l.remainingQty ?? l.qty) > 0).map((l) => l.lotNumber || "no number").join(", ")})` : "Add lot / batch number"}
+                    </button>
+                  )
                 )}
               </div>
             );
