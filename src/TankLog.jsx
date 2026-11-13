@@ -714,10 +714,26 @@ function TankLogApp() {
     if (error) { console.error(error); showToast("error", `Couldn't create the invite: ${error.message || "unknown error"}`); return; }
     const link = `${window.location.origin}${window.location.pathname}?invite=${data}`;
     setInviteLink(link);
-    setInviteSent({ email, role });
     setInviteForm(null);
-    // Open their email app with the invite ready to send, from your own address.
-    if (email) window.location.href = inviteMailto(email, role, link);
+    // Email it straight to them; if email sending isn't set up yet, open
+    // the email app with the invite written instead.
+    let emailed = false;
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invite-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ token: data, link }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (out.sent) emailed = true;
+      else if (out.error && out.error !== "not_configured") showToast("error", `The invite email didn't send (${out.error}). Send the link below instead.`);
+      if (out.error === "not_configured" && email) window.location.href = inviteMailto(email, role, link);
+    } catch (err) {
+      console.error(err);
+    }
+    setInviteSent({ email, role, emailed });
+    if (emailed) showToast("success", `Invite emailed to ${email}.`);
   };
   const inviteMailto = (email, role, link) => {
     const company = companyName || "our brewery";
@@ -6418,7 +6434,7 @@ function TankLogApp() {
                             </button>
                             <button onClick={() => setInviteForm(null)} style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, color: "#5C6B54", fontSize: 13, cursor: "pointer" }}>Cancel</button>
                           </div>
-                          <div style={{ fontSize: 11.5, color: "#9BA88A" }}>Your email app opens with the invite written and ready to send.</div>
+                          <div style={{ fontSize: 11.5, color: "#9BA88A" }}>Brewpoint emails them the invite with their own sign-up link.</div>
                         </div>
                       ) : !inviteLink ? (
                         <button
@@ -6446,10 +6462,10 @@ function TankLogApp() {
                         <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px" }}>
                           <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 6, lineHeight: 1.45 }}>
                             {inviteSent?.email ? <>Invite for <strong>{inviteSent.email}</strong> as {inviteSent.role === "sales" ? "Sales (view only)" : "a team member"}. </> : null}
-                            If your email app didn't open, send it from here — the link works once, for one person.
+                            {inviteSent?.emailed ? "Emailed to them just now. You can also text or copy the link — it works once, for one person." : "If your email app didn't open, send it from here — the link works once, for one person."}
                           </div>
                           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                            {inviteSent?.email && (
+                            {inviteSent?.email && !inviteSent?.emailed && (
                               <a href={inviteMailto(inviteSent.email, inviteSent.role, inviteLink)} style={{ flex: 1, textAlign: "center", background: "#5C9A3C", borderRadius: 4, padding: "9px", color: "#16191A", fontSize: 12.5, textDecoration: "none" }}>Email it</a>
                             )}
                             {typeof navigator !== "undefined" && navigator.share && (
