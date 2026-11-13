@@ -159,15 +159,54 @@ function DaysOffEditor({ s, save, horizonWeeks, sel, btn2, note }) {
   );
 }
 
-export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, onRemoveScheduled, onMoveScheduled, nextNumber, nextCiderNumber }) {
+// The whole plan in one call, for the planner page, Home and the order list.
+export function computeBrewPlan({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings }) {
+  const s = { periodMonths: 3, horizonWeeks: 12, baseCoverWeeks: 4, brewWeekdays: [1, 2, 3, 4, 5], brewsPerDay: 2, kitLitres: 240, products: {}, ...(settings || {}) };
+  const { list, stockByKey, stockByKeyContainer, backOrderByKey } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
+  return planBrews({ batches: list, stockByKey, stockByKeyContainer, backOrderByKey, containers: CONTAINERS, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
+}
+
+// The recipe a suggested brew would use: the active version of that beer's recipe.
+export function recipeForSuggestion(sug, recipes) {
+  const r = recipes.find((x) => x.id === sug.recipeId);
+  if (!r) return null;
+  const fam = recipes.filter((x) => (x.familyId || x.id) === (r.familyId || r.id));
+  return fam.find((x) => x.isActive) || fam.sort((a, b) => (b.version || 1) - (a.version || 1))[0] || r;
+}
+
+export function suggestionToBatch(sug, recipes, number) {
+  const r = recipeForSuggestion(sug, recipes);
+  const split = sug.tanks.length > 1;
+  return {
+    id: uid(),
+    number,
+    name: sug.name,
+    style: r?.style || "Unspecified",
+    productType: r?.productType || sug.productType || "Beer",
+    volume: sug.volume,
+    og: null, fg: null, mashPh: null, mashTemp: null, preBoilGravity: null, topUpWater: null, phIntoTank: null, sgIntoTank: null,
+    stage: "Brewing",
+    startDate: sug.startDate,
+    recipeId: r?.id || null,
+    recipeName: r?.name || null,
+    tankId: split ? null : sug.tanks[0]?.tankId || null,
+    tankName: split ? null : sug.tanks[0]?.tankName || null,
+    brewStage: null,
+    splitTanks: split ? sug.tanks.map((t) => ({ tankId: t.tankId, tankName: t.tankName, volume: t.volume, additions: [] })) : [],
+    ingredients: [],
+    schedule: [],
+    readings: [],
+    plannedDays: sug.leadDays,
+    brewDaysPlanned: sug.brewDays,
+  };
+}
+
+export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, onRemoveScheduled, onMoveScheduled, shortFor, onOpenOrderList, orderCount = 0, nextNumber, nextCiderNumber }) {
   const s = { periodMonths: 3, horizonWeeks: 12, baseCoverWeeks: 4, brewWeekdays: [1, 2, 3, 4, 5], brewsPerDay: 2, kitLitres: 240, products: {}, ...(settings || {}) };
   const [editing, setEditing] = useState(null); // product key being edited
   const [added, setAdded] = useState({}); // suggestion id -> true
   const [busy, setBusy] = useState(false);
-  const plan = useMemo(() => {
-    const { list, stockByKey, stockByKeyContainer, backOrderByKey } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
-    return planBrews({ batches: list, stockByKey, stockByKeyContainer, backOrderByKey, containers: CONTAINERS, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
-  }, [batches, recipes, tanks, salesOrders, mixedPackAssemblies, JSON.stringify(settings || {})]);
+  const plan = useMemo(() => computeBrewPlan({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings }), [batches, recipes, tanks, salesOrders, mixedPackAssemblies, JSON.stringify(settings || {})]);
   const save = (patch) => onSaveSettings({ ...s, ...patch });
   const saveProduct = (key, patch) => save({ products: { ...s.products, [key]: { ...(s.products[key] || {}), ...patch } } });
   const clearProduct = (key, field) => {
@@ -176,38 +215,8 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
     save({ products: { ...s.products, [key]: p } });
   };
 
-  const recipeFor = (sug) => {
-    const r = recipes.find((x) => x.id === sug.recipeId);
-    if (!r) return null;
-    const fam = recipes.filter((x) => (x.familyId || x.id) === (r.familyId || r.id));
-    return fam.find((x) => x.isActive) || fam.sort((a, b) => (b.version || 1) - (a.version || 1))[0] || r;
-  };
-  const toBatch = (sug, number) => {
-    const r = recipeFor(sug);
-    const split = sug.tanks.length > 1;
-    return {
-      id: uid(),
-      number,
-      name: sug.name,
-      style: r?.style || "Unspecified",
-      productType: r?.productType || sug.productType || "Beer",
-      volume: sug.volume,
-      og: null, fg: null, mashPh: null, mashTemp: null, preBoilGravity: null, topUpWater: null, phIntoTank: null, sgIntoTank: null,
-      stage: "Brewing",
-      startDate: sug.startDate,
-      recipeId: r?.id || null,
-      recipeName: r?.name || null,
-      tankId: split ? null : sug.tanks[0]?.tankId || null,
-      tankName: split ? null : sug.tanks[0]?.tankName || null,
-      brewStage: null,
-      splitTanks: split ? sug.tanks.map((t) => ({ tankId: t.tankId, tankName: t.tankName, volume: t.volume, additions: [] })) : [],
-      ingredients: [],
-      schedule: [],
-      readings: [],
-      plannedDays: sug.leadDays,
-      brewDaysPlanned: sug.brewDays,
-    };
-  };
+  const recipeFor = (sug) => recipeForSuggestion(sug, recipes);
+  const toBatch = (sug, number) => suggestionToBatch(sug, recipes, number);
   const addOne = async (sug, number) => {
     await onSchedule(toBatch(sug, number));
     setAdded((p) => ({ ...p, [sug.id]: true }));
@@ -300,6 +309,11 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
             </button>
           )}
         </div>
+        {onOpenOrderList && (
+          <button type="button" onClick={onOpenOrderList} style={{ ...btn2, width: "100%", marginBottom: 10 }}>
+            {orderCount > 0 ? `Order list: ${orderCount} ingredient${orderCount === 1 ? "" : "s"} to order for the next month` : "Order list: you're stocked for the next month"}
+          </button>
+        )}
         {plan.suggestions.length === 0 && <div style={note}>Nothing needs brewing in the next {s.horizonWeeks} weeks at current sales.</div>}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {plan.suggestions.map((sug) => (
@@ -319,6 +333,9 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
                     const pr = plan.products.find((x) => x.key === sug.key);
                     return pr && pr.backOrderL > 0 ? <div style={{ fontSize: 11.5, color: "#9A5A2E", marginTop: 2 }}>Includes {Math.round(pr.backOrderL)} L on back order from Upstock/Xero drafts.</div> : null;
                   })()}
+                  {shortFor && shortFor(sug.id).length > 0 && (
+                    <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>Short for this brew: {shortFor(sug.id).map((x) => `${x.name} ${Math.round(x.short * 100) / 100} ${x.unit}`).join(", ")}</div>
+                  )}
                   {sug.delayDays > 0 && <div style={{ fontSize: 11.5, color: "#8A6D0B", marginTop: 2 }}>Wanted {fmtDay(sug.needDate)} — {sug.delayDays} day{sug.delayDays > 1 ? "s" : ""} later for a free tank or brew day.</div>}
                   {sug.runOut && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>Packaged stock runs out around {fmtDay(sug.runOut)}, before this is ready.</div>}
                   {sug.noTank && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>No fermenter is free for {sug.leadDays} days within 2 months of {fmtDay(sug.needDate)}.</div>}

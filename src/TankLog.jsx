@@ -15,7 +15,9 @@ import { AssembleMixedPackModal, ClearStockModal, FinishedGoodsStockView, MixedP
 import { CalibrationModal, FoodSafetyChecklistModal, FoodSafetyDisclaimerModal, FoodSafetyNoteModal, FoodSafetyView, HarvestYeastModal, InternalAuditModal, LabMeasurementModal, LogComplaintModal, LogContractorVisitModal, LogPestCheckModal, LogVerifierVisitModal, MaintenanceModal, MockRecallModal, PestStationsModal, SensoryScoreModal, StaffIllnessModal, StaffTrainingRecordModal, SupplierDocumentsModal, SupplierFormModal, TastingLogModal, TopUpModal, TrainingModal } from "./components/foodSafety";
 import { AiFeedbackReviewModal, AiHelperModal, CHANGELOG, HELP_ARTICLES, HelpGuideModal, LATEST_CHANGELOG_ID, PAGE_TOURS, SpotlightTour, TOUR_STEPS, TankQRModal, WhatsNewModal } from "./components/help";
 import { AddInventoryModal, AddPackageTypeModal, AdjustInventoryModal, BulkOpeningStockModal, InventoryDuplicatesPanel, InventoryItemDetail, PackageTypeCard, PackageTypeDetail, StockTakeHistoryModal, StockTakeModal, StockTakeReportModal, SuppliersModal } from "./components/inventory";
-import { BrewPlannerView, backOrderEtas } from "./components/planner";
+import { BrewPlannerView, backOrderEtas, computeBrewPlan, recipeForSuggestion, suggestionToBatch } from "./components/planner";
+import { HomeAlerts, OrderListModal } from "./components/orderList";
+import { ingredientPlan } from "./lib/ingredientPlan";
 import { AddPOModal, POCard, PODetail } from "./components/purchasing";
 import { QcApprovalModal, QualityControlView, TriangleTestModal } from "./components/quality";
 import { CostingView } from "./components/costing";
@@ -637,6 +639,17 @@ function TankLogApp() {
   // Xero's stock on hand doesn't know about drafts, so comparing or matching
   // to Xero uses stock before anything is held for them.
   const stockBeforeDrafts = useMemo(() => availableStockList(batches, salesOrders.filter((o) => !isOpenXeroDraft(o)), mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
+  // The brew plan and a month of ingredients, for Home alerts, the order
+  // list and the planner's ingredient checks.
+  const [showOrderList, setShowOrderList] = useState(false);
+  const brewPlanAll = useMemo(
+    () => (!isSales && brewPlanSettings && !loadingData ? computeBrewPlan({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings: brewPlanSettings }) : null),
+    [isSales, brewPlanSettings, loadingData, batches, recipes, tanks, salesOrders, mixedPackAssemblies]
+  );
+  const ingPlan = useMemo(
+    () => (brewPlanAll ? ingredientPlan({ batches, recipes, inventory, suggestions: brewPlanAll.suggestions, suppliers, purchaseOrders, recipeForSuggestion }) : null),
+    [brewPlanAll, batches, recipes, inventory, suppliers, purchaseOrders]
+  );
   const draftAlloc = useMemo(() => draftOrderAllocations(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
     () => mixedPackStockList(mixedPackTypes, mixedPackAssemblies, salesOrders),
@@ -4878,6 +4891,23 @@ function TankLogApp() {
 
             {loadingData && <SkeletonList />}
 
+            {!loadingData && view === "home" && !isSales && (
+              <HomeAlerts
+                brewPlan={brewPlanAll}
+                ingPlan={ingPlan}
+                backOrders={draftAlloc.backOrders}
+                customers={customers}
+                onAddBrew={async (sug) => {
+                  const isCider = (recipeForSuggestion(sug, recipes)?.productType || sug.productType) === "Cider/Perry";
+                  await addBatch(suggestionToBatch(sug, recipes, isCider && nextCiderNumber ? nextCiderNumber : nextNumber));
+                }}
+                onOpenPlanner={() => setView("brewPlanner")}
+                onOpenOrderList={() => setShowOrderList(true)}
+              />
+            )}
+            {showOrderList && ingPlan && (
+              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} />
+            )}
             {!loadingData && view === "home" && (
               <HomeView
                 companyName={companyName}
@@ -5038,6 +5068,9 @@ function TankLogApp() {
                 onSchedule={addBatch}
                 onRemoveScheduled={isOwner ? deleteBatch : undefined}
                 onMoveScheduled={(batch, patch) => updateScheduledBatch(batch.id, { ...batch, ...patch })}
+                shortFor={(id) => ingPlan?.perBrew?.[id] || []}
+                onOpenOrderList={ingPlan ? () => setShowOrderList(true) : undefined}
+                orderCount={ingPlan?.toOrder.length || 0}
                 nextNumber={nextNumber}
                 nextCiderNumber={nextCiderNumber}
               />
@@ -5968,7 +6001,7 @@ function TankLogApp() {
                   onOpenDay={isSales ? null : setActiveReminderDay}
                   recipes={recipes}
                   inventory={inventory}
-                  onCheckIngredients={isSales ? null : () => setShowIngredientsNeeded(true)}
+                  onCheckIngredients={isSales ? null : () => (ingPlan ? setShowOrderList(true) : setShowIngredientsNeeded(true))}
                   onReschedule={isSales ? null : (batch, patch) => updateScheduledBatch(batch.id, { ...batch, ...patch })}
                 />
               </>
