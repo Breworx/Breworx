@@ -275,6 +275,8 @@ export function rowToProfile(row) {
     role: row.role,
     createdAt: row.created_at || null,
     toursSeen: row.tours_seen || [],
+    lastSeenAt: row.last_seen_at || null,
+    joinedAt: row.joined_at || null,
   };
 }
 
