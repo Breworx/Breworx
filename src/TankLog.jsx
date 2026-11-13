@@ -621,7 +621,8 @@ function TankLogApp() {
   }, [batches]);
   const selectedPO = useMemo(() => purchaseOrders.find((p) => p.id === selectedPOId) || null, [purchaseOrders, selectedPOId]);
   const nextPONumber = useMemo(() => {
-    const nums = purchaseOrders.map((p) => parseInt((p.poNumber.match(/\d+/) || [0])[0], 10) || 0);
+    // Only our own PO-### numbers count; imported supplier history (e.g. "GF SO-44620") must not bump the sequence.
+    const nums = purchaseOrders.map((p) => { const m = /^PO-(\d+)$/i.exec(String(p.poNumber || "").trim()); return m ? parseInt(m[1], 10) : 0; });
     return `PO-${Math.max(100, ...nums) + 1}`;
   }, [purchaseOrders]);
   const nextSalesOrderNumber = useMemo(() => {
