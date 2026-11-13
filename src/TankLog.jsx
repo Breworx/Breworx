@@ -29,7 +29,7 @@ import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeeded
 import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, compareXeroStock, planXeroStockMatch } from "./components/xero";
 import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, findMissingIngredients, latestReading } from "./lib/config";
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
-import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, planXeroSales, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
+import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
 import { downloadCSV, downloadJSON, insertByDate, today, withStageDate } from "./lib/utils";
 import { planXeroOrders } from "./lib/xeroOrders";
 
@@ -1937,78 +1937,66 @@ function TankLogApp() {
     return true;
   };
 
+  // The Xero sales check runs on the server (xero-sync): every 2 minutes,
+  // and straight away when Xero's webhook says an invoice changed. The app
+  // just picks up what it wrote, and "check now" asks the server to run.
+  const refreshFromXeroSync = async () => {
+    if (!profile?.companyId) return;
+    const [b, o, c, l, st] = await Promise.all([
+      supabase.from("batches").select("id, xero_sold").eq("company_id", profile.companyId),
+      supabase.from("sales_orders").select("*").order("created_at", { ascending: false }),
+      supabase.from("customers").select("*").eq("company_id", profile.companyId),
+      supabase.from("xero_stock_sales").select("item_code").eq("company_id", profile.companyId).eq("status", "unmapped"),
+      supabase.from("xero_settings").select("last_sales_sync").eq("company_id", profile.companyId).maybeSingle(),
+    ]);
+    if (!b.error) {
+      const sold = Object.fromEntries((b.data || []).map((r) => [r.id, Array.isArray(r.xero_sold) ? r.xero_sold : []]));
+      setBatches((prev) => prev.map((x) => (sold[x.id] && JSON.stringify(sold[x.id]) !== JSON.stringify(x.xeroSold || []) ? { ...x, xeroSold: sold[x.id] } : x)));
+    }
+    if (!o.error) {
+      const next = (o.data || []).map(rowToSalesOrder);
+      setSalesOrders((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    }
+    if (!c.error) {
+      const next = (c.data || []).map(rowToCustomer).sort((a, b2) => a.name.localeCompare(b2.name));
+      setCustomers((prev) => (prev.length === next.length ? prev : next));
+    }
+    if (!l.error) setXeroUnmatched([...new Set((l.data || []).map((r) => r.item_code))].filter(Boolean));
+    if (!st.error && st.data) setXeroSettings((prev) => (prev && prev.last_sales_sync === st.data.last_sales_sync ? prev : { ...(prev || {}), last_sales_sync: st.data.last_sales_sync }));
+  };
+
   const xeroSalesSyncRunning = useRef(false);
   const syncSalesFromXero = async (quiet = false) => {
     if (!xeroConnection || !xeroSettings?.sales_sync_enabled || xeroSalesSyncRunning.current) return;
     xeroSalesSyncRunning.current = true;
     setXeroSalesSyncing(true);
     try {
-      const since = xeroSettings.sales_sync_from || today();
-      const data = await callXeroApi("listSales", { since });
-      if (data.error) {
-        console.error("Xero sales check failed:", data.error, data.detail);
-        if (!quiet) showToast("error", /reconnect|Not connected/i.test(String(data.error)) ? "Xero has disconnected — connect it again in Settings." : "Couldn't read sales from Xero just now — try again in a minute.");
-        return;
-      }
-      const ledgerRes = await supabase.from("xero_stock_sales").select("*").eq("company_id", profile.companyId);
-      if (ledgerRes.error) {
-        console.error(ledgerRes.error);
-        if (!quiet) showToast("error", "Something didn't load — check your connection and try again.");
-        return;
-      }
-      const plan = planXeroSales({
-        docs: data.docs || [],
-        ledger: ledgerRes.data || [],
-        salesMap: xeroSalesMap,
-        itemMappings: xeroItemMappings,
-        batches,
-        // A draft that's just been approved in Xero stops holding its stock,
-        // so the sale can take it.
-        available: (() => {
-          const approved = new Set((data.docs || []).filter((d) => d.status === "AUTHORISED" || d.status === "PAID").map((d) => d.docId));
-          return availableStockList(batches, salesOrders.filter((o) => !(isOpenXeroDraft(o) && approved.has(o.xeroDocId))), mixedPackAssemblies);
-        })(),
-        brewpointOrderNumbers: salesOrders.filter((o) => o.source !== "xero").map((o) => o.orderNumber),
+      const token = await getAuthToken();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/xero-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: "{}",
       });
-      // Ledger first, so a half-finished run can't take the same stock twice.
-      if (plan.rows.length > 0) {
-        const rows = plan.rows.map((r) => {
-          const { id: _id, created_at: _c, ...rest } = r;
-          return { ...rest, company_id: profile.companyId };
-        });
-        const ledgerSave = await supabase.from("xero_stock_sales").upsert(rows, { onConflict: "company_id,xero_line_id" });
-        if (ledgerSave.error) {
-          console.error(ledgerSave.error);
-          if (!quiet) showToast("error", "Something didn't save — check your connection and try again.");
-          return;
-        }
+      const out = await res.json().catch(() => ({}));
+      await refreshFromXeroSync();
+      if (out.error) {
+        console.error("Xero sales check failed:", out.error);
+        if (/reconnect|Not connected/i.test(String(out.error))) setXeroNeedsReconnect(true);
+        if (!quiet) showToast("error", /reconnect|Not connected/i.test(String(out.error)) ? "Xero has disconnected — connect it again in Settings." : "Couldn't read sales from Xero just now — try again in a minute.");
+        return;
       }
-      if (plan.batchChanges.length > 0) {
-        const ok = await updateXeroSold(plan.batchChanges);
-        if (!ok && !quiet) showToast("error", "Some stock didn't update — check your connection and try again.");
-        const byId = Object.fromEntries(plan.batchChanges.map((c) => [c.id, c.xeroSold]));
-        setBatches((prev) => prev.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)));
+      if (out.skipped === "already running") {
+        if (!quiet) showToast("success", "Xero is being checked right now — it'll update in a moment.");
+        return;
       }
-      {
-        const byId = Object.fromEntries(plan.batchChanges.map((c) => [c.id, c.xeroSold]));
-        await syncXeroOrders(data.docs || [], batches.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)), !!data.draftsComplete);
-      }
-      const unmatchedLedger = (ledgerRes.data || []).filter((r) => r.status === "unmapped" && !plan.rows.some((x) => x.xero_line_id === r.xero_line_id)).map((r) => r.item_code);
-      setXeroUnmatched([...new Set([...Object.keys(plan.unmatched), ...unmatchedLedger])].filter(Boolean));
-      const now = new Date().toISOString();
-      await supabase.from("xero_settings").update({ last_sales_sync: now }).eq("company_id", profile.companyId);
-      setXeroSettings((prev) => ({ ...(prev || {}), last_sales_sync: now }));
-      const { summary } = plan;
-      if (summary.applied > 0 || summary.reversed > 0) {
-        logActivity("synced", "stock", "Xero sales", `Took ${Math.round(summary.units)} units off for ${summary.applied} Xero sale line${summary.applied === 1 ? "" : "s"}${summary.reversed ? `, gave back ${summary.reversed} voided` : ""}`);
-      }
-      if (!quiet || summary.applied > 0 || summary.reversed > 0) {
+      if (!quiet || out.applied > 0 || out.reversed > 0 || out.newDrafts > 0) {
         const parts = [];
-        if (summary.applied > 0) parts.push(`${Math.round(summary.units).toLocaleString("en-NZ")} units taken off for ${summary.applied} Xero sale line${summary.applied === 1 ? "" : "s"}`);
-        if (summary.reversed > 0) parts.push(`${summary.reversed} voided line${summary.reversed === 1 ? "" : "s"} put back`);
-        if (summary.short > 0) parts.push(`${summary.short} sold more than Brewpoint had on hand`);
-        if (summary.unmapped > 0) parts.push(`${summary.unmapped} line${summary.unmapped === 1 ? "" : "s"} for items not matched yet`);
-        showToast(summary.short > 0 || summary.unmapped > 0 ? "error" : "success", parts.length ? `Xero sales: ${parts.join(" · ")}.` : "Xero sales checked — nothing new.");
+        if (out.applied > 0) parts.push(`${Math.round(out.units).toLocaleString("en-NZ")} units taken off for ${out.applied} Xero sale line${out.applied === 1 ? "" : "s"}`);
+        if (out.reversed > 0) parts.push(`${out.reversed} voided line${out.reversed === 1 ? "" : "s"} put back`);
+        if (out.newDrafts > 0) parts.push(`${out.newDrafts} new draft order${out.newDrafts === 1 ? "" : "s"} holding stock`);
+        if (out.short > 0) parts.push(`${out.short} sold more than Brewpoint had on hand`);
+        if (out.unmapped > 0) parts.push(`${out.unmapped} line${out.unmapped === 1 ? "" : "s"} for items not matched yet`);
+        showToast(out.short > 0 || out.unmapped > 0 ? "error" : "success", parts.length ? `Xero sales: ${parts.join(" · ")}.` : "Xero sales checked — nothing new.");
       }
     } catch (err) {
       console.error(err);
@@ -2019,14 +2007,18 @@ function TankLogApp() {
     }
   };
 
-  // Check Xero when the app opens and every 10 minutes while it's open.
+  // Check Xero when the app opens; the server keeps it current after that.
   const syncSalesRef = useRef(syncSalesFromXero);
   syncSalesRef.current = syncSalesFromXero;
+  const refreshRef = useRef(refreshFromXeroSync);
+  refreshRef.current = refreshFromXeroSync;
   const salesSyncOn = !loadingData && !!xeroConnection && !!xeroSettings?.sales_sync_enabled;
   useEffect(() => {
     if (!salesSyncOn) return undefined;
+    // The server does the checking; the app runs one on open, then picks up
+    // the server's changes every minute while it's on screen.
     const first = setTimeout(() => syncSalesRef.current(true), 3000);
-    const every = setInterval(() => syncSalesRef.current(true), 10 * 60 * 1000);
+    const every = setInterval(() => { if (document.visibilityState === "visible") refreshRef.current(); }, 60 * 1000);
     return () => {
       clearTimeout(first);
       clearInterval(every);

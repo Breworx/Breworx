@@ -1,0 +1,854 @@
+// Converts between the camelCase shapes the UI uses and the snake_case
+// columns Postgres/Supabase uses. Keeping this in one place means the
+// components never need to know about the database at all.
+
+export function rowToBatch(row) {
+  return {
+    stockCleared: Array.isArray(row.stock_cleared) ? row.stock_cleared : [],
+    xeroSold: Array.isArray(row.xero_sold) ? row.xero_sold : [],
+    id: row.id,
+    number: row.number,
+    name: row.name,
+    style: row.style,
+    productType: row.product_type || "Beer",
+    labelAbv: row.label_abv,
+    volume: row.volume,
+    og: row.og,
+    fg: row.fg,
+    mashPh: row.mash_ph,
+    mashTemp: row.mash_temp,
+    preBoilGravity: row.pre_boil_gravity,
+    topUpWater: row.top_up_water,
+    phIntoTank: row.ph_into_tank,
+    sgIntoTank: row.sg_into_tank,
+    stage: row.stage,
+    startDate: row.start_date,
+    recipeId: row.recipe_id,
+    recipeName: row.recipe_name,
+    tankId: row.tank_id,
+    tankName: row.tank_name,
+    splitTanks: row.split_tanks || [],
+    readings: row.readings || [],
+    ingredients: row.ingredients || [],
+    packaging: row.packaging || null,
+    schedule: row.schedule || [],
+    diacetylTests: row.diacetyl_tests || [],
+    faults: row.faults || [],
+    photos: row.photos || [],
+    packagingRun: row.packaging_run || null,
+    carbonationChecked: !!row.carbonation_checked,
+    hopDumpDone: !!row.hop_dump_done,
+    notes: row.notes || [],
+    yeastDumpDone: !!row.yeast_dump_done,
+    timers: row.timers || [],
+    brewStage: row.brew_stage || null,
+    ingredientCost: row.ingredient_cost ?? 0,
+    plannedDays: row.planned_days ?? null,
+    tastingLog: row.tasting_log || [],
+    sensoryScores: row.sensory_scores || [],
+    qcApproval: row.qc_approval || null,
+    labMeasurements: row.lab_measurements || [],
+    splitGroupId: row.split_group_id || null,
+    stageDates: row.stage_dates || {},
+    volumeTopups: row.volume_topups || [],
+    stillFermenting: !!row.still_fermenting,
+    tankSettingsLog: row.tank_settings_log || [],
+    pitchedYeastHarvestId: row.pitched_yeast_harvest_id || null,
+    batchAdditions: row.batch_additions || [],
+    juiceIntake: row.juice_intake || [],
+    dayRecipe: row.day_recipe || null,
+    salesHistory: row.sales_history || [],
+    blendLog: row.blend_log || [],
+    backSweetenings: row.back_sweetenings || [],
+    brewDays: row.brew_days || [],
+    brewDaysPlanned: row.brew_days_planned || 1,
+    hopDumpLog: row.hop_dump_log || [],
+    yeastDumpLog: row.yeast_dump_log || [],
+    mergedIntoBatchId: row.merged_into_batch_id || null,
+  };
+}
+
+export function batchToRow(batch, userId, companyId) {
+  return {
+    stock_cleared: batch.stockCleared || [],
+    xero_sold: batch.xeroSold || [],
+    id: batch.id,
+    user_id: userId,
+    company_id: companyId,
+    number: batch.number,
+    name: batch.name,
+    style: batch.style,
+    product_type: batch.productType || "Beer",
+    label_abv: batch.labelAbv ?? null,
+    volume: batch.volume,
+    og: batch.og,
+    fg: batch.fg,
+    mash_ph: batch.mashPh ?? null,
+    mash_temp: batch.mashTemp ?? null,
+    pre_boil_gravity: batch.preBoilGravity ?? null,
+    top_up_water: batch.topUpWater ?? null,
+    ph_into_tank: batch.phIntoTank ?? null,
+    sg_into_tank: batch.sgIntoTank ?? null,
+    stage: batch.stage,
+    start_date: batch.startDate,
+    recipe_id: batch.recipeId ?? null,
+    recipe_name: batch.recipeName ?? null,
+    tank_id: batch.tankId ?? null,
+    tank_name: batch.tankName ?? null,
+    split_tanks: batch.splitTanks || [],
+    readings: batch.readings || [],
+    ingredients: batch.ingredients || [],
+    packaging: batch.packaging ?? null,
+    schedule: batch.schedule || [],
+    diacetyl_tests: batch.diacetylTests || [],
+    faults: batch.faults || [],
+    photos: batch.photos || [],
+    packaging_run: batch.packagingRun || null,
+    carbonation_checked: !!batch.carbonationChecked,
+    hop_dump_done: !!batch.hopDumpDone,
+    notes: batch.notes || [],
+    yeast_dump_done: !!batch.yeastDumpDone,
+    timers: batch.timers || [],
+    brew_stage: batch.brewStage || null,
+    ingredient_cost: batch.ingredientCost ?? 0,
+    planned_days: batch.plannedDays ?? null,
+    tasting_log: batch.tastingLog || [],
+    sensory_scores: batch.sensoryScores || [],
+    qc_approval: batch.qcApproval || null,
+    lab_measurements: batch.labMeasurements || [],
+    split_group_id: batch.splitGroupId || null,
+    stage_dates: batch.stageDates || {},
+    volume_topups: batch.volumeTopups || [],
+    still_fermenting: !!batch.stillFermenting,
+    tank_settings_log: batch.tankSettingsLog || [],
+    pitched_yeast_harvest_id: batch.pitchedYeastHarvestId || null,
+    batch_additions: batch.batchAdditions || [],
+    juice_intake: batch.juiceIntake || [],
+    day_recipe: batch.dayRecipe || null,
+    sales_history: batch.salesHistory || [],
+    blend_log: batch.blendLog || [],
+    back_sweetenings: batch.backSweetenings || [],
+    brew_days: batch.brewDays || [],
+    brew_days_planned: batch.brewDaysPlanned || 1,
+    hop_dump_log: batch.hopDumpLog || [],
+    yeast_dump_log: batch.yeastDumpLog || [],
+    merged_into_batch_id: batch.mergedIntoBatchId || null,
+  };
+}
+
+export function rowToInventoryItem(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    qty: row.qty,
+    unit: row.unit,
+    threshold: row.threshold,
+    lots: row.lots || [],
+    history: row.history || [],
+    supplierId: row.supplier_id || null,
+    juiceSg: row.juice_sg != null ? Number(row.juice_sg) : null,
+  };
+}
+
+export function inventoryItemToRow(item, userId, companyId) {
+  return {
+    id: item.id,
+    user_id: userId,
+    company_id: companyId,
+    name: item.name,
+    category: item.category,
+    qty: item.qty,
+    unit: item.unit,
+    threshold: item.threshold,
+    supplier_id: item.supplierId || null,
+    lots: item.lots || [],
+    history: item.history || [],
+    juice_sg: item.juiceSg ?? null,
+  };
+}
+
+export function rowToAiFeedback(row) {
+  return {
+    id: row.id,
+    userName: row.user_name,
+    question: row.question,
+    answer: row.answer,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function aiFeedbackToRow(feedback, userId, companyId) {
+  return {
+    id: feedback.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: feedback.userName || null,
+    question: feedback.question,
+    answer: feedback.answer,
+  };
+}
+
+export function rowToPO(row) {
+  return {
+    id: row.id,
+    poNumber: row.po_number,
+    supplier: row.supplier,
+    orderDate: row.order_date,
+    receivedDate: row.received_date,
+    status: row.status,
+    lines: row.lines || [],
+    deliveryCost: row.delivery_cost ?? null,
+  };
+}
+
+export function poToRow(po, userId, companyId) {
+  return {
+    id: po.id,
+    user_id: userId,
+    company_id: companyId,
+    po_number: po.poNumber,
+    supplier: po.supplier,
+    order_date: po.orderDate,
+    received_date: po.receivedDate ?? null,
+    status: po.status,
+    lines: po.lines || [],
+    delivery_cost: po.deliveryCost ?? null,
+  };
+}
+
+export function rowToRecipe(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    style: row.style,
+    volume: row.volume,
+    og: row.og,
+    fg: row.fg,
+    ingredients: row.ingredients || [],
+    schedule: row.schedule || [],
+    familyId: row.family_id || row.id,
+    version: row.version || 1,
+    createdAt: row.created_at || null,
+    isActive: row.is_active !== false,
+    efficiency: row.efficiency ?? 72,
+    boilTime: row.boil_time ?? 60,
+    waterChemistry: row.water_chemistry || null,
+    productType: row.product_type || "Beer",
+    ogTolerance: row.og_tolerance,
+    fgTolerance: row.fg_tolerance,
+  };
+}
+
+export function recipeToRow(recipe, userId, companyId) {
+  return {
+    id: recipe.id,
+    user_id: userId,
+    company_id: companyId,
+    name: recipe.name,
+    style: recipe.style,
+    volume: recipe.volume,
+    og: recipe.og,
+    fg: recipe.fg,
+    ingredients: recipe.ingredients || [],
+    schedule: recipe.schedule || [],
+    is_active: recipe.isActive !== false,
+    family_id: recipe.familyId,
+    version: recipe.version || 1,
+    efficiency: recipe.efficiency ?? 72,
+    boil_time: recipe.boilTime ?? 60,
+    water_chemistry: recipe.waterChemistry || null,
+    product_type: recipe.productType || "Beer",
+    og_tolerance: recipe.ogTolerance ?? null,
+    fg_tolerance: recipe.fgTolerance ?? null,
+  };
+}
+
+export function rowToProfile(row) {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    name: row.name,
+    role: row.role,
+    createdAt: row.created_at || null,
+    toursSeen: row.tours_seen || [],
+  };
+}
+
+export function rowToTank(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    capacity: row.capacity,
+    type: row.type || "Fermenter",
+    cleanStatus: row.clean_status || null,
+    history: row.history || [],
+    barrelSource: row.barrel_source || null,
+  };
+}
+
+export function tankToRow(tank, companyId) {
+  return {
+    id: tank.id,
+    company_id: companyId,
+    name: tank.name,
+    capacity: tank.capacity,
+    type: tank.type || "Fermenter",
+    clean_status: tank.cleanStatus ?? null,
+    history: tank.history || [],
+    barrel_source: tank.barrelSource || null,
+  };
+}
+
+export function rowToStockTake(row) {
+  return {
+    id: row.id,
+    date: row.date,
+    userName: row.user_name,
+    lines: row.lines || [],
+    createdAt: row.created_at || null,
+    type: row.type || "inventory",
+  };
+}
+
+export function stockTakeToRow(stockTake, userId, companyId) {
+  return {
+    id: stockTake.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: stockTake.userName,
+    date: stockTake.date,
+    lines: stockTake.lines || [],
+    type: stockTake.type || "inventory",
+  };
+}
+
+export function rowToFoodSafetyRecord(row) {
+  return {
+    id: row.id,
+    category: row.category,
+    frequency: row.frequency,
+    date: row.date,
+    userName: row.user_name,
+    items: row.items || [],
+    equipmentName: row.equipment_name,
+    result: row.result,
+    dueDate: row.due_date,
+    staffName: row.staff_name,
+    topic: row.topic,
+    trainedBy: row.trained_by,
+    staffConfirmed: row.staff_confirmed || false,
+    notes: row.notes,
+    completedBy: row.completed_by || null,
+    correctiveAction: row.corrective_action || null,
+    correctiveActionResolved: row.corrective_action_resolved !== false,
+    stationId: row.station_id || null,
+    pestActivity: row.pest_activity || null,
+    photoUrl: row.photo_url || null,
+    batchId: row.batch_id || null,
+    batchName: row.batch_name || null,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function foodSafetyRecordToRow(record, userId, companyId) {
+  return {
+    id: record.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: record.userName,
+    category: record.category,
+    frequency: record.frequency || null,
+    date: record.date,
+    items: record.items || [],
+    equipment_name: record.equipmentName || null,
+    result: record.result || null,
+    due_date: record.dueDate || null,
+    staff_name: record.staffName || null,
+    topic: record.topic || null,
+    trained_by: record.trainedBy || null,
+    staff_confirmed: record.staffConfirmed || false,
+    notes: record.notes || null,
+    completed_by: record.completedBy || null,
+    corrective_action: record.correctiveAction || null,
+    corrective_action_resolved: record.correctiveActionResolved !== false,
+    station_id: record.stationId || null,
+    pest_activity: record.pestActivity || null,
+    photo_url: record.photoUrl || null,
+    batch_id: record.batchId || null,
+    batch_name: record.batchName || null,
+  };
+}
+
+export function rowToExciseItemCode(row) {
+  return {
+    id: row.id,
+    productType: row.product_type,
+    itemNumber: row.item_number || "",
+  };
+}
+export function exciseItemCodeToRow(e, companyId) {
+  return {
+    id: e.id,
+    company_id: companyId,
+    product_type: e.productType,
+    item_number: e.itemNumber || null,
+  };
+}
+
+export function rowToExciseReturn(row) {
+  const num = (v) => (v == null ? null : Number(v));
+  return {
+    id: row.id,
+    period: row.period,
+    declaredLitres: num(row.declared_litres),
+    declaredLal: num(row.declared_lal),
+    declaredDuty: num(row.declared_duty),
+    declaredLevy: num(row.declared_levy),
+    declaredLevyGst: num(row.declared_levy_gst),
+    entryNumber: row.entry_number || "",
+    filedDate: row.filed_date || "",
+    notes: row.notes || "",
+    varianceExplanation: row.variance_explanation || "",
+    appLitresAtFiling: num(row.app_litres_at_filing),
+    appLalAtFiling: num(row.app_lal_at_filing),
+    screenshotPaths: row.screenshot_paths || [],
+    declaredLines: Array.isArray(row.declared_lines) ? row.declared_lines : [],
+    reviewedBy: row.reviewed_by || "",
+    reviewedAt: row.reviewed_at || null,
+    declaredOnTsw: !!row.declared_on_tsw,
+    declaredOnTswAt: row.declared_on_tsw_at || null,
+    declaredOnTswBy: row.declared_on_tsw_by || "",
+    updatedAt: row.updated_at || null,
+  };
+}
+export function exciseReturnToRow(r, companyId) {
+  const num = (v) => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+  return {
+    id: r.id,
+    company_id: companyId,
+    period: r.period,
+    declared_litres: num(r.declaredLitres),
+    declared_lal: num(r.declaredLal),
+    declared_duty: num(r.declaredDuty),
+    ...(r.declaredLevy !== undefined ? { declared_levy: num(r.declaredLevy), declared_levy_gst: num(r.declaredLevyGst) } : {}),
+    entry_number: r.entryNumber || null,
+    filed_date: r.filedDate || null,
+    notes: r.notes || null,
+    variance_explanation: r.varianceExplanation || null,
+    app_litres_at_filing: num(r.appLitresAtFiling),
+    app_lal_at_filing: num(r.appLalAtFiling),
+    screenshot_paths: r.screenshotPaths || [],
+    declared_lines: (r.declaredLines || []).map(({ source, imageIdx, ...l }) => l),
+    reviewed_by: r.reviewedBy || null,
+    reviewed_at: r.reviewedAt || null,
+    ...(r.declaredOnTsw !== undefined ? { declared_on_tsw: !!r.declaredOnTsw, declared_on_tsw_at: r.declaredOnTswAt || null, declared_on_tsw_by: r.declaredOnTswBy || null } : {}),
+  };
+}
+
+export function rowToTriangleTest(row) {
+  return {
+    id: row.id,
+    testDate: row.test_date,
+    batchAId: row.batch_a_id,
+    batchAName: row.batch_a_name,
+    batchBId: row.batch_b_id,
+    batchBName: row.batch_b_name,
+    purpose: row.purpose,
+    responses: row.responses || [],
+    createdAt: row.created_at || null,
+  };
+}
+export function triangleTestToRow(test, companyId) {
+  return {
+    id: test.id,
+    company_id: companyId,
+    test_date: test.testDate,
+    batch_a_id: test.batchAId || null,
+    batch_a_name: test.batchAName,
+    batch_b_id: test.batchBId || null,
+    batch_b_name: test.batchBName,
+    purpose: test.purpose || null,
+    responses: test.responses || [],
+  };
+}
+
+export function rowToKeg(row) {
+  return {
+    id: row.id,
+    kegNumber: row.keg_number,
+    sizeL: row.size_l,
+    status: row.status || "In brewery",
+    currentBatchId: row.current_batch_id || null,
+    currentBatchName: row.current_batch_name || null,
+    currentCustomerId: row.current_customer_id || null,
+    currentCustomerName: row.current_customer_name || null,
+    sentDate: row.sent_date || null,
+    dueBackDate: row.due_back_date || null,
+    history: row.history || [],
+  };
+}
+export function kegToRow(keg, companyId) {
+  return {
+    id: keg.id,
+    company_id: companyId,
+    keg_number: keg.kegNumber,
+    size_l: keg.sizeL,
+    status: keg.status || "In brewery",
+    current_batch_id: keg.currentBatchId || null,
+    current_batch_name: keg.currentBatchName || null,
+    current_customer_id: keg.currentCustomerId || null,
+    current_customer_name: keg.currentCustomerName || null,
+    sent_date: keg.sentDate || null,
+    due_back_date: keg.dueBackDate || null,
+    history: keg.history || [],
+  };
+}
+
+export function rowToPestStation(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    location: row.location,
+    type: row.type || "bait",
+    active: row.active !== false,
+  };
+}
+export function pestStationToRow(s, companyId) {
+  return {
+    id: s.id,
+    company_id: companyId,
+    label: s.label,
+    location: s.location || null,
+    type: s.type || "bait",
+    active: s.active !== false,
+  };
+}
+
+export function rowToSupplier(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    contactName: row.contact_name,
+    phone: row.phone,
+    email: row.email,
+    address: row.address,
+    leadTimeDays: row.lead_time_days ?? null,
+    notes: row.notes,
+    approved: row.approved || false,
+    approvedNotes: row.approved_notes || "",
+    createdAt: row.created_at || null,
+  };
+}
+export function rowToCustomer(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type || "Wholesale",
+    contactName: row.contact_name,
+    phone: row.phone,
+    email: row.email,
+    address: row.address,
+    paymentTerms: row.payment_terms,
+    notes: row.notes,
+    xeroContactId: row.xero_contact_id || null,
+    xeroContactName: row.xero_contact_name || null,
+    portalToken: row.portal_token || null,
+    authUserId: row.auth_user_id || null,
+    createdAt: row.created_at || null,
+  };
+}
+export function customerToRow(customer, companyId) {
+  return {
+    id: customer.id,
+    company_id: companyId,
+    name: customer.name,
+    type: customer.type || "Wholesale",
+    contact_name: customer.contactName || null,
+    phone: customer.phone || null,
+    email: customer.email || null,
+    address: customer.address || null,
+    payment_terms: customer.paymentTerms || null,
+    notes: customer.notes || null,
+    xero_contact_id: customer.xeroContactId || null,
+    xero_contact_name: customer.xeroContactName || null,
+    portal_token: customer.portalToken || null,
+  };
+}
+export function rowToMixedPackType(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    totalUnits: row.total_units,
+    mode: row.mode || "flexible",
+    fixedComposition: row.fixed_composition || [],
+    price: row.price,
+  };
+}
+export function mixedPackTypeToRow(t, companyId) {
+  return {
+    id: t.id,
+    company_id: companyId,
+    name: t.name,
+    total_units: t.totalUnits,
+    mode: t.mode || "flexible",
+    fixed_composition: t.fixedComposition || [],
+    price: t.price ?? null,
+  };
+}
+export function rowToMixedPackAssembly(row) {
+  return {
+    id: row.id,
+    mixedPackTypeId: row.mixed_pack_type_id,
+    mixedPackTypeName: row.mixed_pack_type_name,
+    quantity: row.quantity,
+    composition: row.composition || [],
+    assembledDate: row.assembled_date,
+    userName: row.user_name || null,
+  };
+}
+export function mixedPackAssemblyToRow(a, userId, userName, companyId) {
+  return {
+    id: a.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: userName,
+    mixed_pack_type_id: a.mixedPackTypeId,
+    mixed_pack_type_name: a.mixedPackTypeName,
+    quantity: a.quantity,
+    composition: a.composition || [],
+    assembled_date: a.assembledDate,
+  };
+}
+
+export function rowToYeastHarvest(row) {
+  return {
+    id: row.id,
+    strainName: row.strain_name,
+    generation: row.generation,
+    amount: row.amount,
+    unit: row.unit,
+    sourceBatchId: row.source_batch_id,
+    sourceBatchName: row.source_batch_name,
+    harvestDate: row.harvest_date,
+    notes: row.notes,
+    used: !!row.used,
+    usedInBatchId: row.used_in_batch_id,
+    usedDate: row.used_date,
+    userName: row.user_name || null,
+  };
+}
+export function yeastHarvestToRow(h, userId, userName, companyId) {
+  return {
+    id: h.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: userName,
+    strain_name: h.strainName,
+    generation: h.generation,
+    amount: h.amount,
+    unit: h.unit,
+    source_batch_id: h.sourceBatchId || null,
+    source_batch_name: h.sourceBatchName || null,
+    harvest_date: h.harvestDate,
+    notes: h.notes || null,
+    used: !!h.used,
+    used_in_batch_id: h.usedInBatchId || null,
+    used_date: h.usedDate || null,
+  };
+}
+
+export function rowToCustomerPrice(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    productKey: row.product_key,
+    unitPrice: row.unit_price,
+  };
+}
+export function customerPriceToRow(price, companyId) {
+  return {
+    id: price.id,
+    company_id: companyId,
+    customer_id: price.customerId,
+    product_key: price.productKey,
+    unit_price: price.unitPrice,
+  };
+}
+export function rowToSalesOrder(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    orderNumber: row.order_number,
+    status: row.status || "Draft",
+    orderDate: row.order_date,
+    lines: row.lines || [],
+    notes: row.notes,
+    paid: !!row.paid,
+    createdAt: row.created_at || null,
+    proofsOfDelivery: row.proofs_of_delivery || [],
+    source: row.source || null,
+    xeroDocId: row.xero_doc_id || null,
+  };
+}
+export function salesOrderToRow(order, companyId) {
+  return {
+    id: order.id,
+    company_id: companyId,
+    customer_id: order.customerId,
+    order_number: order.orderNumber,
+    status: order.status || "Draft",
+    order_date: order.orderDate,
+    lines: order.lines || [],
+    notes: order.notes || null,
+    paid: !!order.paid,
+    proofs_of_delivery: order.proofsOfDelivery || [],
+    source: order.source || null,
+    xero_doc_id: order.xeroDocId || null,
+  };
+}
+
+export function supplierToRow(supplier, companyId) {
+  return {
+    id: supplier.id,
+    company_id: companyId,
+    name: supplier.name,
+    contact_name: supplier.contactName || null,
+    phone: supplier.phone || null,
+    email: supplier.email || null,
+    address: supplier.address || null,
+    lead_time_days: supplier.leadTimeDays ?? null,
+    notes: supplier.notes || null,
+    approved: supplier.approved ?? false,
+    approved_notes: supplier.approvedNotes || null,
+  };
+}
+
+export function rowToSupplierDocument(row) {
+  return {
+    id: row.id,
+    supplierId: row.supplier_id,
+    name: row.name,
+    filePath: row.file_path,
+    fileType: row.file_type,
+    expiryDate: row.expiry_date,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: row.uploaded_at || null,
+  };
+}
+
+export function supplierDocumentToRow(doc, companyId) {
+  return {
+    id: doc.id,
+    company_id: companyId,
+    supplier_id: doc.supplierId,
+    name: doc.name,
+    file_path: doc.filePath,
+    file_type: doc.fileType || null,
+    expiry_date: doc.expiryDate || null,
+    uploaded_by: doc.uploadedBy || null,
+  };
+}
+
+export function rowToConsumable(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    qty: row.qty,
+    unit: row.unit,
+    threshold: row.threshold,
+    lots: row.lots || [],
+    history: row.history || [],
+    supplierId: row.supplier_id || null,
+    costPerUnit: row.cost_per_unit ?? null,
+  };
+}
+
+export function consumableToRow(item, userId, companyId) {
+  return {
+    id: item.id,
+    user_id: userId,
+    company_id: companyId,
+    name: item.name,
+    category: item.category,
+    qty: item.qty,
+    unit: item.unit,
+    threshold: item.threshold,
+    supplier_id: item.supplierId || null,
+    lots: item.lots || [],
+    history: item.history || [],
+    cost_per_unit: item.costPerUnit ?? null,
+  };
+}
+
+export function rowToPackageType(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    items: row.items || [],
+    unitsPerPack: Number(row.units_per_pack) || 1,
+  };
+}
+
+export function packageTypeToRow(packageType, userId, companyId) {
+  return {
+    id: packageType.id,
+    user_id: userId,
+    company_id: companyId,
+    name: packageType.name,
+    items: packageType.items || [],
+    units_per_pack: Number(packageType.unitsPerPack) || 1,
+  };
+}
+
+export function rowToReminder(row) {
+  return {
+    id: row.id,
+    text: row.text,
+    dueDate: row.due_date,
+    done: !!row.done,
+    userId: row.user_id,
+    userName: row.user_name,
+    doneBy: row.done_by || null,
+    createdAt: row.created_at || null,
+  };
+}
+
+export function reminderToRow(reminder, userId, userName, companyId) {
+  return {
+    id: reminder.id,
+    company_id: companyId,
+    user_id: userId,
+    user_name: userName,
+    text: reminder.text,
+    due_date: reminder.dueDate,
+    done: !!reminder.done,
+    done_by: reminder.doneBy || null,
+  };
+}
+
+export function rowToActivity(row) {
+  return {
+    id: row.id,
+    action: row.action,
+    entityType: row.entity_type,
+    entityName: row.entity_name,
+    description: row.description,
+    userName: row.user_name,
+    createdAt: row.created_at,
+  };
+}
+
+export function activityToRow(entry, userId, companyId) {
+  return {
+    id: entry.id,
+    user_id: userId,
+    company_id: companyId,
+    action: entry.action,
+    entity_type: entry.entityType,
+    entity_name: entry.entityName,
+    description: entry.description,
+    user_name: entry.userName,
+  };
+}
