@@ -703,12 +703,29 @@ function TankLogApp() {
     setReminders((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const [inviteForm, setInviteForm] = useState(null); // { email, role } while filling in
+  const [inviteSent, setInviteSent] = useState(null); // { email, role } of the last invite made
   const createInvite = async () => {
+    const email = (inviteForm?.email || "").trim();
+    const role = inviteForm?.role || "member";
     setCreatingInvite(true);
-    const { data, error } = await supabase.rpc("create_company_invite");
+    const { data, error } = await supabase.rpc("create_company_invite", { p_email: email, p_role: role });
     setCreatingInvite(false);
-    if (error) { console.error(error); showToast("error", `Couldn't create an invite link: ${error.message || "unknown error"}`); return; }
-    setInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data}`);
+    if (error) { console.error(error); showToast("error", `Couldn't create the invite: ${error.message || "unknown error"}`); return; }
+    const link = `${window.location.origin}${window.location.pathname}?invite=${data}`;
+    setInviteLink(link);
+    setInviteSent({ email, role });
+    setInviteForm(null);
+    // Open their email app with the invite ready to send, from your own address.
+    if (email) window.location.href = inviteMailto(email, role, link);
+  };
+  const inviteMailto = (email, role, link) => {
+    const company = companyName || "our brewery";
+    const what = role === "sales"
+      ? "You'll be able to see finished stock, what's in the tanks, the production calendar and Upstock orders with back orders."
+      : "You'll be part of the team in Brewpoint, our brewery app.";
+    const body = `Hi,\n\nYou're invited to join ${company} on Brewpoint. ${what}\n\nTap this link to set up your login (it works once, just for you):\n${link}\n\nThanks,\n${user?.name || ""}`;
+    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(`Join ${company} on Brewpoint`)}&body=${encodeURIComponent(body)}`;
   };
 
   const updateTeammateRole = async (teammate, newRole) => {
@@ -6380,9 +6397,32 @@ function TankLogApp() {
                   </div>
                   {profile?.role === "owner" && (
                     <div style={{ marginBottom: 10 }}>
-                      {!inviteLink ? (
+                      {inviteForm && !inviteLink ? (
+                        <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "12px", display: "flex", flexDirection: "column", gap: 10 }}>
+                          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Their email</span>
+                            <input type="email" inputMode="email" autoCapitalize="none" value={inviteForm.email} onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))} placeholder="name@example.com" style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 15, color: "#2A3324" }} />
+                          </label>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>What they can do</span>
+                            {[["member", "Team member", "Works in Brewpoint: batches, stock, orders and the rest"], ["sales", "Sales (view only)", "Stock, tanks, calendar and Upstock orders — you choose extras in Settings"]].map(([r, label, hint]) => (
+                              <label key={r} style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                                <input type="radio" name="invite-role" checked={inviteForm.role === r} onChange={() => setInviteForm((f) => ({ ...f, role: r }))} style={{ marginTop: 3, accentColor: "#5C9A3C" }} />
+                                <span style={{ fontSize: 13, color: "#2A3324" }}>{label}<span style={{ display: "block", fontSize: 11.5, color: "#9BA88A" }}>{hint}</span></span>
+                              </label>
+                            ))}
+                          </div>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={createInvite} disabled={creatingInvite || !/.+@.+\..+/.test(inviteForm.email.trim())} style={{ flex: 2, background: /.+@.+\..+/.test(inviteForm.email.trim()) ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "10px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer" }}>
+                              {creatingInvite ? "Creating…" : "Send invite"}
+                            </button>
+                            <button onClick={() => setInviteForm(null)} style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, color: "#5C6B54", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "#9BA88A" }}>Your email app opens with the invite written and ready to send.</div>
+                        </div>
+                      ) : !inviteLink ? (
                         <button
-                          onClick={createInvite}
+                          onClick={() => setInviteForm({ email: "", role: "member" })}
                           disabled={creatingInvite}
                           style={{
                             display: "flex",
@@ -6404,8 +6444,17 @@ function TankLogApp() {
                         </button>
                       ) : (
                         <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px" }}>
-                          <div style={{ color: "#5C6B54", fontSize: 11.5, marginBottom: 6 }}>
-                            Share this link — it works once, for one person, and only for your company.
+                          <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 6, lineHeight: 1.45 }}>
+                            {inviteSent?.email ? <>Invite for <strong>{inviteSent.email}</strong> as {inviteSent.role === "sales" ? "Sales (view only)" : "a team member"}. </> : null}
+                            If your email app didn't open, send it from here — the link works once, for one person.
+                          </div>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                            {inviteSent?.email && (
+                              <a href={inviteMailto(inviteSent.email, inviteSent.role, inviteLink)} style={{ flex: 1, textAlign: "center", background: "#5C9A3C", borderRadius: 4, padding: "9px", color: "#16191A", fontSize: 12.5, textDecoration: "none" }}>Email it</a>
+                            )}
+                            {typeof navigator !== "undefined" && navigator.share && (
+                              <button onClick={() => navigator.share({ title: "Join us on Brewpoint", text: "Tap to join our team on Brewpoint:", url: inviteLink }).catch(() => {})} style={{ flex: 1, background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 4, padding: "9px", color: "#2A3324", fontSize: 12.5, cursor: "pointer" }}>Text or share…</button>
+                            )}
                           </div>
                           <div style={{ display: "flex", gap: 8 }}>
                             <input
@@ -6435,7 +6484,7 @@ function TankLogApp() {
                             </button>
                           </div>
                           <button
-                            onClick={() => setInviteLink("")}
+                            onClick={() => { setInviteLink(""); setInviteSent(null); }}
                             style={{ background: "none", border: "none", color: "#9BA88A", fontFamily: "'Inter', sans-serif", fontSize: 11.5, cursor: "pointer", padding: "6px 0 0" }}
                           >
                             Done
