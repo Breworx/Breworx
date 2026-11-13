@@ -148,6 +148,9 @@ export function rowToInventoryItem(row) {
     history: row.history || [],
     supplierId: row.supplier_id || null,
     juiceSg: row.juice_sg != null ? Number(row.juice_sg) : null,
+    packSize: row.pack_size != null ? Number(row.pack_size) : null,
+    packLabel: row.pack_label || null,
+    supplierProduct: row.supplier_product || null,
   };
 }
 

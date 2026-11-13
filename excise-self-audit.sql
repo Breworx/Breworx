@@ -335,3 +335,6 @@ alter table xero_settings add column if not exists sync_lock_until timestamptz;
 
 -- Team invites carry the email and role (member or sales); see migration invite_with_email_and_role.
 alter table company_invites add column if not exists email text, add column if not exists role text not null default 'member';
+
+-- Pack sizes for ordering (e.g. 25kg bags); see migration inventory_pack_sizes.
+alter table inventory_items add column if not exists pack_size numeric, add column if not exists pack_label text, add column if not exists supplier_product text;
