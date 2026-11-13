@@ -562,6 +562,7 @@ export function FinishedGoodsStockView({
   onUndoClear,
   onRepack,
   onAdjust,
+  customers = [],
   onCompareXero,
   readOnly,
   xeroNeedsReconnect,
@@ -581,7 +582,7 @@ export function FinishedGoodsStockView({
   });
   const beerNames = Object.keys(grouped).sort();
 
-  const adjustModal = adjusting && onAdjust ? <AdjustOneStockModal row={adjusting} onClose={() => setAdjusting(null)} onSave={onAdjust} /> : null;
+  const adjustModal = adjusting && onAdjust ? <AdjustOneStockModal row={adjusting} customers={customers} onClose={() => setAdjusting(null)} onSave={onAdjust} /> : null;
   return (
     <div>
       {adjustModal}
@@ -629,6 +630,8 @@ export function FinishedGoodsStockView({
           Compare with Xero
         </button>
       )}
+
+      {!readOnly && <SamplesReport batches={batches} />}
 
       {!readOnly && clearHistory.length > 0 && (
         <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -764,11 +767,12 @@ export function FinishedGoodsStockView({
 // Tap a stock line to fix just that one: say what's really there (or how
 // many went), with a reason. Saved like a clear-out, so it can be undone and
 // never touches the batch's packaging or excise figures.
-export function AdjustOneStockModal({ row, onClose, onSave }) {
+export function AdjustOneStockModal({ row, onClose, onSave, customers = [] }) {
   const isCans = row.containerKey === "cans330";
   const [count, setCount] = useState(String(row.available));
   const [reason, setReason] = useState("Sold — not recorded in Xero");
   const [other, setOther] = useState("");
+  const [sampleTo, setSampleTo] = useState("");
   const [saving, setSaving] = useState(false);
   const n = Math.max(0, Math.floor(Number(count) || 0));
   const diff = row.available - n; // positive: comes off; negative: put back
@@ -777,7 +781,7 @@ export function AdjustOneStockModal({ row, onClose, onSave }) {
   const unit = (v) => (isCans ? `${canCasesText(v)} (${v} cans)` : `${v} × ${row.containerLabel}`);
   const save = async () => {
     setSaving(true);
-    const ok = await onSave({ batchId: row.batchId, batchName: row.batchName, containerKey: row.containerKey, diff, reason: why, label: unit(Math.abs(diff)) });
+    const ok = await onSave({ batchId: row.batchId, batchName: row.batchName, containerKey: row.containerKey, diff, reason: why, label: unit(Math.abs(diff)), sampleTo: reason === "Samples" ? sampleTo.trim() : "" });
     setSaving(false);
     if (ok) onClose();
   };
@@ -797,12 +801,21 @@ export function AdjustOneStockModal({ row, onClose, onSave }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {row.available > 0 && <button type="button" onClick={() => setCount("0")} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>None left</button>}
           {row.available > 0 && <button type="button" onClick={() => setCount(String(Math.max(0, row.available - (isCans ? 24 : 1))))} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>One {isCans ? "case" : "keg"} less</button>}
+          {isCans && row.available > 0 && [1, 6].map((k) => (
+            <button key={k} type="button" onClick={() => setCount(String(Math.max(0, row.available - k)))} style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "6px 10px", fontSize: 12.5, cursor: "pointer" }}>{k} can{k === 1 ? "" : "s"} less</button>
+          ))}
         </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Why</span>
           <select value={reason} onChange={(e) => setReason(e.target.value)} style={inputStyle}>
-            {["Sold — not recorded in Xero", "Sold under a different Xero item", "Damaged or spilled", "Used in the taproom / samples", "Stock count", "Found more than recorded", "Other"].map((r) => <option key={r} value={r}>{r}</option>)}
+            {["Sold — not recorded in Xero", "Sold under a different Xero item", "Samples", "Used in the taproom", "Damaged or spilled", "Stock count", "Found more than recorded", "Other"].map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
+          {reason === "Samples" && (
+            <>
+              <input value={sampleTo} onChange={(e) => setSampleTo(e.target.value)} list="sample-to-list" placeholder="Who for? e.g. a bar, an event (optional)" style={inputStyle} />
+              <datalist id="sample-to-list">{customers.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+            </>
+          )}
           {reason === "Other" && <input value={other} onChange={(e) => setOther(e.target.value)} placeholder="What happened?" style={inputStyle} />}
         </label>
         <div style={{ fontSize: 12.5, color: diff > 0 ? "#B5502F" : diff < 0 ? "#5C9A3C" : "#9BA88A" }}>
@@ -812,5 +825,50 @@ export function AdjustOneStockModal({ row, onClose, onSave }) {
         <button type="button" onClick={save} disabled={!can} style={auditPrimaryBtn(can)}>{saving ? "Saving…" : "Save"}</button>
       </div>
     </Modal>
+  );
+}
+
+// Every sample given out, from the adjust box: by beer and by who it went
+// to, for the last 12 months.
+export function SamplesReport({ batches }) {
+  const [open, setOpen] = useState(false);
+  const from = new Date();
+  from.setFullYear(from.getFullYear() - 1);
+  const fromStr = from.toISOString().slice(0, 10);
+  const rows = [];
+  batches.forEach((b) =>
+    (b.stockCleared || []).forEach((e) => {
+      if (e.reason !== "Samples" || String(e.date).slice(0, 10) < fromStr) return;
+      Object.entries(e.counts || {}).forEach(([k, v]) => {
+        if (v > 0) rows.push({ date: String(e.date).slice(0, 10), beer: b.name, number: b.number, containerKey: k, qty: v, to: e.sampleTo || "", litres: v * (CONTAINERS.find((c) => c.key === k)?.volumeL || 0) });
+      });
+    })
+  );
+  if (!rows.length) return null;
+  rows.sort((a, b) => b.date.localeCompare(a.date));
+  const totalL = rows.reduce((t, r) => t + r.litres, 0);
+  const byTo = {};
+  rows.forEach((r) => { const k = r.to || "Not noted"; byTo[k] = (byTo[k] || 0) + r.litres; });
+  const qty = (r) => (r.containerKey === "cans330" ? `${r.qty} can${r.qty === 1 ? "" : "s"}` : `${r.qty} × ${CONTAINERS.find((c) => c.key === r.containerKey)?.shortLabel || r.containerKey}`);
+  return (
+    <div style={{ marginBottom: 20, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, padding: "10px 12px" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} style={{ display: "flex", justifyContent: "space-between", width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13.5, color: "#2A3324" }}>
+        <span><strong>Samples</strong> · last 12 months</span>
+        <span style={{ color: "#5C6B54" }}>{rows.length} given · {Math.round(totalL * 10) / 10} L {open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: "#5C6B54", marginBottom: 8 }}>
+            {Object.entries(byTo).sort((a, b) => b[1] - a[1]).map(([k, l]) => `${k}: ${Math.round(l * 10) / 10} L`).join(" · ")}
+          </div>
+          {rows.map((r, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, color: "#2A3324", padding: "4px 0", borderTop: "1px solid #F0EDE0" }}>
+              <span>{r.date.slice(5)} · {r.beer}{r.number ? ` #${r.number}` : ""}{r.to ? <span style={{ color: "#9BA88A" }}> → {r.to}</span> : null}</span>
+              <span style={{ whiteSpace: "nowrap" }}>{qty(r)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
