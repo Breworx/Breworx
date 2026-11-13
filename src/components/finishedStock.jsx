@@ -569,8 +569,8 @@ export function FinishedGoodsStockView({
   // On hand means available right now — sold-out and cleared lines stay
   // hidden unless asked for.
   const everPackaged = availableStock.filter((s) => s.packaged > 0);
-  const relevant = showSoldOut ? everPackaged : everPackaged.filter((s) => s.available > 0);
-  const soldOutCount = everPackaged.filter((s) => s.available <= 0).length;
+  const relevant = showSoldOut ? everPackaged : everPackaged.filter((s) => s.available > 0 || s.reserved > 0);
+  const soldOutCount = everPackaged.filter((s) => s.available <= 0 && !(s.reserved > 0)).length;
   const clearHistory = stockClearHistory(batches);
   const grouped = {};
   relevant.forEach((s) => {
@@ -735,6 +735,11 @@ export function FinishedGoodsStockView({
                     }}
                   >
                     {s.containerKey === "cans330" ? `${canCasesText(s.available)} available` : `${s.available} available`}
+                    {s.reserved > 0 && (
+                      <span style={{ display: "block", fontSize: 11, color: "#9A5A2E", fontWeight: 400 }}>
+                        + {s.containerKey === "cans330" ? canCasesText(s.reserved) : s.reserved} held for Xero drafts
+                      </span>
+                    )}
                   </span>
                 </div>
               ))}

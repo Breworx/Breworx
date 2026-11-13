@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { addDaysISO, nzPublicHolidays, planBrews, productKeyForBatch } from "../lib/brewPlanner";
 import { monthLabelFromKey } from "../lib/excise";
-import { CONTAINERS, availableStockList, batchTankIds, packagedVolume, packagingEvents, remainingVolume, uid } from "../lib/production";
+import { CONTAINERS, availableStockList, batchTankIds, draftOrderAllocations, packagedVolume, packagingEvents, productKeyFor, remainingVolume, uid } from "../lib/production";
 import { today } from "../lib/utils";
 
 // ─── Brew planner ───────────────────────────────────────────────────────────
@@ -46,7 +46,18 @@ export function brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemb
     const by = stockByKeyContainer[key] || (stockByKeyContainer[key] = {});
     by[s.containerKey] = (by[s.containerKey] || 0) + l;
   });
-  return { list, stockByKey, stockByKeyContainer };
+  // Back orders from Xero drafts, in litres, under the planner's own key for
+  // that beer (the key of its most recent batch).
+  const backOrderByKey = {};
+  const latestKeyFor = {};
+  [...batches].filter((b) => !b.mergedIntoBatchId).sort((a, b) => String(a.startDate || "").localeCompare(String(b.startDate || ""))).forEach((b) => {
+    CONTAINERS.forEach((c) => (latestKeyFor[productKeyFor(b.name, c.key)] = keyById[b.id]));
+  });
+  draftOrderAllocations(batches, salesOrders, mixedPackAssemblies).backOrders.forEach((bo) => {
+    const key = latestKeyFor[bo.productKey];
+    if (key) backOrderByKey[key] = (backOrderByKey[key] || 0) + litresOf(bo.line.containerKey, bo.qty);
+  });
+  return { list, stockByKey, stockByKeyContainer, backOrderByKey };
 }
 
 export const fmtWeeks = (w) => (w == null ? "—" : w >= 52 ? "52+ wk" : `${Math.round(w * 10) / 10} wk`);
@@ -127,14 +138,14 @@ function DaysOffEditor({ s, save, horizonWeeks, sel, btn2, note }) {
   );
 }
 
-export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, nextNumber, nextCiderNumber }) {
+export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings, onSaveSettings, onSchedule, onRemoveScheduled, nextNumber, nextCiderNumber }) {
   const s = { periodMonths: 3, horizonWeeks: 12, baseCoverWeeks: 4, brewWeekdays: [1, 2, 3, 4, 5], brewsPerDay: 2, kitLitres: 240, products: {}, ...(settings || {}) };
   const [editing, setEditing] = useState(null); // product key being edited
   const [added, setAdded] = useState({}); // suggestion id -> true
   const [busy, setBusy] = useState(false);
   const plan = useMemo(() => {
-    const { list, stockByKey, stockByKeyContainer } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
-    return planBrews({ batches: list, stockByKey, stockByKeyContainer, containers: CONTAINERS, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
+    const { list, stockByKey, stockByKeyContainer, backOrderByKey } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
+    return planBrews({ batches: list, stockByKey, stockByKeyContainer, backOrderByKey, containers: CONTAINERS, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
   }, [batches, recipes, tanks, salesOrders, mixedPackAssemblies, JSON.stringify(settings || {})]);
   const save = (patch) => onSaveSettings({ ...s, ...patch });
   const saveProduct = (key, patch) => save({ products: { ...s.products, [key]: { ...(s.products[key] || {}), ...patch } } });
@@ -279,6 +290,10 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
                       Pack: {sug.split.map((x) => (x.containerKey === "cans330" ? `${x.units} cans (${x.units / 24} cases)` : `${x.units} × ${x.label}`)).join(" · ")}
                     </div>
                   )}
+                  {(() => {
+                    const pr = plan.products.find((x) => x.key === sug.key);
+                    return pr && pr.backOrderL > 0 ? <div style={{ fontSize: 11.5, color: "#9A5A2E", marginTop: 2 }}>Includes {Math.round(pr.backOrderL)} L on back order from Upstock/Xero drafts.</div> : null;
+                  })()}
                   {sug.delayDays > 0 && <div style={{ fontSize: 11.5, color: "#8A6D0B", marginTop: 2 }}>Wanted {fmtDay(sug.needDate)} — {sug.delayDays} day{sug.delayDays > 1 ? "s" : ""} later for a free tank or brew day.</div>}
                   {sug.runOut && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>Packaged stock runs out around {fmtDay(sug.runOut)}, before this is ready.</div>}
                   {sug.noTank && <div style={{ fontSize: 11.5, color: "#B5502F", marginTop: 2 }}>No fermenter is free for {sug.leadDays} days within 2 months of {fmtDay(sug.needDate)}.</div>}
@@ -292,6 +307,22 @@ export function BrewPlannerView({ batches, recipes, tanks, salesOrders, mixedPac
             </div>
           ))}
         </div>
+        {(plan.notNeeded || []).length > 0 && (
+          <div style={{ marginTop: 12, border: "1px solid #E3B37A", background: "#FBF0E6", borderRadius: 5, padding: "10px 11px" }}>
+            <div style={{ fontSize: 12.5, color: "#7A3E1D", fontWeight: 500, marginBottom: 4 }}>On the calendar but not needed any more</div>
+            <div style={{ fontSize: 12, color: "#7A3E1D", marginBottom: 6, lineHeight: 1.45 }}>With today's stock, sales and back orders, you'd still have full cover without these, for example if a back order was cancelled.</div>
+            {plan.notNeeded.map((n) => (
+              <div key={n.batchId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                <span style={{ fontSize: 13, color: "#2A3324" }}>{fmtDay(n.startDate)} · {n.name}</span>
+                {onRemoveScheduled && (
+                  <button type="button" onClick={() => { if (window.confirm(`Take the ${n.name} brew on ${fmtDay(n.startDate)} off the calendar?`)) onRemoveScheduled(n.batchId); }} style={{ ...btn2, whiteSpace: "nowrap" }}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {plan.suggestions.length > 0 && <div style={{ ...note, marginTop: 10 }}>Added brews go in the calendar as scheduled batches, so you can move, resize or delete them there like any other.</div>}
       </div>
 

@@ -5,7 +5,7 @@
 // (batch.xeroSold) or the history tracing (batch.salesHistory), matched by
 // Xero line id. These orders never move stock themselves — the Xero sync
 // already did that — so soldTotalsByContainer skips them.
-import { CONTAINERS } from "./production";
+import { CONTAINERS, productKeyFor } from "./production";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 
@@ -46,7 +46,8 @@ export function planXeroOrders({ docs, batches, salesMap, itemMappings, customer
   const newContacts = {};
   (docs || []).forEach((doc) => {
     if (doc.docType !== "invoice") return;
-    if (doc.status !== "AUTHORISED" && doc.status !== "PAID") { removeDocIds.push(doc.docId); return; }
+    const draft = doc.status === "DRAFT" || doc.status === "SUBMITTED";
+    if (!draft && doc.status !== "AUTHORISED" && doc.status !== "PAID") { removeDocIds.push(doc.docId); return; }
     if (doc.reference && ownOrders.has(norm(doc.reference))) return;
     const inclusive = doc.lineAmountTypes === "Inclusive";
     const lines = [];
@@ -58,6 +59,12 @@ export function planXeroOrders({ docs, batches, salesMap, itemMappings, customer
       const exGst = inclusive ? (Number(line.lineAmount) || 0) - (Number(line.taxAmount) || 0) : Number(line.lineAmount) || (Number(line.unitAmount) || 0) * line.qty;
       const unitPrice = Math.round((exGst / units) * 10000) / 10000;
       const containerLabel = CONTAINERS.find((c) => c.key === map.containerKey)?.label || map.containerKey;
+      if (draft) {
+        // Not sold yet: no batch on the line. Stock is held for it (and any
+        // shortfall shown as a back order) by allocateDraftOrders.
+        lines.push({ id: line.lineId, batchId: null, batchName: map.beerName, batchNumber: "", productKey: productKeyFor(map.beerName, map.containerKey), containerKey: map.containerKey, containerLabel, qty: units, fulfilledQty: 0, unitPrice, xeroLineId: line.lineId, xeroItemCode: map.code });
+        return;
+      }
       let left = units;
       (byLine[line.lineId] || [])
         .filter((a) => a.containerKey === map.containerKey)
@@ -78,13 +85,13 @@ export function planXeroOrders({ docs, batches, salesMap, itemMappings, customer
       xeroDocId: doc.docId,
       orderNumber: doc.number || "Xero invoice",
       orderDate: doc.date,
-      status: "Fulfilled",
+      status: draft ? "Confirmed" : "Fulfilled",
       paid: doc.status === "PAID",
       source: "xero",
       customerId: customer ? customer.id : null,
       contactId: doc.contactId,
       contactName: doc.contactName,
-      notes: doc.reference ? `From Xero · ref ${doc.reference}` : "From Xero",
+      notes: `${draft ? "Draft in Xero" : "From Xero"}${doc.reference ? ` · ref ${doc.reference}` : ""}`,
       lines,
     });
   });

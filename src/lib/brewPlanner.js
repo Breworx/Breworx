@@ -158,7 +158,7 @@ export function packagingSplit(pr, litresOut, containers, coverDays, override) {
  * @param {object} p.settings  { periodMonths, horizonWeeks, baseCoverWeeks, brewWeekdays:[0-6], brewsPerDay, kitLitres, products: { [key]: { include, coverWeeks, leadDays, batchL, combineInto } } }
  * @param {string} p.todayStr
  */
-export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, containers = [], tanks, settings, todayStr }) {
+export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, backOrderByKey = {}, containers = [], tanks, settings, todayStr }) {
   const s = {
     periodMonths: 3,
     horizonWeeks: 12,
@@ -205,6 +205,11 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
   });
   Object.entries(stockByKey || {}).forEach(([k, l]) => {
     if (l > 0) P(finalKey(k)).stockL += l;
+  });
+  // Litres owed on back orders (Xero drafts with nothing in stock): they're
+  // needed now, on top of normal sales.
+  Object.entries(backOrderByKey || {}).forEach(([k, l]) => {
+    if (l > 0) { const p = P(finalKey(k)); p.backOrderL = (p.backOrderL || 0) + l; }
   });
   Object.entries(stockByKeyContainer || {}).forEach(([k, by]) => {
     const p = P(finalKey(k));
@@ -279,10 +284,11 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
       ratePerDay,
       soldInPeriod: p.soldInPeriod,
       stockL: p.stockL,
+      backOrderL: p.backOrderL || 0,
       inTankL,
       scheduledL,
       incoming: p.incoming,
-      coverNowWeeks: ratePerDay > 0 ? (p.stockL + inTankL + scheduledL) / ratePerDay / 7 : null,
+      coverNowWeeks: ratePerDay > 0 ? (p.stockL + inTankL + scheduledL - (p.backOrderL || 0)) / ratePerDay / 7 : null,
       leadDays,
       learnedLead,
       batchL,
@@ -291,7 +297,7 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
       coverWeeks,
       learnedCover,
       cv,
-      include: ps.include ?? (ratePerDay > 0 && !!recentEnough),
+      include: ps.include ?? ((ratePerDay > 0 && !!recentEnough) || (p.backOrderL || 0) > 0),
       mergedFrom: p.mergedFrom,
       soldByContainer: p.soldByContainer,
       stockByContainer: p.stockByContainer,
@@ -301,15 +307,17 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
   // ── When each product needs a brew ───────────────────────────────────
   const horizonEnd = addDaysISO(todayStr, s.horizonWeeks * 7);
   const needs = [];
-  list.filter((pr) => pr.include && pr.ratePerDay > 0).forEach((pr) => {
+  list.filter((pr) => pr.include && (pr.ratePerDay > 0 || pr.backOrderL > 0)).forEach((pr) => {
     const planned = [];
+    const rate = pr.ratePerDay > 0 ? pr.ratePerDay : 1e-6;
     const target = pr.ratePerDay * pr.coverWeeks * 7;
-    const base = pr.stockL + pr.incoming.reduce((t, i) => t + i.litres, 0);
+    const base = pr.stockL + pr.incoming.reduce((t, i) => t + i.litres, 0) - pr.backOrderL;
     for (let d = 0, guard = 0; d <= s.horizonWeeks * 7 && guard < 150; guard++) {
       const position = base + planned.reduce((t, x) => t + x.litres, 0) - pr.ratePerDay * d;
-      if (position >= target) {
+      if (position >= target && !(pr.ratePerDay <= 0 && position < 0)) {
+        if (pr.ratePerDay <= 0) break;
         // Jump ahead to the day the position drops below target.
-        const nextD = Math.ceil((base + planned.reduce((t, x) => t + x.litres, 0) - target) / pr.ratePerDay);
+        const nextD = Math.ceil((base + planned.reduce((t, x) => t + x.litres, 0) - target) / rate);
         if (nextD <= d) d += 1; else d = nextD;
         continue;
       }
@@ -423,5 +431,24 @@ export function planBrews({ batches, stockByKey, stockByKeyContainer = {}, conta
     });
   });
   suggestions.sort((a, b) => String(a.startDate || "9999").localeCompare(String(b.startDate || "9999")));
-  return { products: list.sort((a, b) => b.ratePerDay - a.ratePerDay), suggestions, periodStart, xeroMonths: [...xeroMonths].sort() };
+
+  // Brews already on the calendar that the numbers no longer call for —
+  // say a back order they were for got cancelled. Only the latest scheduled
+  // brew of a beer is checked: without it, would there still be the full
+  // cover left on the day it would have been ready?
+  const notNeeded = [];
+  list.forEach((pr) => {
+    if (!pr.include || !(pr.ratePerDay > 0)) return;
+    const sched = pr.incoming.filter((i) => i.scheduled).sort((a, b) => b.date.localeCompare(a.date));
+    if (!sched.length) return;
+    const last = sched[0];
+    const without = pr.stockL + pr.incoming.reduce((t, i) => t + i.litres, 0) - last.litres - pr.backOrderL;
+    const used = pr.ratePerDay * Math.max(0, daysBetweenISO(todayStr, last.date));
+    const target = pr.ratePerDay * pr.coverWeeks * 7;
+    if (without - used >= target) {
+      const b = batches.find((x) => x.id === last.batchId);
+      notNeeded.push({ batchId: last.batchId, key: pr.key, name: pr.name, startDate: b?.startDate || null, readyDate: last.date });
+    }
+  });
+  return { products: list.sort((a, b) => b.ratePerDay - a.ratePerDay), suggestions, notNeeded, periodStart, xeroMonths: [...xeroMonths].sort() };
 }
