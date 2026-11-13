@@ -5,7 +5,7 @@
 //   - "listAllItems"  → returns every item with a code (tracked or not), for matching sales to beers
 //   - "listAccounts"  → returns accounts suitable for the adjustment/offset line
 //   - "postStock"     → posts a zero-dollar stock movement for a packaging event
-//   - "listSales"     → returns sales invoices + customer credit notes since a date (two-way stock)
+//   - "listSales"     → returns sales invoices + customer credit notes since a date (two-way stock), plus every open draft
 //   - "listContacts"  → returns active Xero contacts, for linking to a Brewpoint customer
 //   - "createContact" → creates a new Xero contact from a Brewpoint customer's details
 //   - "createInvoice" → creates a sales invoice (ACCREC) for a fulfilled sales order
@@ -199,15 +199,20 @@ Deno.serve(async (req) => {
       const dateWhere = `Date>=DateTime(${y},${m},${d})`;
       const docs = [];
 
-      const collect = async (endpoint, key, type) => {
+      const seen = new Set();
+      const collect = async (endpoint, key, type, extraWhere) => {
         for (let page = 1; page <= 50; page += 1) {
-          const where = encodeURIComponent(`Type=="${type}" AND ${dateWhere}`);
+          const where = encodeURIComponent(`Type=="${type}" AND ${extraWhere || dateWhere}`);
           const res = await xeroFetch(`${endpoint}?where=${where}&page=${page}`, accessToken, tenantId);
           if (!res.ok) return { error: res.data };
           const list = res.data[key] || [];
           list.forEach((doc) => {
             const status = doc.Status;
-            if (!["AUTHORISED", "PAID", "VOIDED", "DELETED"].includes(status)) return;
+            // Drafts (e.g. Upstock orders waiting in Xero) hold stock in Brewpoint.
+            if (!["AUTHORISED", "PAID", "VOIDED", "DELETED", "DRAFT", "SUBMITTED"].includes(status)) return;
+            const docId = doc.InvoiceID || doc.CreditNoteID;
+            if (seen.has(docId)) return;
+            seen.add(docId);
             const lines = (doc.LineItems || [])
               .filter((l) => l.ItemCode && Number(l.Quantity))
               .map((l) => ({
@@ -241,9 +246,12 @@ Deno.serve(async (req) => {
 
       const a = await collect("Invoices", "Invoices", "ACCREC");
       if (a.error) return json({ error: "Could not read invoices from Xero", detail: a.error }, 400);
+      // Every open draft, however old, so Brewpoint can hold stock for it.
+      const dr = await collect("Invoices", "Invoices", "ACCREC", `(Status=="DRAFT" OR Status=="SUBMITTED")`);
+      if (dr.error) return json({ error: "Could not read draft invoices from Xero", detail: dr.error }, 400);
       const b = await collect("CreditNotes", "CreditNotes", "ACCRECCREDIT");
       if (b.error) return json({ error: "Could not read credit notes from Xero", detail: b.error }, 400);
-      return json({ docs });
+      return json({ docs, draftsComplete: true });
     }
 
     if (action === "listContacts") {

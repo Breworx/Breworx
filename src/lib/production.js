@@ -181,6 +181,49 @@ export function mixedPackConsumptionByContainer(batchId, mixedPackAssemblies) {
   return totals;
 }
 
+// Open Xero drafts (Upstock orders) hold stock: each line takes from the
+// oldest packed batches of that beer, oldest order first, and whatever's
+// short is a back order. Worked out fresh every time from what's on hand,
+// so packaging new beer fills back orders by itself and a cancelled draft
+// gives its stock straight back.
+export const isOpenXeroDraft = (o) => o && o.source === "xero" && o.status === "Confirmed";
+
+export function allocateDraftOrders(list, batches, salesOrders) {
+  const drafts = (salesOrders || []).filter(isOpenXeroDraft).sort((a, b) => String(a.orderDate || "").localeCompare(String(b.orderDate || "")) || String(a.orderNumber || "").localeCompare(String(b.orderNumber || "")));
+  const allocations = {}; // orderId -> { [lineId]: { reserved: [{ batchId, batchName, batchNumber, qty }], backOrder } }
+  const backOrders = []; // { order, line, qty, productKey }
+  if (!drafts.length) return { allocations, backOrders };
+  const packedOn = {};
+  batches.forEach((b) => (packedOn[b.id] = packagingEvents(b).reduce((m, e) => (e.date && (!m || e.date < m) ? e.date : m), "") || b.startDate || ""));
+  drafts.forEach((o) => {
+    allocations[o.id] = {};
+    (o.lines || []).forEach((l) => {
+      const productKey = l.productKey || productKeyFor(l.batchName || "", l.containerKey);
+      let need = Math.max(0, Math.round(Number(l.qty) || 0));
+      const reserved = [];
+      list
+        .filter((r) => r.containerKey === l.containerKey && r.available > 0 && productKeyFor(r.batchName, r.containerKey) === productKey)
+        .sort((a, b) => String(packedOn[a.batchId]).localeCompare(String(packedOn[b.batchId])))
+        .forEach((r) => {
+          if (need <= 0) return;
+          const take = Math.min(need, r.available);
+          r.available -= take;
+          r.reserved = (r.reserved || 0) + take;
+          need -= take;
+          reserved.push({ batchId: r.batchId, batchName: r.batchName, batchNumber: r.batchNumber, qty: take });
+        });
+      allocations[o.id][l.id] = { reserved, backOrder: need };
+      if (need > 0) backOrders.push({ order: o, line: l, qty: need, productKey });
+    });
+  });
+  return { allocations, backOrders };
+}
+
+export function draftOrderAllocations(batches, salesOrders, mixedPackAssemblies) {
+  const list = availableStockList(batches, (salesOrders || []).filter((o) => !isOpenXeroDraft(o)), mixedPackAssemblies);
+  return allocateDraftOrders(list, batches, salesOrders);
+}
+
 export function availableStockList(batches, salesOrders, mixedPackAssemblies) {
   const list = [];
   batches.forEach((b) => {
@@ -220,6 +263,7 @@ export function availableStockList(batches, salesOrders, mixedPackAssemblies) {
       }
     });
   });
+  allocateDraftOrders(list, batches, salesOrders);
   return list;
 }
 

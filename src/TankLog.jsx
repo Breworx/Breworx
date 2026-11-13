@@ -29,7 +29,7 @@ import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeeded
 import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, compareXeroStock, planXeroStockMatch } from "./components/xero";
 import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, findMissingIngredients, latestReading } from "./lib/config";
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
-import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, planXeroSales, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
+import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, planXeroSales, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
 import { downloadCSV, downloadJSON, insertByDate, today, withStageDate } from "./lib/utils";
 import { planXeroOrders } from "./lib/xeroOrders";
 
@@ -633,6 +633,11 @@ function TankLogApp() {
   const [showXeroProductMapping, setShowXeroProductMapping] = useState(false);
   const selectedSalesOrder = useMemo(() => salesOrders.find((o) => o.id === selectedSalesOrderId) || null, [salesOrders, selectedSalesOrderId]);
   const availableStock = useMemo(() => availableStockList(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
+  // Stock held for open Xero drafts (Upstock orders) and what's on back order.
+  // Xero's stock on hand doesn't know about drafts, so comparing or matching
+  // to Xero uses stock before anything is held for them.
+  const stockBeforeDrafts = useMemo(() => availableStockList(batches, salesOrders.filter((o) => !isOpenXeroDraft(o)), mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
+  const draftAlloc = useMemo(() => draftOrderAllocations(batches, salesOrders, mixedPackAssemblies), [batches, salesOrders, mixedPackAssemblies]);
   const mixedPackStock = useMemo(
     () => mixedPackStockList(mixedPackTypes, mixedPackAssemblies, salesOrders),
     [mixedPackTypes, mixedPackAssemblies, salesOrders]
@@ -1852,7 +1857,7 @@ function TankLogApp() {
   // Every invoice raised in Xero becomes a read-only Fulfilled order with
   // the batch on each line, so customers, analytics and recalls all match.
   // Re-running just updates them (keyed by the Xero invoice id).
-  const syncXeroOrders = async (docs, batchesNow) => {
+  const syncXeroOrders = async (docs, batchesNow, draftsComplete = false) => {
     let customersNow = customers;
     const plan0 = planXeroOrders({ docs, batches: batchesNow, salesMap: xeroSalesMap, itemMappings: xeroItemMappings, customers: customersNow, brewpointOrderNumbers: salesOrders.filter((o) => o.source !== "xero").map((o) => o.orderNumber) });
     if (plan0.newContacts.length) {
@@ -1884,11 +1889,16 @@ function TankLogApp() {
       if (error) { console.error(error); return { orders: saved.length, failed: true }; }
       saved.push(...data.map(rowToSalesOrder));
     }
-    if (plan.removeDocIds.length) {
-      const gone = salesOrders.filter((o) => o.source === "xero" && plan.removeDocIds.includes(o.xeroDocId)).map((o) => o.id);
+    // A draft that's gone from Xero (deleted, or not in the full list of
+    // open drafts any more) is cancelled: its stock and back order go too.
+    const listed = new Set((docs || []).map((d) => d.docId));
+    const removeIds = new Set(plan.removeDocIds);
+    if (draftsComplete) salesOrders.forEach((o) => { if (isOpenXeroDraft(o) && !listed.has(o.xeroDocId)) removeIds.add(o.xeroDocId); });
+    if (removeIds.size) {
+      const gone = salesOrders.filter((o) => o.source === "xero" && removeIds.has(o.xeroDocId)).map((o) => o.id);
       if (gone.length) await supabase.from("sales_orders").delete().in("id", gone);
     }
-    const removed = new Set(plan.removeDocIds);
+    const removed = removeIds;
     const savedIds = new Set(saved.map((o) => o.xeroDocId));
     setSalesOrders((prev) => [...prev.filter((o) => !(o.source === "xero" && (removed.has(o.xeroDocId) || savedIds.has(o.xeroDocId)))), ...saved]);
     return { orders: saved.length, failed: false };
@@ -1917,7 +1927,7 @@ function TankLogApp() {
     }
     const byId = Object.fromEntries(changes.map((c) => [c.id, c.salesHistory]));
     setBatches((prev) => prev.map((b) => (byId[b.id] ? { ...b, salesHistory: byId[b.id] } : b)));
-    const orderResult = await syncXeroOrders(data.docs || [], batches.map((b) => (byId[b.id] ? { ...b, salesHistory: byId[b.id] } : b)));
+    const orderResult = await syncXeroOrders(data.docs || [], batches.map((b) => (byId[b.id] ? { ...b, salesHistory: byId[b.id] } : b)), !!data.draftsComplete);
     const parts = [`${summary.lines} invoice line${summary.lines === 1 ? "" : "s"} traced to batches`];
     parts.push(orderResult.failed ? "orders didn't all save" : `${orderResult.orders} Xero invoice${orderResult.orders === 1 ? "" : "s"} added as orders`);
     if (summary.unmapped.length) parts.push(`${summary.unmapped.length} item code${summary.unmapped.length === 1 ? "" : "s"} not matched (${summary.unmapped.slice(0, 5).join(", ")}${summary.unmapped.length > 5 ? "…" : ""})`);
@@ -1952,8 +1962,13 @@ function TankLogApp() {
         salesMap: xeroSalesMap,
         itemMappings: xeroItemMappings,
         batches,
-        available: availableStock,
-        brewpointOrderNumbers: salesOrders.map((o) => o.orderNumber),
+        // A draft that's just been approved in Xero stops holding its stock,
+        // so the sale can take it.
+        available: (() => {
+          const approved = new Set((data.docs || []).filter((d) => d.status === "AUTHORISED" || d.status === "PAID").map((d) => d.docId));
+          return availableStockList(batches, salesOrders.filter((o) => !(isOpenXeroDraft(o) && approved.has(o.xeroDocId))), mixedPackAssemblies);
+        })(),
+        brewpointOrderNumbers: salesOrders.filter((o) => o.source !== "xero").map((o) => o.orderNumber),
       });
       // Ledger first, so a half-finished run can't take the same stock twice.
       if (plan.rows.length > 0) {
@@ -1976,11 +1991,7 @@ function TankLogApp() {
       }
       {
         const byId = Object.fromEntries(plan.batchChanges.map((c) => [c.id, c.xeroSold]));
-        const known = new Set(salesOrders.filter((o) => o.source === "xero").map((o) => o.xeroDocId));
-        // Only invoices that are new, changed stock, or were voided.
-        const touched = new Set(plan.rows.map((r) => r.xero_doc_id));
-        const docs = (data.docs || []).filter((d) => touched.has(d.docId) || !known.has(d.docId) || (d.status !== "AUTHORISED" && d.status !== "PAID" && known.has(d.docId)));
-        if (docs.length) await syncXeroOrders(docs, batches.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)));
+        await syncXeroOrders(data.docs || [], batches.map((b) => (byId[b.id] ? { ...b, xeroSold: byId[b.id] } : b)), !!data.draftsComplete);
       }
       const unmatchedLedger = (ledgerRes.data || []).filter((r) => r.status === "unmapped" && !plan.rows.some((x) => x.xero_line_id === r.xero_line_id)).map((r) => r.item_code);
       setXeroUnmatched([...new Set([...Object.keys(plan.unmatched), ...unmatchedLedger])].filter(Boolean));
@@ -2058,7 +2069,7 @@ function TankLogApp() {
   };
 
   const matchStockToXero = async (rows) => {
-    const { offPerBatch, backPerBatch } = planXeroStockMatch({ rows, availableStock, batches });
+    const { offPerBatch, backPerBatch } = planXeroStockMatch({ rows, availableStock: stockBeforeDrafts, batches });
     const when = new Date().toISOString();
     const who = user?.name || "Someone";
     const offId = uid();
@@ -2112,7 +2123,7 @@ function TankLogApp() {
       } else if (xeroCatchUp === "match") {
         const data = await callXeroApi("listAllItems");
         if (data.error) { showToast("error", "Couldn't read stock from Xero — try Bring Xero up to date again in Settings."); setXeroCatchUp(null); return; }
-        const { rows } = compareXeroStock({ xeroItems: data.items || [], salesMap: xeroSalesMap, itemMappings: xeroItemMappings, availableStock });
+        const { rows } = compareXeroStock({ xeroItems: data.items || [], salesMap: xeroSalesMap, itemMappings: xeroItemMappings, availableStock: stockBeforeDrafts });
         const toFix = rows.filter((r) => r.diff !== 0 && r.inXero && r.inBrewpoint);
         if (toFix.length) await matchStockToXero(toFix);
         xeroCatchUpReport.current.push(toFix.length ? `stock matched to Xero for ${toFix.length} product${toFix.length === 1 ? "" : "s"}` : "stock already matched Xero");
@@ -4987,6 +4998,7 @@ function TankLogApp() {
                 settings={brewPlanSettings}
                 onSaveSettings={saveBrewPlanSettings}
                 onSchedule={addBatch}
+                onRemoveScheduled={isOwner ? deleteBatch : undefined}
                 nextNumber={nextNumber}
                 nextCiderNumber={nextCiderNumber}
               />
@@ -5536,7 +5548,7 @@ function TankLogApp() {
             )}
 
             {!loadingData && view === "salesOrders" && !selectedSalesOrderId && (
-              <SalesOrdersView salesOrders={salesOrders} customers={customers} onOpen={setSelectedSalesOrderId} />
+              <SalesOrdersView salesOrders={salesOrders} customers={customers} onOpen={setSelectedSalesOrderId} backOrders={draftAlloc.backOrders} />
             )}
 
             {!loadingData && view === "salesAnalytics" && (
@@ -6861,6 +6873,7 @@ function TankLogApp() {
         {!selected && !selectedPO && !selectedRecipe && !selectedInventoryItem && !selectedConsumableItem && !selectedPackageType && !selectedCustomerId && selectedSalesOrder && (
           <SalesOrderDetail
             order={selectedSalesOrder}
+            allocation={draftAlloc.allocations[selectedSalesOrder.id]}
             customer={customers.find((c) => c.id === selectedSalesOrder.customerId) || null}
             onBack={() => setSelectedSalesOrderId(null)}
             onAdvance={advanceSalesOrderStatus}
@@ -7223,7 +7236,7 @@ function TankLogApp() {
           xeroItems={xeroCompareItems}
           salesMap={xeroSalesMap}
           itemMappings={xeroItemMappings}
-          availableStock={availableStock}
+          availableStock={stockBeforeDrafts}
           onClose={() => setXeroCompareItems(null)}
           onMatch={matchStockToXero}
           onMatchItems={() => {

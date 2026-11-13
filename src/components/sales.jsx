@@ -753,17 +753,29 @@ export function KegsView({ kegs, onOpen, onAddNew }) {
   );
 }
 
-export function SalesOrdersView({ salesOrders, customers, onOpen }) {
+export function SalesOrdersView({ salesOrders, customers, onOpen, backOrders = [] }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const customerName = (id) => customers.find((c) => c.id === id)?.name || "Unknown customer";
   const matches = (o) => !q || customerName(o.customerId).toLowerCase().includes(q) || (o.orderNumber || "").toLowerCase().includes(q);
 
   const draft = salesOrders.filter((o) => o.status === "Draft" && matches(o));
-  const confirmed = salesOrders.filter((o) => o.status === "Confirmed" && matches(o));
+  const confirmed = salesOrders.filter((o) => o.status === "Confirmed" && o.source !== "xero" && matches(o));
+  const xeroDrafts = salesOrders.filter((o) => o.status === "Confirmed" && o.source === "xero" && matches(o));
   const partiallyFulfilled = salesOrders.filter((o) => o.status === "Partially fulfilled" && matches(o));
   const fulfilled = salesOrders.filter((o) => o.status === "Fulfilled" && matches(o));
   const cancelled = salesOrders.filter((o) => o.status === "Cancelled" && matches(o));
+
+  // Back orders, grouped by beer and container.
+  const owed = {};
+  backOrders.forEach((b) => {
+    const k = b.productKey;
+    if (!owed[k]) owed[k] = { key: k, label: `${b.line.batchName} — ${b.line.containerLabel}`, containerKey: b.line.containerKey, qty: 0, orders: [] };
+    owed[k].qty += b.qty;
+    owed[k].orders.push(b);
+  });
+  const owedList = Object.values(owed).sort((a, b) => a.label.localeCompare(b.label));
+  const qtyLabel = (key, n) => (key === "cans330" ? (n % 24 === 0 ? `${n / 24} case${n / 24 === 1 ? "" : "s"}` : `${n} cans`) : `${n} keg${n === 1 ? "" : "s"}`);
 
   const section = (title, list) =>
     list.length > 0 && (
@@ -781,6 +793,25 @@ export function SalesOrdersView({ salesOrders, customers, onOpen }) {
 
   return (
     <div>
+      {owedList.length > 0 && (
+        <div style={{ marginBottom: 20, background: "#FBF0E6", border: "1px solid #E8C9A8", borderRadius: 6, padding: "12px 14px" }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A5A2E", marginBottom: 8 }}>Back orders ({owedList.length})</div>
+          {owedList.map((g) => (
+            <div key={g.key} style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, color: "#2A3324" }}>
+                <span>{g.label}</span>
+                <strong>{qtyLabel(g.containerKey, g.qty)}</strong>
+              </div>
+              {g.orders.map((b) => (
+                <button key={`${b.order.id}-${b.line.id}`} onClick={() => onOpen(b.order.id)} style={{ display: "block", background: "none", border: "none", padding: "2px 0", color: "#5C6B54", fontSize: 12, cursor: "pointer", textAlign: "left" }}>
+                  {b.order.orderNumber} · {customers.find((c) => c.id === b.order.customerId)?.name || "Unknown customer"} · {qtyLabel(b.line.containerKey, b.qty)}
+                </button>
+              ))}
+            </div>
+          ))}
+          <div style={{ fontSize: 11.5, color: "#9A5A2E" }}>From draft invoices in Xero. They fill by themselves once the beer is packaged, and the brew planner counts them.</div>
+        </div>
+      )}
       {salesOrders.length > 0 && (
         <input
           type="text"
@@ -802,6 +833,7 @@ export function SalesOrdersView({ salesOrders, customers, onOpen }) {
         />
       )}
       {section("Draft", draft)}
+      {section("Draft in Xero (Upstock)", xeroDrafts)}
       {section("Confirmed", confirmed)}
       {section("Partially fulfilled", partiallyFulfilled)}
       {section("Fulfilled", fulfilled)}
@@ -1060,7 +1092,7 @@ export function PrintableOrderModal({ order, customer, companyName, onClose }) {
   );
 }
 
-export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel, onTogglePaid, onDelete, onRecordFulfillment, onPrint }) {
+export function SalesOrderDetail({ order, customer, allocation, onBack, onAdvance, onCancel, onTogglePaid, onDelete, onRecordFulfillment, onPrint }) {
   const total = salesOrderTotal(order);
   const nextStatus = order.status === "Draft" ? "Confirmed" : null;
   const canFulfill = order.status === "Confirmed" || order.status === "Partially fulfilled";
@@ -1099,6 +1131,14 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
                 {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
               </span>
             </div>
+            {allocation && allocation[l.id] && (
+              <div style={{ fontSize: 11.5, marginTop: 3, lineHeight: 1.5 }}>
+                {allocation[l.id].reserved.map((r) => (
+                  <div key={r.batchId} style={{ color: "#5C9A3C" }}>Held from batch #{r.batchNumber || "?"}: {r.qty}</div>
+                ))}
+                {allocation[l.id].backOrder > 0 && <div style={{ color: "#B5502F" }}>Back order: {allocation[l.id].backOrder} (not in stock yet)</div>}
+              </div>
+            )}
             {(l.fulfilledQty || 0) > 0 && (l.fulfilledQty || 0) < l.qty && (
               <div style={{ color: "#4AA8C9", fontSize: 11.5, marginTop: 3 }}>
                 {l.fulfilledQty} of {l.qty} fulfilled — {l.qty - l.fulfilledQty} still owed
@@ -1120,7 +1160,9 @@ export function SalesOrderDetail({ order, customer, onBack, onAdvance, onCancel,
 
       {fromXero && (
         <div style={{ color: "#5C6B54", fontSize: 12.5, marginBottom: 16, background: "#EEF4F8", border: "1px solid #C9DCE6", borderRadius: 5, padding: "10px 12px", lineHeight: 1.5 }}>
-          This is a Xero invoice. Change or void it in Xero and Brewpoint follows. Stock for it was already taken off by the Xero sync.
+          {order.status === "Confirmed"
+            ? "This is a draft invoice in Xero (e.g. an Upstock order). Brewpoint holds stock for it, and anything not in stock is a back order. Approve it in Xero and the stock comes off; delete it in Xero and the stock goes back."
+            : "This is a Xero invoice. Change or void it in Xero and Brewpoint follows. Stock for it was already taken off by the Xero sync."}
         </div>
       )}
 
