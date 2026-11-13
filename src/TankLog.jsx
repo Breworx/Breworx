@@ -722,6 +722,45 @@ function TankLogApp() {
 
   const [inviteForm, setInviteForm] = useState(null); // { email, role } while filling in
   const [inviteSent, setInviteSent] = useState(null); // { email, role } of the last invite made
+  // Team: when each person was last on, and invites not used yet.
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    const touch = () => { if (document.visibilityState === "visible") supabase.rpc("touch_last_seen").then(() => {}); };
+    touch();
+    const t = setInterval(touch, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [profile?.id]);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const loadTeamStatus = async () => {
+    if (!profile?.companyId) return;
+    const [tm, pi] = await Promise.all([
+      supabase.from("profiles").select("*").eq("company_id", profile.companyId),
+      profile.role === "owner" ? supabase.rpc("pending_invites") : Promise.resolve({ data: [] }),
+    ]);
+    if (!tm.error && tm.data) setTeammates(tm.data.map(rowToProfile));
+    if (!pi.error) setPendingInvites(pi.data || []);
+  };
+  useEffect(() => {
+    if (view === "settings") loadTeamStatus();
+  }, [view, profile?.companyId]);
+  const cancelInvite = async (id) => {
+    const { error } = await supabase.rpc("cancel_invite", { p_id: id });
+    if (error) { showToast("error", "Couldn't cancel that invite — try again."); return; }
+    setPendingInvites((prev) => prev.filter((i) => i.id !== id));
+    showToast("success", "Invite cancelled — that link won't work now.");
+  };
+  const lastSeenText = (iso) => {
+    if (!iso) return "not on yet";
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 10) return "on now";
+    if (mins < 60) return `active ${mins} min ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `active ${hrs} hr${hrs === 1 ? "" : "s"} ago`;
+    const days = Math.round(hrs / 24);
+    if (days < 14) return `active ${days} day${days === 1 ? "" : "s"} ago`;
+    return `last active ${new Date(iso).toLocaleDateString("en-NZ", { day: "numeric", month: "short" })}`;
+  };
+
   const createInvite = async () => {
     const email = (inviteForm?.email || "").trim();
     const role = inviteForm?.role || "member";
@@ -749,6 +788,7 @@ function TankLogApp() {
       console.error(err);
     }
     setInviteSent({ email, role, emailed });
+    loadTeamStatus();
     if (emailed) showToast("success", `Invite emailed to ${email}.`);
   };
   const inviteMessage = (role, link) => {
@@ -6600,9 +6640,10 @@ function TankLogApp() {
                           {t.id === user.id ? " (you)" : ""}
                         </span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          {t.createdAt && (
-                            <span style={{ color: "#9BA88A", fontSize: 11 }}>Joined {t.createdAt.slice(0, 10)}</span>
-                          )}
+                          <span style={{ color: "#9BA88A", fontSize: 11, textAlign: "right" }}>
+                            {t.id === user.id ? "on now" : lastSeenText(t.lastSeenAt)}
+                            {(t.joinedAt || t.createdAt) && <span style={{ display: "block" }}>joined {new Date(t.joinedAt || t.createdAt).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                          </span>
                           {profile?.role === "owner" && t.id !== user.id ? (
                             <select
                               value={t.role}
@@ -6631,6 +6672,20 @@ function TankLogApp() {
                         </div>
                       </div>
                     ))}
+                    {profile?.role === "owner" && pendingInvites.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", margin: "6px 0" }}>Invited, not joined yet</div>
+                        {pendingInvites.map((inv) => (
+                          <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 14px", border: "1px dashed #DDE0C8", borderRadius: 5, fontSize: 13, marginBottom: 6 }}>
+                            <span style={{ color: "#5C6B54", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {inv.email || "Invite link"} · {inv.role === "sales" ? "Sales" : "Member"}
+                              <span style={{ display: "block", fontSize: 11, color: "#9BA88A" }}>sent {new Date(inv.created_at).toLocaleDateString("en-NZ", { day: "numeric", month: "short" })}</span>
+                            </span>
+                            <button type="button" onClick={() => cancelInvite(inv.id)} style={{ background: "none", border: "1px solid #DDE0C8", borderRadius: 5, padding: "5px 10px", color: "#B5502F", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>Cancel</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div style={{ color: "#9BA88A", fontSize: 12, marginTop: 10 }}>
                     {profile?.role === "owner"

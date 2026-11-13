@@ -339,3 +339,6 @@ alter table company_invites add column if not exists email text, add column if n
 -- Pack sizes for ordering (e.g. 25kg bags); see migration inventory_pack_sizes.
 alter table inventory_items add column if not exists pack_size numeric, add column if not exists pack_label text, add column if not exists supplier_product text;
 alter table suppliers add column if not exists order_url text;
+
+-- Team: last active + joined, pending invites, a log line when someone joins; see migration team_last_seen_and_invites.
+alter table profiles add column if not exists last_seen_at timestamptz, add column if not exists joined_at timestamptz default now();
