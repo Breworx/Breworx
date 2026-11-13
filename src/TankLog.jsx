@@ -4999,6 +4999,7 @@ function TankLogApp() {
                 onSaveSettings={saveBrewPlanSettings}
                 onSchedule={addBatch}
                 onRemoveScheduled={isOwner ? deleteBatch : undefined}
+                onMoveScheduled={(batch, patch) => updateScheduledBatch(batch.id, { ...batch, ...patch })}
                 nextNumber={nextNumber}
                 nextCiderNumber={nextCiderNumber}
               />
