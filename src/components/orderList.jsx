@@ -11,7 +11,8 @@ const card = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius:
 const btn = { background: "#5C9A3C", border: "none", borderRadius: 5, padding: "7px 12px", color: "#16191A", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 const btn2 = { background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "7px 12px", color: "#2A3324", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 
-export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack }) {
+export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack, suppliers = [], onSetOrderUrl }) {
+  const [urlEdit, setUrlEdit] = useState({}); // supplier name -> text
   const [packEdit, setPackEdit] = useState({}); // key -> size text
   const [copied, setCopied] = useState(null);
   const orderText = (rows) => rows.map((r) => (r.packs ? `${r.packs} × ${r.supplierProduct || `${r.name} ${r.packLabel || ""}`.trim()}` : `${num(Math.ceil(r.shortfall * 10) / 10)} ${r.unit} ${r.supplierProduct || r.name}`)).join("\n");
@@ -46,8 +47,22 @@ export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack }
             <div key={sup}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A5A2E" }}>{sup}</span>
-                <button type="button" onClick={() => { navigator.clipboard?.writeText(orderText(rows)); setCopied(sup); }} style={{ ...btn2, padding: "4px 10px", fontSize: 12 }}>{copied === sup ? "Copied ✓" : "Copy order"}</button>
+                <span style={{ display: "flex", gap: 6 }}>
+                  <button type="button" onClick={() => { navigator.clipboard?.writeText(orderText(rows)); setCopied(sup); }} style={{ ...btn2, padding: "4px 10px", fontSize: 12 }}>{copied === sup ? "Copied ✓" : "Copy order"}</button>
+                  {(() => {
+                    const s = suppliers.find((x) => x.name === sup);
+                    if (!s) return null;
+                    if (s.orderUrl) return <a href={s.orderUrl} target="_blank" rel="noreferrer" onClick={() => { navigator.clipboard?.writeText(orderText(rows)); setCopied(sup); }} style={{ ...btn, padding: "4px 10px", fontSize: 12, textDecoration: "none" }}>Copy &amp; open site</a>;
+                    return onSetOrderUrl ? <button type="button" onClick={() => setUrlEdit((p) => ({ ...p, [sup]: "" }))} style={{ ...btn2, padding: "4px 10px", fontSize: 12 }}>Add ordering site</button> : null;
+                  })()}
+                </span>
               </div>
+              {urlEdit[sup] != null && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <input type="url" inputMode="url" autoCapitalize="none" value={urlEdit[sup]} onChange={(e) => setUrlEdit((p) => ({ ...p, [sup]: e.target.value }))} placeholder="Paste the supplier's ordering page link" style={{ flex: 1, minWidth: 0, fontSize: 13, padding: "6px 8px", border: "1px solid #DDE0C8", borderRadius: 4 }} />
+                  <button type="button" onClick={() => { const v = urlEdit[sup].trim(); const s = suppliers.find((x) => x.name === sup); if (s && /^https?:\/\//i.test(v)) onSetOrderUrl(s.id, v); setUrlEdit((p) => { const n = { ...p }; delete n[sup]; return n; }); }} style={{ ...btn, padding: "4px 10px" }}>Save</button>
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {rows.map((r) => (
                   <div key={r.key} style={{ background: r.late ? "#FBE5D2" : "#FFFBF5", border: `1px solid ${r.late ? "#E3B37A" : "#E8C9A8"}`, borderRadius: 5, padding: "9px 11px" }}>

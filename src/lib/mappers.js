@@ -540,6 +540,7 @@ export function rowToSupplier(row) {
     notes: row.notes,
     approved: row.approved || false,
     approvedNotes: row.approved_notes || "",
+    orderUrl: row.order_url || null,
     createdAt: row.created_at || null,
   };
 }
@@ -724,6 +725,7 @@ export function supplierToRow(supplier, companyId) {
     notes: supplier.notes || null,
     approved: supplier.approved ?? false,
     approved_notes: supplier.approvedNotes || null,
+    order_url: supplier.orderUrl || null,
   };
 }
 
