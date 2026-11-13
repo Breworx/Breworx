@@ -15,11 +15,11 @@ import { AssembleMixedPackModal, ClearStockModal, FinishedGoodsStockView, MixedP
 import { CalibrationModal, FoodSafetyChecklistModal, FoodSafetyDisclaimerModal, FoodSafetyNoteModal, FoodSafetyView, HarvestYeastModal, InternalAuditModal, LabMeasurementModal, LogComplaintModal, LogContractorVisitModal, LogPestCheckModal, LogVerifierVisitModal, MaintenanceModal, MockRecallModal, PestStationsModal, SensoryScoreModal, StaffIllnessModal, StaffTrainingRecordModal, SupplierDocumentsModal, SupplierFormModal, TastingLogModal, TopUpModal, TrainingModal } from "./components/foodSafety";
 import { AiFeedbackReviewModal, AiHelperModal, CHANGELOG, HELP_ARTICLES, HelpGuideModal, LATEST_CHANGELOG_ID, PAGE_TOURS, SpotlightTour, TOUR_STEPS, TankQRModal, WhatsNewModal } from "./components/help";
 import { AddInventoryModal, AddPackageTypeModal, AdjustInventoryModal, BulkOpeningStockModal, InventoryDuplicatesPanel, InventoryItemDetail, PackageTypeCard, PackageTypeDetail, StockTakeHistoryModal, StockTakeModal, StockTakeReportModal, SuppliersModal } from "./components/inventory";
-import { BrewPlannerView } from "./components/planner";
+import { BrewPlannerView, backOrderEtas } from "./components/planner";
 import { AddPOModal, POCard, PODetail } from "./components/purchasing";
 import { QcApprovalModal, QualityControlView, TriangleTestModal } from "./components/quality";
 import { CostingView } from "./components/costing";
-import { SalesTanksView } from "./components/salesViews";
+import { SalesOpenOrdersView, SalesTanksView } from "./components/salesViews";
 import { AddRecipeModal, MissingIngredientsModal, RecipeAnalyticsView, RecipeCard, RecipeDetail, ScaleRecipeModal } from "./components/recipes";
 import { AddKegsModal, AddSalesOrderModal, KegDetail, KegsView, PrintableOrderModal, RecordFulfillmentModal, SalesAnalyticsView, SalesOrderDetail, SalesOrdersView } from "./components/sales";
 import { AddTankModal, AssignTankModal, ConfirmDeleteBatchModal, ConfirmDeleteRecipeModal, ConfirmDeleteSupplierModal, ConfirmDeleteTankModal, EditSplitTanksModal, EditTankModal, TankHistoryModal, TransferToFermenterModal, VesselTransferModal } from "./components/tanks";
@@ -201,7 +201,7 @@ function TankLogApp() {
   const [salesAccess, setSalesAccess] = useState({});
   useEffect(() => {
     if (!isSales) return;
-    const allowed = ["finishedGoodsStock", "salesTanks", "production",
+    const allowed = ["finishedGoodsStock", "salesUpstock", "salesTanks", "production",
       salesAccess.batches && "batches", salesAccess.customersOrders && "customers", salesAccess.customersOrders && "salesOrders",
       salesAccess.ingredientStock && "inventory", salesAccess.recipes && "recipes"].filter(Boolean);
     if (!allowed.includes(view)) setView("finishedGoodsStock");
@@ -4604,6 +4604,7 @@ function TankLogApp() {
                 label: "Sales",
                 items: [
                   ["finishedGoodsStock", "Stock", Package],
+                  ["salesUpstock", "Upstock orders", Truck],
                   ["salesTanks", "Tanks", Warehouse],
                   ["production", "Calendar", Calendar],
                   salesAccess.batches && ["batches", "Batches", Droplet],
@@ -5887,6 +5888,15 @@ function TankLogApp() {
                   <EmptyState icon={Droplet} title="No tanks set up yet" subtitle="Add your fermenters and any Brite Tanks so batches can be assigned to them." action={{ label: "Add tank", onClick: () => setShowAddTank(true) }} />
                 )}
               </div>
+            )}
+
+            {!loadingData && view === "salesUpstock" && (
+              <SalesOpenOrdersView
+                salesOrders={salesOrders}
+                customers={customers}
+                draftAlloc={draftAlloc}
+                etaFor={brewPlanSettings ? backOrderEtas({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings: brewPlanSettings }) : null}
+              />
             )}
 
             {!loadingData && view === "salesTanks" && (

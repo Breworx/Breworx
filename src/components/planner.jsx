@@ -57,7 +57,26 @@ export function brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemb
     const key = latestKeyFor[bo.productKey];
     if (key) backOrderByKey[key] = (backOrderByKey[key] || 0) + litresOf(bo.line.containerKey, bo.qty);
   });
-  return { list, stockByKey, stockByKeyContainer, backOrderByKey };
+  return { list, stockByKey, stockByKeyContainer, backOrderByKey, plannerKeyFor: (productKey) => latestKeyFor[productKey] || null };
+}
+
+// When each back-ordered beer should be ready, for the sales side: beer in
+// tank or a brew on the calendar that covers it, or else the planner's next
+// suggested brew. Keyed by the order line's product key (beer::container).
+export function backOrderEtas({ batches, recipes, tanks, salesOrders, mixedPackAssemblies, settings }) {
+  const s = { periodMonths: 3, horizonWeeks: 12, baseCoverWeeks: 4, brewWeekdays: [1, 2, 3, 4, 5], brewsPerDay: 2, kitLitres: 240, products: {}, ...(settings || {}) };
+  const { list, stockByKey, stockByKeyContainer, backOrderByKey, plannerKeyFor } = brewPlannerInputs(batches, recipes, salesOrders, mixedPackAssemblies);
+  const plan = planBrews({ batches: list, stockByKey, stockByKeyContainer, backOrderByKey, containers: CONTAINERS, tanks: tanks.map((t) => ({ ...t, capacity: Number(t.capacity) || 0 })), settings: s, todayStr: today() });
+  const byPlannerKey = {};
+  (plan.backOrders || []).forEach((e) => {
+    if (e.move) byPlannerKey[e.key] = { date: e.move.readyFrom, kind: "scheduled" };
+    else if (e.coveredBy) byPlannerKey[e.key] = { date: e.coveredBy.date, kind: e.coveredBy.kind };
+    else {
+      const sug = plan.suggestions.find((x) => x.key === e.key && x.readyDate);
+      byPlannerKey[e.key] = sug ? { date: sug.readyDate, kind: "not scheduled" } : { date: null, kind: "not scheduled" };
+    }
+  });
+  return (productKey) => byPlannerKey[plannerKeyFor(productKey)] || null;
 }
 
 export const fmtWeeks = (w) => (w == null ? "—" : w >= 52 ? "52+ wk" : `${Math.round(w * 10) / 10} wk`);

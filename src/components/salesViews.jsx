@@ -85,3 +85,91 @@ export function SalesTanksView({ tanks, batches, onOpenBatch }) {
     </div>
   );
 }
+
+// ─── Sales: Upstock orders and back orders ─────────────────────────────────
+// Read-only. Draft invoices waiting in Xero (Upstock orders): what stock is
+// held for each and what's on back order, with when the beer should be
+// ready. Updates by itself as Xero changes.
+const qtyText = (key, n) => (key === "cans330" ? (n % 24 === 0 ? `${n / 24} case${n / 24 === 1 ? "" : "s"}` : `${n} cans`) : `${n} keg${n === 1 ? "" : "s"}`);
+
+export function SalesOpenOrdersView({ salesOrders, customers, draftAlloc, etaFor }) {
+  const drafts = salesOrders.filter((o) => o.source === "xero" && o.status === "Confirmed").sort((a, b) => String(a.orderDate || "").localeCompare(String(b.orderDate || "")));
+  const nameOf = (id) => customers.find((c) => c.id === id)?.name || "Unknown customer";
+  const owed = {};
+  draftAlloc.backOrders.forEach((b) => {
+    if (!owed[b.productKey]) owed[b.productKey] = { key: b.productKey, label: `${b.line.batchName} — ${b.line.containerLabel}`, containerKey: b.line.containerKey, qty: 0, orders: [] };
+    owed[b.productKey].qty += b.qty;
+    owed[b.productKey].orders.push(b);
+  });
+  const owedList = Object.values(owed).sort((a, b) => a.label.localeCompare(b.label));
+  const etaText = (key) => {
+    const e = etaFor ? etaFor(key) : null;
+    if (!e) return null;
+    if (!e.date) return "No brew planned yet";
+    return `${e.kind === "tank" ? "In tank, ready" : e.kind === "scheduled" ? "Brew on the calendar, ready" : "Not on the calendar yet — earliest ready"} about ${fmt(e.date)}`;
+  };
+  return (
+    <div>
+      <h1 style={{ fontFamily: "'Oswald', sans-serif", fontSize: 24, color: "#2A3324", margin: "0 0 4px", fontWeight: 500 }}>Upstock orders</h1>
+      <div style={{ fontSize: 12.5, color: "#5C6B54", marginBottom: 14, lineHeight: 1.5 }}>
+        Draft invoices waiting in Xero. Stock is held for each one; anything not in stock is a back order. This updates by itself as orders change in Xero.
+      </div>
+
+      <div style={head}>Back orders ({owedList.length})</div>
+      {owedList.length === 0 ? (
+        <div style={{ ...card, fontSize: 13, color: "#5C6B54" }}>Nothing on back order — every open order is covered by stock on hand.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {owedList.map((g) => (
+            <div key={g.key} style={{ ...card, borderColor: "#E8C9A8", background: "#FFFBF5" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14, color: "#2A3324" }}>
+                <span style={{ fontWeight: 500 }}>{g.label}</span>
+                <strong>{qtyText(g.containerKey, g.qty)}</strong>
+              </div>
+              {etaText(g.key) && <div style={{ fontSize: 12, color: "#9A5A2E", marginTop: 3 }}>{etaText(g.key)}</div>}
+              {g.orders.map((b) => (
+                <div key={`${b.order.id}-${b.line.id}`} style={{ fontSize: 12, color: "#5C6B54", marginTop: 3 }}>
+                  {b.order.orderNumber} · {nameOf(b.order.customerId)} · {qtyText(b.line.containerKey, b.qty)}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={head}>Open orders ({drafts.length})</div>
+      {drafts.length === 0 && <div style={{ ...card, fontSize: 13, color: "#5C6B54" }}>No draft orders in Xero right now.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {drafts.map((o) => {
+          const alloc = draftAlloc.allocations[o.id] || {};
+          return (
+            <div key={o.id} style={card}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 14.5, color: "#2A3324", fontWeight: 500 }}>{nameOf(o.customerId)}</span>
+                <span style={{ fontSize: 12, color: "#9BA88A", fontFamily: "'JetBrains Mono', monospace" }}>{o.orderNumber} · {fmt(o.orderDate)}</span>
+              </div>
+              {(o.lines || []).map((l) => {
+                const a = alloc[l.id] || { reserved: [], backOrder: 0 };
+                const held = a.reserved.reduce((t, r) => t + r.qty, 0);
+                return (
+                  <div key={l.id} style={{ padding: "5px 0", borderTop: "1px solid #F0EDE0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, color: "#2A3324" }}>
+                      <span>{l.batchName} — {l.containerLabel}</span>
+                      <span style={{ whiteSpace: "nowrap" }}>{qtyText(l.containerKey, l.qty)}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                      {held > 0 && <span style={{ color: "#5C9A3C" }}>In stock: {qtyText(l.containerKey, held)}{a.reserved.length ? ` (batch ${a.reserved.map((r) => `#${r.batchNumber || "?"}`).join(", ")})` : ""}</span>}
+                      {held > 0 && a.backOrder > 0 && " · "}
+                      {a.backOrder > 0 && <span style={{ color: "#B5502F" }}>Back order: {qtyText(l.containerKey, a.backOrder)}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {o.notes && <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 4 }}>{o.notes}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
