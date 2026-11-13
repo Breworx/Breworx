@@ -6463,8 +6463,12 @@ function TankLogApp() {
                             {inviteSent?.emailed ? "Emailed to them just now. You can also text or copy the link — it works once, for one person." : "Copy the invite and paste it into an email or text to them — the link works once, for one person."}
                           </div>
                           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                            {!inviteSent?.emailed && inviteSent?.email && (
+                              // Opens whichever app is set as the iPad's default email app (Settings → Apps → Default Apps → Email).
+                              <a href={`mailto:${encodeURIComponent(inviteSent.email)}?subject=${encodeURIComponent(`Join ${companyName || "our brewery"} on Brewpoint`)}&body=${encodeURIComponent(inviteMessage(inviteSent.role, inviteLink))}`} style={{ flex: 1, textAlign: "center", background: "#5C9A3C", borderRadius: 4, padding: "9px", color: "#16191A", fontSize: 12.5, textDecoration: "none" }}>Open in email app</a>
+                            )}
                             {!inviteSent?.emailed && (
-                              <button onClick={() => { navigator.clipboard?.writeText(inviteMessage(inviteSent?.role, inviteLink)); showToast("success", "Invite copied — paste it into your email."); }} style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 4, padding: "9px", color: "#16191A", fontSize: 12.5, cursor: "pointer" }}>Copy invite message</button>
+                              <button onClick={() => { navigator.clipboard?.writeText(inviteMessage(inviteSent?.role, inviteLink)); showToast("success", "Invite copied — paste it into your email."); }} style={{ flex: 1, background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 4, padding: "9px", color: "#2A3324", fontSize: 12.5, cursor: "pointer" }}>Copy invite message</button>
                             )}
                             {typeof navigator !== "undefined" && navigator.share && (
                               <button onClick={() => navigator.share({ title: "Join us on Brewpoint", text: "Tap to join our team on Brewpoint:", url: inviteLink }).catch(() => {})} style={{ flex: 1, background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 4, padding: "9px", color: "#2A3324", fontSize: 12.5, cursor: "pointer" }}>Text or share…</button>
