@@ -1824,6 +1824,20 @@ function TankLogApp() {
     return true;
   };
 
+  // One stock line fixed from the Stock page: positive comes off, negative goes back.
+  const adjustOneStock = async ({ batchId, batchName, containerKey, diff, reason, label }) => {
+    const b = batches.find((x) => x.id === batchId);
+    if (!b || !diff) return false;
+    const list = [...(b.stockCleared || []), { id: uid(), kind: "adjust", date: new Date().toISOString(), user: user?.name || "Someone", reason, counts: { [containerKey]: diff } }];
+    const done = await updateStockCleared([{ id: batchId, stockCleared: list }]);
+    if (!done) { showToast("error", "That didn't save — check your connection and try again."); return false; }
+    setBatches((prev) => prev.map((x) => (x.id === batchId ? { ...x, stockCleared: list } : x)));
+    const text = `${diff > 0 ? "Took off" : "Put back"} ${label} — ${reason}`;
+    logActivity("adjusted", "stock", batchName, text);
+    showToast("success", text);
+    return true;
+  };
+
   const undoStockClear = async (clearId) => {
     const changes = batches
       .filter((b) => (b.stockCleared || []).some((e) => e.id === clearId))
@@ -5582,6 +5596,7 @@ function TankLogApp() {
                 onClearStock={() => setShowClearStock(true)}
                 onUndoClear={undoStockClear}
                 onRepack={() => setShowRepack(true)}
+                onAdjust={adjustOneStock}
                 onCompareXero={xeroConnection ? openXeroStockCompare : undefined}
                 xeroNeedsReconnect={!isSales && xeroNeedsReconnect}
                 readOnly={isSales}
