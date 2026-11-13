@@ -353,6 +353,14 @@ export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading
           onLog={(d) => onLogDump(batch.id, "yeastDumpLog", d)}
           onUndo={() => onUndoDump(batch.id, "yeastDumpLog")}
         />
+        {isCider && batch.stage !== "Packaged" && !(batch.splitTanks && batch.splitTanks.length > 0) && (
+          <button
+            onClick={() => onAssignTank(batch, "rack")}
+            style={{ background: "none", border: "1px solid #CFD6BC", borderRadius: 5, padding: "6px 12px", color: "#5C9A3C", cursor: "pointer", fontSize: 13, fontFamily: "'Inter', sans-serif" }}
+          >
+            Rack to another tank
+          </button>
+        )}
       </div>
 
       {batch.ingredients && batch.ingredients.length > 0 && (

@@ -319,20 +319,47 @@ export function ConfirmDeleteTankModal({ tank, onClose, onConfirm }) {
 }
 
 export function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
-  const [tankId, setTankId] = useState(batch.tankId || "");
+  const rack = batch._mode === "rack";
+  const [tankId, setTankId] = useState(rack ? "" : batch.tankId || "");
   const [brewStage, setBrewStage] = useState(batch.brewStage || "");
   const selectedTank = tanks.find((t) => t.id === tankId) || null;
 
+  // A full tank can still be picked: whatever's in it swaps into this
+  // batch's current tank (or comes off a tank if this batch has none).
+  // Only for cellar vessels — swapping something into a mash tun or kettle
+  // makes no sense — and not for split batches, which have their own editor.
+  const isCellar = (t) => t && t.type !== "Mash Tun" && t.type !== "Kettle";
+  const currentTank = tanks.find((t) => t.id === batch.tankId) || null;
+  const swapCandidate = (t) => {
+    if (!t || t.id === batch.tankId || !tankIsOccupied(batches, t.id, batch.id)) return null;
+    const occ = occupyingBatch(batches, t.id, batch.id);
+    if (!occ || (occ.splitTanks && occ.splitTanks.length > 0)) return null;
+    if (!isCellar(t) || (currentTank && !isCellar(currentTank))) return null;
+    return occ;
+  };
+  const occupantHere = selectedTank && selectedTank.id !== batch.tankId && tankIsOccupied(batches, selectedTank.id, batch.id);
+  const swapWith = swapCandidate(selectedTank);
+  const blocked = occupantHere && !swapWith;
+  const volumeOf = (b) => { const r = remainingVolume(b); return r > 0 ? r : Number(b.volume) || 0; };
+  const overCap = [];
+  if (selectedTank && volumeOf(batch) > Number(selectedTank.capacity || 0) && Number(selectedTank.capacity) > 0) overCap.push(`${batch.name} (${Math.round(volumeOf(batch))}L) is more than ${selectedTank.name} holds (${selectedTank.capacity}L)`);
+  if (swapWith && currentTank && volumeOf(swapWith) > Number(currentTank.capacity || 0) && Number(currentTank.capacity) > 0) overCap.push(`${swapWith.name} (${Math.round(volumeOf(swapWith))}L) is more than ${currentTank.name} holds (${currentTank.capacity}L)`);
+
   const submit = () => {
-    if (selectedTank && tankIsOccupied(batches, selectedTank.id, batch.id)) return;
+    if (blocked || (rack && !selectedTank)) return;
     const finalBrewStage = selectedTank?.type === "Mash Tun" ? brewStage || "Mashing" : selectedTank?.type === "Kettle" ? "Kettle" : null;
-    onSave(batch.id, selectedTank, finalBrewStage);
+    onSave(batch.id, selectedTank, finalBrewStage, swapWith ? { batchId: swapWith.id, tank: currentTank } : null);
     onClose();
   };
 
   return (
-    <Modal title={`Assign tank — ${batch.name}`} onClose={onClose}>
+    <Modal title={`${rack ? "Rack to another tank" : "Assign tank"} — ${batch.name}`} onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {rack && (
+          <div style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.45 }}>
+            Pick the secondary tank. {currentTank ? `${currentTank.name} is freed up for cleaning, ` : ""}the racking is logged on today's date (same as ticking "Racked off the lees").
+          </div>
+        )}
         <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54" }}>Tank</span>
           <select
@@ -354,13 +381,14 @@ export function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
               fontSize: 14,
             }}
           >
-            <option value="">Unassigned</option>
-            {sortedTanks(tanks).map((t) => {
+            <option value="">{rack ? "Choose a tank…" : "Unassigned"}</option>
+            {sortedTanks(tanks).filter((t) => !rack || (t.id !== batch.tankId && t.type !== "Mash Tun" && t.type !== "Kettle")).map((t) => {
               const occupied = tankIsOccupied(batches, t.id, batch.id);
               const occupant = occupied ? occupyingBatch(batches, t.id, batch.id) : null;
+              const canSwap = occupied && !!swapCandidate(t);
               return (
-                <option key={t.id} value={t.id} disabled={occupied}>
-                  {t.name} ({t.type}, {t.capacity}L){occupied ? ` — occupied by ${occupant?.name || "another batch"}` : ""}
+                <option key={t.id} value={t.id} disabled={occupied && !canSwap}>
+                  {t.name} ({t.type}, {t.capacity}L){occupied ? ` — ${occupant?.name || "another batch"}${canSwap ? (currentTank ? " (swap)" : " (move it off)") : ""}` : ""}
                 </option>
               );
             })}
@@ -392,6 +420,16 @@ export function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
         {selectedTank?.type === "Kettle" && (
           <div style={{ color: "#9BA88A", fontSize: 12 }}>Will be marked "In the kettle."</div>
         )}
+        {swapWith && (
+          <div style={{ background: "#F3EEDB", border: "1px solid #E3D9B5", borderRadius: 5, padding: "10px 12px", fontSize: 13, color: "#2A3324", lineHeight: 1.45 }}>
+            {selectedTank.name} has <b>{swapWith.name}</b> in it.{" "}
+            {currentTank
+              ? <>Saving swaps them: {batch.name} goes into {selectedTank.name} and {swapWith.name} moves into {currentTank.name}.</>
+              : <>Saving moves {batch.name} in and takes {swapWith.name} off the tank (it'll show as unassigned until you give it one).</>}
+          </div>
+        )}
+        {blocked && <div style={{ color: "#B5523B", fontSize: 12 }}>{selectedTank.name} can't be swapped — move what's in it from its own batch page.</div>}
+        {overCap.map((m) => <div key={m} style={{ color: "#B5523B", fontSize: 12 }}>Heads up: {m}.</div>)}
         <button
           onClick={submit}
           style={{
@@ -407,7 +445,7 @@ export function AssignTankModal({ batch, tanks, batches, onClose, onSave }) {
             cursor: "pointer",
           }}
         >
-          Save
+          {rack ? (swapWith ? "Rack & swap" : "Rack") : swapWith ? (currentTank ? "Swap tanks" : "Move in") : "Save"}
         </button>
       </div>
     </Modal>
