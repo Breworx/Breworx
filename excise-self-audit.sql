@@ -332,3 +332,6 @@ alter table sales_orders add constraint sales_orders_company_xero_doc_key unique
 alter table xero_settings add column if not exists sync_lock_until timestamptz;
 -- try_xero_sync_lock / release_xero_sync_lock / run_xero_sync / get_xero_webhook_key: see migration xero_server_sync
 -- select cron.schedule('xero-sync-every-2-min', '*/2 * * * *', 'select public.run_xero_sync()');
+
+-- Team invites carry the email and role (member or sales); see migration invite_with_email_and_role.
+alter table company_invites add column if not exists email text, add column if not exists role text not null default 'member';

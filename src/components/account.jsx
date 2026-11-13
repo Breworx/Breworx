@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { BreworxMark, Modal, TextField } from "./ui";
@@ -244,6 +244,16 @@ export function AuthScreen({ inviteToken }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  // What the invite is for (company, Sales or full access), and the email it was sent to.
+  const [invite, setInvite] = useState(null);
+  useEffect(() => {
+    if (!inviteToken) return;
+    supabase.rpc("invite_details", { invite_token: inviteToken }).then(({ data }) => {
+      if (!data) return;
+      setInvite(data);
+      if (data.email) setEmail((prev) => prev || data.email);
+    });
+  }, [inviteToken]);
 
   const submit = async () => {
     if (mode === "signup" && !inviteToken && !companyName.trim()) {
@@ -348,7 +358,11 @@ export function AuthScreen({ inviteToken }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {mode === "signup" && inviteToken && (
             <div style={{ color: "#5C6B54", fontSize: 12.5, background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "8px 12px" }}>
-              You're joining an existing brewery via invite link — no need to enter a company name.
+              {invite?.used
+                ? "This invite has already been used. Ask for a new one, or sign in if it was you."
+                : invite
+                  ? `You're joining ${invite.company}${invite.role === "sales" ? " as Sales (view only: stock, tanks, the calendar and Upstock orders)" : " as a team member"}. Just add your name and a password.`
+                  : "You're joining an existing brewery via invite link — no need to enter a company name."}
             </div>
           )}
           {mode === "signup" && !inviteToken && <TextField label="Company name" value={companyName} onChange={setCompanyName} />}
