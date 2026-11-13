@@ -13,7 +13,7 @@ import { CustomerAccountFlow, CustomerDetail, CustomerFormModal, CustomerPortalP
 import { ExciseReportView, PackagedView } from "./components/excise";
 import { AssembleMixedPackModal, ClearStockModal, FinishedGoodsStockView, MixedPackTypeModal, RepackModal } from "./components/finishedStock";
 import { CalibrationModal, FoodSafetyChecklistModal, FoodSafetyDisclaimerModal, FoodSafetyNoteModal, FoodSafetyView, HarvestYeastModal, InternalAuditModal, LabMeasurementModal, LogComplaintModal, LogContractorVisitModal, LogPestCheckModal, LogVerifierVisitModal, MaintenanceModal, MockRecallModal, PestStationsModal, SensoryScoreModal, StaffIllnessModal, StaffTrainingRecordModal, SupplierDocumentsModal, SupplierFormModal, TastingLogModal, TopUpModal, TrainingModal } from "./components/foodSafety";
-import { AiFeedbackReviewModal, AiHelperModal, CHANGELOG, HELP_ARTICLES, HelpGuideModal, LATEST_CHANGELOG_ID, PAGE_TOURS, SpotlightTour, TOUR_STEPS, TankQRModal, WhatsNewModal } from "./components/help";
+import { AiFeedbackReviewModal, AiHelperModal, CHANGELOG, HELP_ARTICLES, HelpGuideModal, LATEST_CHANGELOG_ID, PAGE_TOURS, SALES_HELP_ARTICLES, SALES_TOUR_STEPS, SpotlightTour, TOUR_STEPS, TankQRModal, WhatsNewModal } from "./components/help";
 import { AddInventoryModal, AddPackageTypeModal, AdjustInventoryModal, BulkOpeningStockModal, InventoryDuplicatesPanel, InventoryItemDetail, PackageTypeCard, PackageTypeDetail, StockTakeHistoryModal, StockTakeModal, StockTakeReportModal, SuppliersModal } from "./components/inventory";
 import { BrewPlannerView, backOrderEtas, computeBrewPlan, recipeForSuggestion, suggestionToBatch } from "./components/planner";
 import { HomeAlerts, OrderListModal } from "./components/orderList";
@@ -213,8 +213,10 @@ function TankLogApp() {
   const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   useEffect(() => {
     if (!profile) return;
-    if (!(profile.toursSeen || []).includes("welcome")) setShowWelcomeTour(true);
-  }, [profile]);
+    // Sales logins get their own short tour, once (and an owner previewing
+    // "View as Sales" sees it too, the first time).
+    if (!(profile.toursSeen || []).includes(isSales ? "welcome-sales" : "welcome")) setShowWelcomeTour(true);
+  }, [profile, isSales]);
 
   // Marks a tour (the welcome tour, or any single page's tour) as seen —
   // tied to the person's account rather than the device, so it follows
@@ -231,6 +233,7 @@ function TankLogApp() {
 
   const dismissWelcomeTour = () => {
     setShowWelcomeTour(false);
+    if (isSales) { markTourSeen("welcome-sales"); return; }
     markTourSeen("welcome");
     try {
       // A brand-new account doesn't need a "what changed" recap on top of
@@ -247,9 +250,10 @@ function TankLogApp() {
   useEffect(() => {
     if (showWelcomeTour) return;
     if (!profile) return;
+    if (isSales) return; // page tours explain the main app's buttons, not the Sales view
     if (!PAGE_TOURS[view]) return;
     if (!(profile.toursSeen || []).includes(view)) setPageTourKey(view);
-  }, [view, showWelcomeTour, profile]);
+  }, [view, showWelcomeTour, profile, isSales]);
   const dismissPageTour = () => {
     if (pageTourKey) markTourSeen(pageTourKey);
     setPageTourKey(null);
@@ -7139,7 +7143,7 @@ function TankLogApp() {
           }}
         />
       )}
-      {showHelpGuide && <HelpGuideModal onClose={() => setShowHelpGuide(false)} />}
+      {showHelpGuide && <HelpGuideModal articles={isSales ? SALES_HELP_ARTICLES : HELP_ARTICLES} onClose={() => setShowHelpGuide(false)} />}
       {showAiHelper && (
         <AiHelperModal
           messages={aiChatMessages}
@@ -7150,7 +7154,7 @@ function TankLogApp() {
         />
       )}
       {showAiFeedbackReview && <AiFeedbackReviewModal feedback={aiFeedback} onClose={() => setShowAiFeedbackReview(false)} onDelete={deleteAiFeedback} />}
-      {showWelcomeTour && <SpotlightTour steps={TOUR_STEPS} showLogoOnFirst onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
+      {showWelcomeTour && <SpotlightTour steps={isSales ? SALES_TOUR_STEPS : TOUR_STEPS} showLogoOnFirst onClose={dismissWelcomeTour} setSidebarOpen={setSidebarOpen} />}
       {pageTourKey && PAGE_TOURS[pageTourKey] && <SpotlightTour steps={PAGE_TOURS[pageTourKey]} onClose={dismissPageTour} setSidebarOpen={setSidebarOpen} />}
       {showWhatsNew && <WhatsNewModal onClose={dismissWhatsNew} entries={CHANGELOG} />}
       {showQuickJump && (
