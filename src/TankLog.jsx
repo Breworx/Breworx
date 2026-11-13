@@ -728,20 +728,18 @@ function TankLogApp() {
       const out = await res.json().catch(() => ({}));
       if (out.sent) emailed = true;
       else if (out.error && out.error !== "not_configured") showToast("error", `The invite email didn't send (${out.error}). Send the link below instead.`);
-      if (out.error === "not_configured" && email) window.location.href = inviteMailto(email, role, link);
     } catch (err) {
       console.error(err);
     }
     setInviteSent({ email, role, emailed });
     if (emailed) showToast("success", `Invite emailed to ${email}.`);
   };
-  const inviteMailto = (email, role, link) => {
+  const inviteMessage = (role, link) => {
     const company = companyName || "our brewery";
     const what = role === "sales"
       ? "You'll be able to see finished stock, what's in the tanks, the production calendar and Upstock orders with back orders."
       : "You'll be part of the team in Brewpoint, our brewery app.";
-    const body = `Hi,\n\nYou're invited to join ${company} on Brewpoint. ${what}\n\nTap this link to set up your login (it works once, just for you):\n${link}\n\nThanks,\n${user?.name || ""}`;
-    return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(`Join ${company} on Brewpoint`)}&body=${encodeURIComponent(body)}`;
+    return `Hi,\n\nYou're invited to join ${company} on Brewpoint. ${what}\n\nTap this link to set up your login (it works once, just for you):\n${link}\n\nThanks,\n${user?.name || ""}`;
   };
 
   const updateTeammateRole = async (teammate, newRole) => {
@@ -6430,11 +6428,11 @@ function TankLogApp() {
                           </div>
                           <div style={{ display: "flex", gap: 8 }}>
                             <button onClick={createInvite} disabled={creatingInvite || !/.+@.+\..+/.test(inviteForm.email.trim())} style={{ flex: 2, background: /.+@.+\..+/.test(inviteForm.email.trim()) ? "#5C9A3C" : "#E8E4D4", border: "none", borderRadius: 5, padding: "10px", color: "#16191A", fontFamily: "'Oswald', sans-serif", fontWeight: 500, fontSize: 14, cursor: "pointer" }}>
-                              {creatingInvite ? "Creating…" : "Send invite"}
+                              {creatingInvite ? "Creating…" : "Create invite"}
                             </button>
                             <button onClick={() => setInviteForm(null)} style={{ flex: 1, background: "none", border: "1px solid #DDE0C8", borderRadius: 5, color: "#5C6B54", fontSize: 13, cursor: "pointer" }}>Cancel</button>
                           </div>
-                          <div style={{ fontSize: 11.5, color: "#9BA88A" }}>Brewpoint emails them the invite with their own sign-up link.</div>
+                          <div style={{ fontSize: 11.5, color: "#9BA88A" }}>You'll get the invite to copy into your own email, or text it.</div>
                         </div>
                       ) : !inviteLink ? (
                         <button
@@ -6462,11 +6460,11 @@ function TankLogApp() {
                         <div style={{ background: "#F8F5EA", border: "1px solid #EBE8D6", borderRadius: 5, padding: "10px 12px" }}>
                           <div style={{ color: "#5C6B54", fontSize: 12, marginBottom: 6, lineHeight: 1.45 }}>
                             {inviteSent?.email ? <>Invite for <strong>{inviteSent.email}</strong> as {inviteSent.role === "sales" ? "Sales (view only)" : "a team member"}. </> : null}
-                            {inviteSent?.emailed ? "Emailed to them just now. You can also text or copy the link — it works once, for one person." : "If your email app didn't open, send it from here — the link works once, for one person."}
+                            {inviteSent?.emailed ? "Emailed to them just now. You can also text or copy the link — it works once, for one person." : "Copy the invite and paste it into an email or text to them — the link works once, for one person."}
                           </div>
                           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                            {inviteSent?.email && !inviteSent?.emailed && (
-                              <a href={inviteMailto(inviteSent.email, inviteSent.role, inviteLink)} style={{ flex: 1, textAlign: "center", background: "#5C9A3C", borderRadius: 4, padding: "9px", color: "#16191A", fontSize: 12.5, textDecoration: "none" }}>Email it</a>
+                            {!inviteSent?.emailed && (
+                              <button onClick={() => { navigator.clipboard?.writeText(inviteMessage(inviteSent?.role, inviteLink)); showToast("success", "Invite copied — paste it into your email."); }} style={{ flex: 1, background: "#5C9A3C", border: "none", borderRadius: 4, padding: "9px", color: "#16191A", fontSize: 12.5, cursor: "pointer" }}>Copy invite message</button>
                             )}
                             {typeof navigator !== "undefined" && navigator.share && (
                               <button onClick={() => navigator.share({ title: "Join us on Brewpoint", text: "Tap to join our team on Brewpoint:", url: inviteLink }).catch(() => {})} style={{ flex: 1, background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 4, padding: "9px", color: "#2A3324", fontSize: 12.5, cursor: "pointer" }}>Text or share…</button>
