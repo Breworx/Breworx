@@ -4933,6 +4933,11 @@ function TankLogApp() {
                 const { error } = await supabase.from("inventory_items").update({ pack_size: size, pack_label: label }).eq("id", itemId);
                 if (error) { showToast("error", "That didn't save — check your connection and try again."); return; }
                 setInventory((prev) => prev.map((it) => (it.id === itemId ? { ...it, packSize: size, packLabel: label } : it)));
+              }} suppliers={suppliers} onSetOrderUrl={async (supplierId, url) => {
+                const { error } = await supabase.from("suppliers").update({ order_url: url }).eq("id", supplierId);
+                if (error) { showToast("error", "That didn't save — check your connection and try again."); return; }
+                setSuppliers((prev) => prev.map((s) => (s.id === supplierId ? { ...s, orderUrl: url } : s)));
+                showToast("success", "Ordering site saved.");
               }} />
             )}
             {!loadingData && view === "home" && (
