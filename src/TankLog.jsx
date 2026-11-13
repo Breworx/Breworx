@@ -2118,14 +2118,18 @@ function TankLogApp() {
         xeroCatchUpReport.current.push(toFix.length ? `stock matched to Xero for ${toFix.length} product${toFix.length === 1 ? "" : "s"}` : "stock already matched Xero");
         if (!stop) setXeroCatchUp("history");
       } else if (xeroCatchUp === "history") {
+        // All the way back to the first beer ever packaged in Brewpoint, so
+        // every sale since TSW began is traced to its batch.
         const before = xeroSettings?.sales_sync_from || today();
+        const firstPacked = batches.reduce((m, b) => packagingEvents(b).reduce((m2, e) => (e.date && (!m2 || e.date < m2) ? e.date : m2), m), "");
         const d = new Date(`${before}T00:00:00`);
         d.setFullYear(d.getFullYear() - 1);
-        await importXeroSalesHistory(d.toISOString().slice(0, 10));
+        const oneYearBack = d.toISOString().slice(0, 10);
+        await importXeroSalesHistory(firstPacked && firstPacked < oneYearBack ? firstPacked : oneYearBack);
         await supabase.from("xero_settings").update({ catch_up_requested: false }).eq("company_id", profile.companyId);
         setXeroSettings((prev) => ({ ...(prev || {}), catch_up_requested: false }));
         setXeroCatchUp(null);
-        showToast("success", `Xero is up to date: sales taken off, ${xeroCatchUpReport.current.join(", ")}, last year's sales added for tracing.`);
+        showToast("success", `Xero is up to date: sales taken off, ${xeroCatchUpReport.current.join(", ")}, every sale since your first batch added as orders with batch tracing.`);
       }
     })();
     return () => { stop = true; };
