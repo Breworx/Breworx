@@ -326,3 +326,9 @@ alter table public.xero_settings add column if not exists catch_up_requested boo
 alter table sales_orders add column if not exists source text, add column if not exists xero_doc_id text;
 create unique index if not exists sales_orders_company_xero_doc on sales_orders (company_id, xero_doc_id);
 alter table sales_orders add constraint sales_orders_company_xero_doc_key unique using index sales_orders_company_xero_doc;
+
+-- Server-side Xero sales check (edge function xero-sync), every 2 minutes,
+-- plus the xero-webhook function for instant updates.
+alter table xero_settings add column if not exists sync_lock_until timestamptz;
+-- try_xero_sync_lock / release_xero_sync_lock / run_xero_sync / get_xero_webhook_key: see migration xero_server_sync
+-- select cron.schedule('xero-sync-every-2-min', '*/2 * * * *', 'select public.run_xero_sync()');
