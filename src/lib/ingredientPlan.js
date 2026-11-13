@@ -42,7 +42,7 @@ export function ingredientPlan({ batches, recipes, inventory, suggestions = [], 
       if (!items[key]) {
         const supplier = stock?.supplierId ? suppliers.find((s) => s.id === stock.supplierId) : null;
         const perf = supplier ? supplierPerformance(supplier.name, purchaseOrders) : null;
-        items[key] = { key, name: stock ? stock.name : name, unit, category: stock?.category || ing.category || "", onHand: stock ? Math.max(0, Number(stock.qty) || 0) : 0, inStock: !!stock, needed: 0, left: stock ? Math.max(0, Number(stock.qty) || 0) : 0, shortBy: null, supplier: supplier?.name || "", leadDays: perf?.avgLeadTimeDays != null ? Math.ceil(perf.avgLeadTimeDays) : null, unitMismatch: stock && f == null, brews: [] };
+        items[key] = { key, itemId: stock?.id || null, packSize: stock?.packSize || null, packLabel: stock?.packLabel || null, supplierProduct: stock?.supplierProduct || null, name: stock ? stock.name : name, unit, category: stock?.category || ing.category || "", onHand: stock ? Math.max(0, Number(stock.qty) || 0) : 0, inStock: !!stock, needed: 0, left: stock ? Math.max(0, Number(stock.qty) || 0) : 0, shortBy: null, supplier: supplier?.name || "", leadDays: perf?.avgLeadTimeDays != null ? Math.ceil(perf.avgLeadTimeDays) : null, unitMismatch: stock && f == null, brews: [] };
       }
       const row = items[key];
       row.needed += qty;
@@ -55,9 +55,18 @@ export function ingredientPlan({ batches, recipes, inventory, suggestions = [], 
   });
   const list = Object.values(items).map((r) => {
     const withBuffer = r.needed * (1 + (Number(bufferPct) || 0) / 100);
-    const shortfall = r.needed > r.onHand ? round(Math.max(0, withBuffer - r.onHand)) : 0;
+    let shortfall = r.needed > r.onHand ? round(Math.max(0, withBuffer - r.onHand)) : 0;
+    // Whole packs (a 25kg bag, a 500g yeast pack): round down when that still
+    // covers the real need for the period, otherwise up.
+    let packs = null;
+    if (shortfall > 0 && r.packSize > 0) {
+      const down = Math.floor(shortfall / r.packSize);
+      const up = Math.ceil(shortfall / r.packSize - 1e-9);
+      packs = down > 0 && r.onHand + down * r.packSize >= r.needed ? down : Math.max(1, up);
+      shortfall = round(packs * r.packSize);
+    }
     const orderBy = r.shortBy ? addDays(r.shortBy, -(r.leadDays ?? 7)) : null;
-    return { ...r, needed: round(r.needed), shortfall, orderBy, late: orderBy ? orderBy < start : false };
+    return { ...r, needed: round(r.needed), shortfall, packs, orderBy, late: orderBy ? orderBy < start : false };
   });
   list.sort((a, b) => (b.shortfall > 0) - (a.shortfall > 0) || String(a.orderBy || "9999").localeCompare(String(b.orderBy || "9999")) || a.name.localeCompare(b.name));
   return { brews, items: list, toOrder: list.filter((r) => r.shortfall > 0), perBrew, noRecipe, start, end, days, bufferPct };

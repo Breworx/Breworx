@@ -4929,7 +4929,11 @@ function TankLogApp() {
               />
             )}
             {showOrderList && ingPlan && (
-              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} onSettings={isOwner ? (patch) => saveBrewPlanSettings({ ...(brewPlanSettings || {}), ...patch }) : undefined} />
+              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} onSettings={isOwner ? (patch) => saveBrewPlanSettings({ ...(brewPlanSettings || {}), ...patch }) : undefined} onSetPack={async (itemId, size, label) => {
+                const { error } = await supabase.from("inventory_items").update({ pack_size: size, pack_label: label }).eq("id", itemId);
+                if (error) { showToast("error", "That didn't save — check your connection and try again."); return; }
+                setInventory((prev) => prev.map((it) => (it.id === itemId ? { ...it, packSize: size, packLabel: label } : it)));
+              }} />
             )}
             {!loadingData && view === "home" && (
               <HomeView

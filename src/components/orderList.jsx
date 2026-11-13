@@ -11,7 +11,10 @@ const card = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius:
 const btn = { background: "#5C9A3C", border: "none", borderRadius: 5, padding: "7px 12px", color: "#16191A", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 const btn2 = { background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "7px 12px", color: "#2A3324", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 
-export function OrderListModal({ plan, onClose, onNewPO, onSettings }) {
+export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack }) {
+  const [packEdit, setPackEdit] = useState({}); // key -> size text
+  const [copied, setCopied] = useState(null);
+  const orderText = (rows) => rows.map((r) => (r.packs ? `${r.packs} × ${r.supplierProduct || `${r.name} ${r.packLabel || ""}`.trim()}` : `${num(Math.ceil(r.shortfall * 10) / 10)} ${r.unit} ${r.supplierProduct || r.name}`)).join("\n");
   const [showCovered, setShowCovered] = useState(false);
   const bySupplier = {};
   plan.toOrder.forEach((r) => (bySupplier[r.supplier || "No supplier set"] = bySupplier[r.supplier || "No supplier set"] || []).push(r));
@@ -41,13 +44,16 @@ export function OrderListModal({ plan, onClose, onNewPO, onSettings }) {
         ) : (
           Object.entries(bySupplier).sort((a, b) => a[0].localeCompare(b[0])).map(([sup, rows]) => (
             <div key={sup}>
-              <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A5A2E", marginBottom: 6 }}>{sup}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A5A2E" }}>{sup}</span>
+                <button type="button" onClick={() => { navigator.clipboard?.writeText(orderText(rows)); setCopied(sup); }} style={{ ...btn2, padding: "4px 10px", fontSize: 12 }}>{copied === sup ? "Copied ✓" : "Copy order"}</button>
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {rows.map((r) => (
                   <div key={r.key} style={{ background: r.late ? "#FBE5D2" : "#FFFBF5", border: `1px solid ${r.late ? "#E3B37A" : "#E8C9A8"}`, borderRadius: 5, padding: "9px 11px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13.5, color: "#2A3324" }}>
                       <span style={{ fontWeight: 500 }}>{r.name}{!r.inStock && <span style={{ color: "#B5502F", fontSize: 11 }}> · not in stock list</span>}</span>
-                      <strong style={{ whiteSpace: "nowrap" }}>order {num(Math.ceil(r.shortfall * 10) / 10)} {r.unit}</strong>
+                      <strong style={{ whiteSpace: "nowrap" }}>{r.packs ? `${r.packs} × ${r.packLabel || `${r.packSize}${r.unit}`}` : `order ${num(Math.ceil(r.shortfall * 10) / 10)} ${r.unit}`}</strong>
                     </div>
                     <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 2 }}>
                       Need {num(r.needed)} {r.unit}, have {num(r.onHand)}. Runs out for the {fmt(r.shortBy)} brew
@@ -56,6 +62,19 @@ export function OrderListModal({ plan, onClose, onNewPO, onSettings }) {
                     <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 2 }}>
                       {r.brews.map((b) => `${fmt(b.date)} ${b.name}${b.kind === "suggested" ? " (suggested)" : ""}: ${num(b.qty)}`).join(" · ")}
                     </div>
+                    {r.packs ? <div style={{ fontSize: 11.5, color: "#5C6B54" }}>= {num(r.shortfall)} {r.unit}{r.supplierProduct ? ` · ${r.supplierProduct}` : ""}</div> : null}
+                    {!r.packs && onSetPack && r.itemId && (
+                      packEdit[r.key] != null ? (
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+                          <span style={{ fontSize: 12, color: "#5C6B54" }}>Comes in packs of</span>
+                          <input type="number" inputMode="decimal" value={packEdit[r.key]} onChange={(e) => setPackEdit((p) => ({ ...p, [r.key]: e.target.value }))} style={{ width: 70, fontSize: 13, padding: "4px 6px" }} />
+                          <span style={{ fontSize: 12, color: "#5C6B54" }}>{r.unit}</span>
+                          <button type="button" onClick={() => { const v = Number(packEdit[r.key]); if (v > 0) onSetPack(r.itemId, v, `${v}${r.unit} pack`); setPackEdit((p) => { const n = { ...p }; delete n[r.key]; return n; }); }} style={{ ...btn, padding: "4px 10px" }}>Save</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setPackEdit((p) => ({ ...p, [r.key]: "" }))} style={{ background: "none", border: "none", padding: 0, marginTop: 3, color: "#5C6B54", fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>Set pack size</button>
+                      )
+                    )}
                     {r.unitMismatch && <div style={{ fontSize: 11.5, color: "#B5502F" }}>The recipe's unit doesn't convert to the stock unit — check this one.</div>}
                   </div>
                 ))}
