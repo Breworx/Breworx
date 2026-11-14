@@ -3,7 +3,7 @@ import { Search } from "lucide-react";
 import { canCasesText } from "./finishedStock";
 import { EmptyState } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
-import { CONTAINERS, packagingEvents, productKeyFor, sameItemName } from "../lib/production";
+import { CONTAINERS, packagingEvents, productKeyFor, sameItemName, isScheduledBatch } from "../lib/production";
 import { today } from "../lib/utils";
 
 export const secondaryBtnStyle = {
@@ -62,7 +62,7 @@ export function deductFromLotsFIFO(lots, amount, preferredLotId) {
 // Ingredient quantities scale with the batch's own planned volume if it
 // differs from the linked recipe's base volume.
 export function ingredientsNeededForScheduled(batches, recipes, inventory) {
-  const scheduled = batches.filter((b) => b.startDate > today() && b.stage === "Brewing");
+  const scheduled = batches.filter((b) => isScheduledBatch(b));
   const needed = {};
   scheduled.forEach((b) => {
     const recipe = b.recipeId ? recipes.find((r) => r.id === b.recipeId) : null;
