@@ -15,7 +15,7 @@ import { ingredientsNeededForScheduled } from "./traceability";
 import { ConfirmDialogModal, EmptyState, FirstVisitTip, Modal, NumberField, TextField } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
 import { monthKeyFromDate, monthLabelFromKey } from "../lib/excise";
-import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, isScheduledBatch, learnedTankDays, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
+import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, isScheduledBatch, learnedTankDays, nextBookedBatch, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
 import { addDays, daysBetween, today } from "../lib/utils";
 
 export function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inventory, consumables, suppliers, foodSafetyRecords, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank, onOpenInventory, onOpenConsumable, onOpenSupplier, onOpenFoodSafety }) {
@@ -1740,12 +1740,12 @@ export function HomeView({
                       return aOcc - bOcc;
                     })
                     .map((t) => {
-                      const occ = occupyingBatch(batches, t.id);
+                      const occ = occupyingBatch(batches, t.id) || nextBookedBatch(batches, t.id);
                       // A batch that's only scheduled hasn't actually
                       // started yet — the tank is genuinely still empty,
                       // so show its real state (CIP/sanitised) with a
                       // small note, not a fake "brewing" display.
-                      const isScheduled = occ && occ.startDate > today();
+                      const isScheduled = occ && isScheduledBatch(occ);
                       return (
                         <TankWallCard
                           key={t.id}
