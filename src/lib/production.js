@@ -711,6 +711,26 @@ export function unitFactor(from, to) {
   return a[1] / b[1];
 }
 
+// Converts an addition (e.g. 400 mL of Super F) into the stock item's own
+// unit (kg) before it's taken out of stock. Mass <-> volume is treated as
+// 1 g per mL — close enough for finings, acids and salts solutions, and far
+// better than the old behaviour of taking 400 kg. Returns { qty, note }:
+// note is set when a mass/volume swap was assumed. Unknown units (ea, pkg)
+// that don't match the item are left as-is with a note.
+export function additionQtyInItemUnit(qty, fromUnit, itemUnit) {
+  const n = Number(qty) || 0;
+  if (!fromUnit || !itemUnit || fromUnit === itemUnit) return { qty: n, note: null };
+  const f = unitFactor(fromUnit, itemUnit);
+  if (f != null) return { qty: Math.round(n * f * 10000) / 10000, note: null };
+  const a = UNIT_TO_BASE[fromUnit];
+  const b = UNIT_TO_BASE[itemUnit];
+  if (a && b) {
+    const base = n * a[1];
+    return { qty: Math.round((base / b[1]) * 10000) / 10000, note: `taken as ${a[0] === "vol" ? "1 mL = 1 g" : "1 g = 1 mL"}` };
+  }
+  return { qty: n, note: `units differ (${fromUnit} vs ${itemUnit}) — check stock` };
+}
+
 // A planned brew stays "scheduled" (movable on the calendar) on its own day
 // until something is actually done to it: ingredients taken, a reading, a
 // brew day logged, an OG or packaging. Before, it counted as started the
