@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, CheckCircle2, Users } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { rowToBatch, rowToCustomerPrice, rowToSalesOrder } from "../lib/mappers";
 import { BrewpointLoadingMark, EmptyState, Modal, SelectField, TextField } from "./ui";
 import { CONTAINERS, availableStockList } from "../lib/production";
+import { computeSuggestions } from "../lib/suggestions";
 
 export const CUSTOMER_TYPES = ["Wholesale", "Taproom", "Direct-to-consumer"];
 
@@ -473,6 +474,8 @@ export function CustomerDetail({ customer, onBack, onEdit, onDelete, xeroConnect
         <CustomerPriceList customer={customer} availableStock={availableStock} customerPrices={customerPrices} onSavePrice={onSavePrice} />
       )}
 
+      <CustomerSuggestions customer={customer} batches={batches || []} salesOrders={salesOrders || []} availableStock={availableStock || []} />
+
       <CustomerPurchases customer={customer} batches={batches || []} salesOrders={salesOrders || []} onOpenBatch={onOpenBatch} />
 
       <div style={{ display: "flex", gap: 10 }}>
@@ -931,6 +934,33 @@ export function CustomerPurchases({ customer, batches, salesOrders, onOpenBatch 
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// "What to pitch next" for this venue — from what similar venues buy, what
+// they've stopped ordering, the season, and new beers coming through the
+// tanks. Turned off company-wide in Marketing → Settings.
+export function CustomerSuggestions({ customer, batches, salesOrders, availableStock }) {
+  const [enabled, setEnabled] = useState(null);
+  useEffect(() => {
+    let live = true;
+    supabase.from("marketing_settings").select("suggestions_enabled").maybeSingle().then(({ data }) => { if (live) setEnabled(data ? data.suggestions_enabled !== false : true); });
+    return () => { live = false; };
+  }, []);
+  const list = useMemo(() => (enabled ? computeSuggestions({ salesOrders, availableStock, batches }).byCustomer.get(customer.id) || [] : []), [enabled, salesOrders, availableStock, batches, customer.id]);
+  if (!enabled || !list.length) return null;
+  return (
+    <div style={{ background: "#fff", border: "1px solid #DDE0C8", borderRadius: 8, padding: 14 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5C6B54", marginBottom: 8 }}>Suggested to pitch</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {list.slice(0, 4).map((s) => (
+          <div key={s.beerKey} style={{ borderLeft: `3px solid ${s.isNew ? "#D9A441" : "#5C9A3C"}`, paddingLeft: 10 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 600, color: "#2A3324" }}>{s.beerName}{s.isNew && <span style={{ marginLeft: 6, fontSize: 10.5, background: "#D9A441", color: "#fff", borderRadius: 10, padding: "1px 6px", verticalAlign: "middle" }}>NEW</span>}</div>
+            <div style={{ fontSize: 12.5, color: "#5C6B54", lineHeight: 1.45 }}>{s.reasons.join(" · ")}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

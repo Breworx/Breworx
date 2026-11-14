@@ -5760,7 +5760,7 @@ function TankLogApp() {
             )}
 
             {!loadingData && view === "marketing" && profile?.companyId && (
-              <MarketingView companyId={profile.companyId} batches={batches} showToast={showToast} userId={profile?.id} />
+              <MarketingView companyId={profile.companyId} batches={batches} salesOrders={salesOrders} availableStock={availableStock} customers={customers} showToast={showToast} userId={profile?.id} />
             )}
             {!loadingData && view === "salesAnalytics" && (
               <SalesAnalyticsView salesOrders={salesOrders} customers={customers} batches={batches} isOwner={isOwner} />
