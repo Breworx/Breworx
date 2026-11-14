@@ -1,5 +1,5 @@
 import { addDays } from "../lib/utils";
-import { batchTankIds, isScheduledBatch, learnedTankDays, sortedTanks, occupyingBatch } from "../lib/production";
+import { batchTankIds, isScheduledBatch, learnedTankDays, nextBookedBatch, sortedTanks, occupyingBatch } from "../lib/production";
 import { TankWallCard } from "./tanks";
 
 // ─── Sales: what's in each tank and what's coming ───────────────────────────
@@ -38,7 +38,7 @@ export function SalesTanksView({ tanks, batches, onOpenBatch }) {
             <div style={head}>{label}</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12, alignItems: "start" }}>
               {group.map((t) => {
-                const occ = occupyingBatch(batches, t.id);
+                const occ = occupyingBatch(batches, t.id) || nextBookedBatch(batches, t.id);
                 const scheduled = occ && isScheduledBatch(occ);
                 const now = scheduled ? null : occ;
                 const r = now && ready(now);

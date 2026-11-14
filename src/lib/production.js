@@ -642,19 +642,33 @@ export function activeRecipesByFamily(recipes) {
   });
 }
 
+// "Occupied" means something is physically in the tank now. Planned brews
+// that haven't started (future date, or today with nothing done yet) are
+// pencilled-in bookings, not contents — they used to make an empty tank
+// look full (e.g. a December Cold IPA blocking Tank 6 in November).
 export function tankIsOccupied(batches, tankId, excludeBatchId) {
   return batches.some((b) => {
     if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
+    if (isScheduledBatch(b)) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
   });
+}
+
+// The next planned (not yet started) brew booked into a tank, if any — for
+// "next up" notes on otherwise empty tanks.
+export function nextBookedBatch(batches, tankId) {
+  return batches
+    .filter((b) => batchTankIds(b).includes(tankId) && isScheduledBatch(b))
+    .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))[0];
 }
 
 export function occupyingBatch(batches, tankId, excludeBatchId) {
   const candidates = batches.filter((b) => {
     if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
+    if (isScheduledBatch(b)) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
   });

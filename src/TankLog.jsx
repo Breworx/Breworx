@@ -31,7 +31,7 @@ import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeeded
 import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, compareXeroStock, planXeroStockMatch } from "./components/xero";
 import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, findMissingIngredients, latestReading } from "./lib/config";
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
-import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, productKeyFor, additionQtyInItemUnit, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
+import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, isScheduledBatch, nextBookedBatch, occupyingBatch, packagingDiscarded, packagingEvents, productKeyFor, additionQtyInItemUnit, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
 import { downloadCSV, downloadJSON, insertByDate, today, withStageDate } from "./lib/utils";
 import { planXeroOrders } from "./lib/xeroOrders";
 
@@ -576,9 +576,9 @@ function TankLogApp() {
     if (!tankParam || loadingData || tanks.length === 0) return;
     const tank = tanks.find((t) => t.id === tankParam);
     if (!tank) return;
-    const occupant = occupyingBatch(batches, tank.id);
+    const occupant = occupyingBatch(batches, tank.id) || nextBookedBatch(batches, tank.id);
     if (occupant) {
-      if (occupant.startDate > today()) {
+      if (isScheduledBatch(occupant)) {
         setEditScheduledBatchId(occupant.id);
         setView("production");
       } else {
