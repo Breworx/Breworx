@@ -5264,7 +5264,7 @@ function TankLogApp() {
               const fFerm = fermentingBatches
                 .filter(matches)
                 .slice()
-                .sort((a, b) => (a.startDate > today()) - (b.startDate > today()));
+                .sort((a, b) => isScheduledBatch(a) - isScheduledBatch(b));
               const fCond = conditioningBatches.filter(matches);
               const fProg = inProgressBatches.filter(matches);
               const fPack = packagedBatches.filter(matches);
@@ -6059,7 +6059,7 @@ function TankLogApp() {
                           )}
                         </div>
                         <div style={{ color: "#5C6B54", fontSize: 12.5, marginTop: 3 }}>
-                          {t.capacity}L{occupant ? (occupant.startDate > today() ? ` · scheduled: ${occupant.name}` : ` · occupied by ${occupant.name}`) : " · empty"}
+                          {t.capacity}L{occupant ? (isScheduledBatch(occupant) ? ` · scheduled: ${occupant.name}` : ` · occupied by ${occupant.name}`) : " · empty"}
                           {t.type === "Barrel" && t.barrelSource ? ` · previously ${t.barrelSource}` : ""}
                         </div>
                       </div>

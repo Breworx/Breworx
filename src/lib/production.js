@@ -679,7 +679,7 @@ export function occupyingBatch(batches, tankId, excludeBatchId) {
   // always win here; only fall back to a scheduled one if nothing has
   // actually started yet. Without this, batch order (not reality) would
   // decide which one showed.
-  return candidates.find((b) => b.startDate <= today()) || candidates[0];
+  return candidates.find((b) => !isScheduledBatch(b)) || candidates[0];
 }
 
 export function aggregatePackagingCounts(batch) {
@@ -749,11 +749,12 @@ export function additionQtyInItemUnit(qty, fromUnit, itemUnit) {
 // until something is actually done to it: ingredients taken, a reading, a
 // brew day logged, an OG or packaging. Before, it counted as started the
 // moment its date arrived, so it couldn't be dragged on the day.
+// A plan whose date has passed without being brewed stays a plan (overdue)
+// rather than quietly turning into a "started" brew sitting in a tank.
 export function isScheduledBatch(b) {
   if (!b || b.stage !== "Brewing") return false;
   const t = today();
   if (b.startDate > t) return true;
-  if (b.startDate !== t) return false;
   const touched =
     (b.ingredients || []).length > 0 || Number(b.ingredientCost) > 0 || (b.readings || []).length > 0 ||
     (b.brewDays || []).length > 0 || !!b.og || packagingEvents(b).length > 0;

@@ -1391,7 +1391,7 @@ export function HomeView({
   };
 
   const stats = [
-    ["Fermenting", fermentingBatches.filter((b) => b.startDate <= today()).length, STAGE_COLOR.Primary, "batches"],
+    ["Fermenting", fermentingBatches.filter((b) => !isScheduledBatch(b)).length, STAGE_COLOR.Primary, "batches"],
     ["Conditioning", conditioningBatches.length, STAGE_COLOR.Conditioning, "batches"],
     ["Packaging", inProgressBatches.length, "#D4A24C", "batches"],
     ["Packaged Batches", packagedBatches.length, "#9BA88A", "batches"],
@@ -1622,7 +1622,7 @@ export function HomeView({
       {(() => {
         const brewDayBatches = batches.filter((b) => {
           if (b.stage !== "Brewing") return false;
-          if (b.startDate > today()) return false;
+          if (isScheduledBatch(b)) return false;
           if (b.mergedIntoBatchId) return false;
           const t = tanks.find((tk) => tk.id === b.tankId);
           return t && (t.type === "Mash Tun" || t.type === "Kettle");
