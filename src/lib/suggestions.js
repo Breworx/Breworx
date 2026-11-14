@@ -22,6 +22,12 @@ const beerKeyOf = (line) => {
 const containerOf = (line) => line.containerKey || String(line.productKey || "").split("::")[1] || "";
 const isKeg = (ck) => /keg/i.test(ck);
 
+// Own-label beers brewed for one venue (Craftys, Gents, HEX, and house beers
+// sold under a venue's name). They're never pitched to anyone else, and are
+// left out of "similar venues" so they don't skew the matching.
+const BRANDED = /\b(craft(y|ie)s?|gents|hex)\b|moon juice|chilly hazy|big freeze/i;
+export const isBrandedBeer = (name) => BRANDED.test(String(name || ""));
+
 // Broad style families, so a brand-new beer can be matched to venues that
 // buy that kind of thing.
 export function styleFamily(text) {
@@ -51,7 +57,7 @@ export function computeSuggestions({ salesOrders = [], availableStock = [], batc
     const d = new Date(`${o.orderDate}T12:00:00`);
     for (const l of o.lines || []) {
       const key = beerKeyOf(l);
-      if (!key) continue;
+      if (!key || isBrandedBeer(key) || isBrandedBeer(l.batchName)) continue;
       if (!names.has(key)) names.set(key, canonicalBeerName(l.batchName || key) || key);
       const qty = Number(l.qty) || 0;
       if (!perCust.has(o.customerId)) perCust.set(o.customerId, new Map());
@@ -89,7 +95,8 @@ export function computeSuggestions({ salesOrders = [], availableStock = [], batc
   for (const b of batches) {
     if (b.mergedIntoBatchId) continue;
     const k = canonicalBeerName(b.name || "").trim().toLowerCase();
-    if (!k || names.has(k) && [...perCust.values()].some((m) => m.has(k))) continue;
+    if (!k || isBrandedBeer(k) || isBrandedBeer(b.name)) continue;
+    if (names.has(k) && [...perCust.values()].some((m) => m.has(k))) continue;
     const upcoming = b.stage !== "Packaged" && (!b.startDate || new Date(`${b.startDate}T12:00:00`) - now < 60 * DAY);
     const stocked = inStock.has(k);
     if (!upcoming && !stocked) continue;
@@ -177,6 +184,7 @@ export function computeSuggestions({ salesOrders = [], availableStock = [], batc
     const format = kegs >= cans ? "kegs" : "cans";
     const list = [];
     for (const s of cand.values()) {
+      if (isBrandedBeer(s.beerKey) || isBrandedBeer(s.beerName)) continue;
       const sup = supply(s.beerKey) || (s.isNew ? "brewing" : null);
       if (!sup) continue;
       const lift = seasonOf(s.beerKey);
