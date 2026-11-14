@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Plus, Droplet, X, TrendingUp, Beaker, Package, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, Menu, QrCode, Sparkles, DollarSign } from "lucide-react";
+import { Plus, Droplet, X, TrendingUp, Beaker, Package, AlertTriangle, Truck, CheckCircle2, Trash2, LogOut, Settings, Users, Home, LayoutGrid, FileText, FlaskConical, Warehouse, Box, Layers, Info, Calendar, Search, Menu, QrCode, Sparkles, DollarSign, Mail } from "lucide-react";
+import { MarketingView } from "./components/marketing";
 import { supabase } from "./supabaseClient";
 import { productKeyForBatch } from "./lib/brewPlanner";
 import { rowToBatch, batchToRow, rowToInventoryItem, inventoryItemToRow, rowToPO, poToRow, rowToRecipe, recipeToRow, rowToProfile, rowToTank, tankToRow, rowToStockTake, stockTakeToRow, rowToFoodSafetyRecord, foodSafetyRecordToRow, rowToSupplier, supplierToRow, rowToCustomer, customerToRow, rowToCustomerPrice, customerPriceToRow, rowToYeastHarvest, yeastHarvestToRow, rowToMixedPackType, mixedPackTypeToRow, rowToMixedPackAssembly, mixedPackAssemblyToRow, rowToPestStation, pestStationToRow, rowToExciseItemCode, exciseItemCodeToRow, rowToExciseReturn, exciseReturnToRow, rowToAiFeedback, aiFeedbackToRow, rowToKeg, kegToRow, rowToTriangleTest, triangleTestToRow, rowToSalesOrder, salesOrderToRow, rowToSupplierDocument, supplierDocumentToRow, rowToConsumable, consumableToRow, rowToPackageType, packageTypeToRow, rowToReminder, reminderToRow, rowToActivity, activityToRow } from "./lib/mappers";
@@ -203,7 +204,7 @@ function TankLogApp() {
   const [salesAccess, setSalesAccess] = useState({});
   useEffect(() => {
     if (!isSales) return;
-    const allowed = ["finishedGoodsStock", "salesUpstock", "salesTanks", "production",
+    const allowed = ["finishedGoodsStock", "salesUpstock", "salesTanks", "production", "marketing",
       salesAccess.batches && "batches", salesAccess.customersOrders && "customers", salesAccess.customersOrders && "salesOrders",
       salesAccess.ingredientStock && "inventory", salesAccess.recipes && "recipes"].filter(Boolean);
     if (!allowed.includes(view)) setView("finishedGoodsStock");
@@ -4788,6 +4789,7 @@ function TankLogApp() {
                   ["salesUpstock", "Upstock orders", Truck],
                   ["salesTanks", "Tanks", Warehouse],
                   ["production", "Calendar", Calendar],
+                  ["marketing", "Marketing", Mail],
                   salesAccess.batches && ["batches", "Batches", Droplet],
                   salesAccess.customersOrders && ["customers", "Customers", Users],
                   salesAccess.customersOrders && ["salesOrders", "Orders", Truck],
@@ -4834,6 +4836,7 @@ function TankLogApp() {
                   ["customers", "Customers", Users],
                   ["salesOrders", "Orders", Truck],
                   ["salesAnalytics", "Analytics", TrendingUp],
+                  ["marketing", "Marketing", Mail],
                   ["kegs", "Kegs", Box],
                   ["finishedGoodsStock", "Stock", Package],
                 ],
@@ -4976,7 +4979,7 @@ function TankLogApp() {
               }
             `}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
-              {!isSales && view !== "salesTanks" && view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "brewPlanner" && view !== "costing" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
+              {!isSales && view !== "salesTanks" && view !== "settings" && view !== "home" && view !== "packaged" && view !== "foodsafety" && view !== "recipeBuilder" && view !== "production" && view !== "recipeAnalytics" && view !== "salesAnalytics" && view !== "marketing" && view !== "kegs" && view !== "quality" && view !== "excise" && view !== "cider" && view !== "brewPlanner" && view !== "costing" && view !== "finishedGoodsStock" && view !== "aging" && view !== "yeast" && view !== "traceability" && (
                 <button
                   data-tour={`page-${view}-newbtn`}
                   onClick={() => {
@@ -5756,6 +5759,9 @@ function TankLogApp() {
               <SalesOrdersView salesOrders={salesOrders} customers={customers} onOpen={setSelectedSalesOrderId} backOrders={draftAlloc.backOrders} />
             )}
 
+            {!loadingData && view === "marketing" && profile?.companyId && (
+              <MarketingView companyId={profile.companyId} batches={batches} showToast={showToast} userId={profile?.id} />
+            )}
             {!loadingData && view === "salesAnalytics" && (
               <SalesAnalyticsView salesOrders={salesOrders} customers={customers} batches={batches} isOwner={isOwner} />
             )}
