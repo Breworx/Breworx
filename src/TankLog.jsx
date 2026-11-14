@@ -31,7 +31,7 @@ import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeeded
 import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, compareXeroStock, planXeroStockMatch } from "./components/xero";
 import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, findMissingIngredients, latestReading } from "./lib/config";
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
-import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, productKeyFor, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
+import { CANS_PER_CASE, CONTAINERS, FAULT_SEVERITY_NEXT, draftOrderAllocations, isOpenXeroDraft, NEXT_CLEAN_STAGE, activeRecipesByFamily, applyLineMatch, availableStockList, canonicalBeerName, getStages, inventoryItemValue, mixedPackStockList, occupyingBatch, packagingDiscarded, packagingEvents, productKeyFor, additionQtyInItemUnit, remainingVolume, sameItemName, sortedTanks, setBeerAliasMap, uid, unitFactor } from "./lib/production";
 import { downloadCSV, downloadJSON, insertByDate, today, withStageDate } from "./lib/utils";
 import { planXeroOrders } from "./lib/xeroOrders";
 
@@ -2977,15 +2977,19 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, batchAdditions: newAdditions } : b)));
 
     const item = inventory.find((it) => sameItemName(it.name, entry.name));
+    let convNote = null;
     if (item) {
-      const { updatedLots } = deductFromLotsFIFO(item.lots, entry.qty);
-      const newQty = Math.max(0, Math.round((item.qty - entry.qty) * 100) / 100);
-      const historyEntry = { id: uid(), date: stampForDate(entry.date), user: user.name, type: "batch", delta: -entry.qty, note: `${batch.name} (#${batch.number}) — addition` };
+      const conv = additionQtyInItemUnit(entry.qty, entry.unit, item.unit);
+      convNote = conv.note;
+      const useQty = conv.qty;
+      const { updatedLots } = deductFromLotsFIFO(item.lots, useQty);
+      const newQty = Math.max(0, Math.round((item.qty - useQty) * 1000) / 1000);
+      const historyEntry = { id: uid(), date: stampForDate(entry.date), user: user.name, type: "batch", delta: -useQty, note: `${batch.name} (#${batch.number}) — addition${entry.unit && entry.unit !== item.unit ? ` (${entry.qty} ${entry.unit}${conv.note ? `, ${conv.note}` : ""})` : ""}` };
       const newHistory = [...(item.history || []), historyEntry];
       const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, lots: updatedLots, history: newHistory }).eq("id", item.id);
       if (!invError) setInventory((prev) => prev.map((it) => (it.id === item.id ? { ...it, qty: newQty, lots: updatedLots, history: newHistory } : it)));
     }
-    showToast("success", `${entry.name} added.`);
+    showToast(convNote && convNote.startsWith("units differ") ? "error" : "success", convNote && convNote.startsWith("units differ") ? `${entry.name} added — ${convNote}.` : `${entry.name} added.`);
   };
 
   // A second (or third...) brew day filling the same tank — deducts real
