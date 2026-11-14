@@ -581,7 +581,7 @@ export function CiderPlanTab({ inventory, onStartFromPlan }) {
   );
 }
 
-export function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }) {
+export function CiderSweetenTab({ batch, inventory, onSaveCider, onRecordSweeten, onLogAddition }) {
   const latest = batch && batch.og ? latestReading(batch) : null;
   const curSg = latest && latest.gravity != null ? latest.gravity : null;
   const j = juiceSummary(batch?.juiceIntake);
@@ -687,8 +687,8 @@ export function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }
       sorbateG: sorbateG != null ? r1(sorbateG) : null,
       kmetaG: kmeta != null ? r1(kmeta) : null,
     };
-    await onSaveCider(batch.id, { backSweetenings: [...(batch.backSweetenings || []), entry] });
-    setSaved(true);
+    const ok = onRecordSweeten ? await onRecordSweeten(batch.id, entry) : await onSaveCider(batch.id, { backSweetenings: [...(batch.backSweetenings || []), entry] });
+    if (ok !== false) setSaved(true);
   };
   const history = batch?.backSweetenings || [];
   return (
@@ -784,7 +784,7 @@ export function CiderSweetenTab({ batch, inventory, onSaveCider, onLogAddition }
       {batch && (
         <div style={ciderCard}>
           <button type="button" onClick={record} disabled={saved || (sugarG == null && juiceL == null && sorbateG == null)} style={{ ...ciderBtn, width: "100%", opacity: saved ? 0.5 : 1 }}>{saved ? "Recorded ✓" : `Record on ${batch.name}`}</button>
-          <div style={{ ...ciderNote, marginTop: 6 }}>Saves the plan on the batch. Use "Log on batch" above to take each addition out of stock.</div>
+          <div style={{ ...ciderNote, marginTop: 6 }}>Adds the juice/water to the batch volume and takes the juice out of stock. Use "Log on batch" above for the sorbate and sulphite.</div>
           {history.length > 0 && (
             <div style={{ marginTop: 12 }}>
               {history.slice().reverse().map((h) => (
@@ -1182,7 +1182,7 @@ export function CiderDayRecipeCard({ batch }) {
   );
 }
 
-export function CiderView({ batches, inventory, tanks = [], nextNumber, onCreateBatch, onSaveCider, onSetBatchFigures, onLogAddition, onStartBatch, onOpenBatch, focus }) {
+export function CiderView({ batches, inventory, tanks = [], nextNumber, onCreateBatch, onSaveCider, onRecordSweeten, onSetBatchFigures, onLogAddition, onStartBatch, onOpenBatch, focus }) {
   const [showDaySheet, setShowDaySheet] = useState(false);
   const ciderBatches = useMemo(
     () => batches.filter((b) => b.productType === CIDER_TYPE && !b.mergedIntoBatchId).sort((a, b) => String(b.startDate).localeCompare(String(a.startDate))),
@@ -1239,7 +1239,7 @@ export function CiderView({ batches, inventory, tanks = [], nextNumber, onCreate
       )}
       {tab === "additions" && <CiderAdditionsTab key={batchId} batch={batch} inventory={inventory} onLogAddition={onLogAddition} />}
       {tab === "blend" && <CiderBlendTab ciderBatches={ciderBatches} onSaveCider={onSaveCider} />}
-      {tab === "sweeten" && <CiderSweetenTab key={batchId} batch={batch} inventory={inventory} onSaveCider={onSaveCider} onLogAddition={onLogAddition} />}
+      {tab === "sweeten" && <CiderSweetenTab key={batchId} batch={batch} inventory={inventory} onSaveCider={onSaveCider} onRecordSweeten={onRecordSweeten} onLogAddition={onLogAddition} />}
     </div>
   );
 }
