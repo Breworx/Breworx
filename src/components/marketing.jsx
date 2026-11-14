@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { Modal } from "./ui";
 import { BRANDS, THEMES, renderEmail, starterBlocks } from "../lib/marketingEmail";
+import { computeSuggestions } from "../lib/suggestions";
 
 // ─── Marketing: HubSpot-style email marketing inside Brewpoint ──────────────
 // Emails (campaigns), Contacts, Automations and Settings. Sending, A/B
@@ -154,7 +155,7 @@ function ContentEditor({ value, onChange, companyId, settings, onError, beerName
 }
 
 // ─── Audience ───────────────────────────────────────────────────────────────
-function AudiencePicker({ audience, onChange, allTags, beerNames }) {
+function AudiencePicker({ audience, onChange, allTags, beerNames, likely = [] }) {
   const a = audience || {};
   const toggle = (k, v) => { const cur = a[k] || []; onChange({ ...a, [k]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] }); };
   const [count, setCount] = useState(null);
@@ -180,6 +181,13 @@ function AudiencePicker({ audience, onChange, allTags, beerNames }) {
         <div style={labelS}>Has ordered (any of)</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{beerNames.map((n) => <button type="button" key={n} style={chip((a.beers || []).includes(n.toLowerCase()))} onClick={() => toggle("beers", n.toLowerCase())}>{n}</button>)}</div>
       </div>
+      {likely.length > 0 && (
+        <div>
+          <div style={labelS}>Likely to want (suggestions)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{likely.map((b) => { const on = (a.likely_beers || []).includes(b.key); return <button type="button" key={b.key} style={chip(on)} onClick={() => { const lb = on ? (a.likely_beers || []).filter((x) => x !== b.key) : [...(a.likely_beers || []), b.key]; const ids = [...new Set(likely.filter((x) => lb.includes(x.key)).flatMap((x) => x.contactIds))]; onChange({ ...a, likely_beers: lb, contact_ids: lb.length ? (ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]) : undefined }); }}>{b.name}{b.isNew ? " (new)" : ""} · {b.contactIds.length}</button>; })}</div>
+          {(a.likely_beers || []).length > 0 && <div style={{ fontSize: 12, color: muted, marginTop: 4 }}>Only venues the suggestions pick for these beers.</div>}
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <Text label="Not ordered in (days)" type="number" value={a.not_ordered_days ?? ""} onChange={(v) => onChange({ ...a, not_ordered_days: v ? Number(v) : undefined })} />
         <Text label="Ordered within (days)" type="number" value={a.ordered_within_days ?? ""} onChange={(v) => onChange({ ...a, ordered_within_days: v ? Number(v) : undefined })} />
@@ -190,7 +198,7 @@ function AudiencePicker({ audience, onChange, allTags, beerNames }) {
 }
 
 // ─── Campaign editor ────────────────────────────────────────────────────────
-function CampaignEditor({ campaign, onClose, onSaved, companyId, settings, allTags, beerNames, showToast }) {
+function CampaignEditor({ campaign, onClose, onSaved, companyId, settings, allTags, beerNames, showToast, likely }) {
   const [c, setC] = useState(campaign);
   const [step, setStep] = useState("design");
   const [busy, setBusy] = useState(false);
@@ -222,8 +230,8 @@ function CampaignEditor({ campaign, onClose, onSaved, companyId, settings, allTa
     } catch (e) { showToast("error", e.message); } finally { setBusy(false); }
   };
   return (
-    <Modal title={c.name || "Email"} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: "min(1040px, 92vw)" }}>
+    <Modal wide title={c.name || "Email"} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {[["design", "1. Design"], ["details", "2. Subject & A/B"], ["audience", "3. Who gets it"], ["send", "4. Send"]].map(([k, l]) => <button key={k} type="button" style={chip(step === k)} onClick={() => setStep(k)}>{l}</button>)}
         </div>
@@ -248,7 +256,7 @@ function CampaignEditor({ campaign, onClose, onSaved, companyId, settings, allTa
               )}
             </div>
           )}
-          {step === "audience" && <div style={{ maxWidth: 640 }}><AudiencePicker audience={c.audience} onChange={(a) => setC({ ...c, audience: a })} allTags={allTags} beerNames={beerNames} /></div>}
+          {step === "audience" && <div style={{ maxWidth: 640 }}><AudiencePicker audience={c.audience} onChange={(a) => setC({ ...c, audience: a })} allTags={allTags} beerNames={beerNames} likely={likely} /></div>}
           {step === "send" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 560 }}>
               <Text label="Send at (leave empty to send now)" type="datetime-local" value={c.scheduled_at ? toLocalInput(c.scheduled_at) : ""} onChange={(v) => setC({ ...c, scheduled_at: v ? new Date(v).toISOString() : null })} />
@@ -289,8 +297,8 @@ function CampaignReport({ campaign, onClose, contacts }) {
   const stats = [["Sent", out], ["Waiting", by((s) => s.status === "queued")], ["Delivered", by((s) => s.delivered_at)], ["Opened", by((s) => s.opened_at), pct(by((s) => s.opened_at))], ["Clicked", by((s) => s.clicked_at), pct(by((s) => s.clicked_at))], ["Bounced", by((s) => s.bounced_at)], ["Unsubscribed", unsubs]];
   const ab = campaign.subject_b ? ["A", "B"].map((v) => { const s = (sends || []).filter((x) => x.variant === v && x.status !== "queued"); const o = s.filter((x) => x.opened_at).length; return [v, v === "A" ? campaign.subject : campaign.subject_b, s.length, s.length ? Math.round((o / s.length) * 100) : 0]; }) : null;
   return (
-    <Modal title={`${campaign.name} — results`} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: "min(720px, 90vw)" }}>
+    <Modal wide title={`${campaign.name} — results`} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {sends == null ? <div>Loading…</div> : (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8 }}>
@@ -339,7 +347,7 @@ function ContactModal({ contact, onClose, onSave, allTags }) {
   const [tagText, setTagText] = useState((contact.tags || []).join(", "));
   return (
     <Modal title={contact.id ? "Edit contact" : "Add contact"} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: "min(460px, 88vw)" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <Text label="Email" value={c.email} onChange={(v) => setC({ ...c, email: v })} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><Text label="First name" value={c.first_name} onChange={(v) => setC({ ...c, first_name: v })} /><Text label="Last name" value={c.last_name} onChange={(v) => setC({ ...c, last_name: v })} /></div>
         <Text label="Business / venue" value={c.company_name} onChange={(v) => setC({ ...c, company_name: v })} />
@@ -471,8 +479,8 @@ function AutomationEditor({ auto, onClose, onSave, companyId, settings, beerName
   const setP = (k, v) => setA({ ...a, params: { ...p, [k]: v } });
   const test = async () => { try { const r = await callEngine({ action: "test", content: a }); showToast("success", `Test sent to ${r.to}.`); } catch (e) { showToast("error", e.message); } };
   return (
-    <Modal title={a.name} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: "min(1040px, 92vw)" }}>
+    <Modal wide title={a.name} onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
           <Text label="Name" value={a.name} onChange={(v) => setA({ ...a, name: v })} />
           <Text label="Subject" value={a.subject} onChange={(v) => setA({ ...a, subject: v })} />
@@ -496,7 +504,7 @@ function SettingsTab({ settings, companyId, reload, showToast }) {
   const [status, setStatus] = useState(null);
   useEffect(() => { callEngine({ action: "status" }).then(setStatus).catch((e) => setStatus({ error: e.message })); }, []);
   const save = async () => {
-    const row = { company_id: companyId, from_name: s.from_name || null, from_email: (s.from_email || "").trim() || null, reply_to: (s.reply_to || "").trim() || null, business_address: s.business_address || null, daily_limit: Number(s.daily_limit) || 100, brand_logos: s.brand_logos || {}, test_email: (s.test_email || "").trim() || null, updated_at: new Date().toISOString() };
+    const row = { company_id: companyId, from_name: s.from_name || null, from_email: (s.from_email || "").trim() || null, reply_to: (s.reply_to || "").trim() || null, business_address: s.business_address || null, daily_limit: Number(s.daily_limit) || 100, brand_logos: s.brand_logos || {}, suggestions_enabled: s.suggestions_enabled !== false, test_email: (s.test_email || "").trim() || null, updated_at: new Date().toISOString() };
     const { error } = await supabase.from("marketing_settings").upsert(row);
     if (error) showToast("error", error.message); else { showToast("success", "Saved."); reload(); }
   };
@@ -517,6 +525,7 @@ function SettingsTab({ settings, companyId, reload, showToast }) {
       <Text label="Replies go to" value={s.reply_to} onChange={(v) => setS({ ...s, reply_to: v })} placeholder="steve@doubleconebrewing.co.nz" />
       <Text label="Send tests to" value={s.test_email} onChange={(v) => setS({ ...s, test_email: v })} />
       <Area label="Business address (required in every marketing email by NZ law)" rows={2} value={s.business_address} onChange={(v) => setS({ ...s, business_address: v })} />
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 14, lineHeight: 1.45 }}><input type="checkbox" checked={s.suggestions_enabled !== false} onChange={(e) => setS({ ...s, suggestions_enabled: e.target.checked })} style={{ marginTop: 3 }} /><span><b>Product suggestions</b> — suggest what to pitch each venue (on customer pages, the Suggestions tab and email audiences). Learns from every new order.</span></label>
       <Text label="Most emails per day" type="number" value={s.daily_limit} onChange={(v) => setS({ ...s, daily_limit: v })} />
       <div style={{ fontSize: 12.5, color: muted, marginTop: -6 }}>Resend's free plan allows 100 a day (3,000 a month). Bigger sends carry on the next day automatically.</div>
       {Object.entries(BRANDS).map(([k, b]) => <ImagePicker key={k} label={`${b.name} logo`} value={(s.brand_logos || {})[k]} onChange={(url) => setS({ ...s, brand_logos: { ...(s.brand_logos || {}), [k]: url } })} companyId={companyId} onError={(m) => showToast("error", m)} />)}
@@ -526,7 +535,7 @@ function SettingsTab({ settings, companyId, reload, showToast }) {
 }
 
 // ─── Main view ──────────────────────────────────────────────────────────────
-export function MarketingView({ companyId, batches = [], showToast, userId }) {
+export function MarketingView({ companyId, batches = [], salesOrders = [], availableStock = [], customers = [], showToast, userId }) {
   const [tab, setTab] = useState("emails");
   const [campaigns, setCampaigns] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -548,6 +557,21 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
   };
   useEffect(() => { reload(); const t = setInterval(reload, 30000); return () => clearInterval(t); }, []);
 
+  const suggestionsOn = settings ? settings.suggestions_enabled !== false : true;
+  const sugg = useMemo(() => (suggestionsOn ? computeSuggestions({ salesOrders, availableStock, batches }) : { byCustomer: new Map(), beers: [] }), [suggestionsOn, salesOrders, availableStock, batches]);
+  const contactByCustomer = useMemo(() => { const m = new Map(); for (const c of contacts) if (c.customer_id && c.status === "subscribed" && !m.has(c.customer_id)) m.set(c.customer_id, c.id); return m; }, [contacts]);
+  const likely = useMemo(() => {
+    const m = new Map();
+    for (const [cust, list] of sugg.byCustomer) {
+      const cid = contactByCustomer.get(cust);
+      if (!cid) continue;
+      for (const sItem of list.slice(0, 3)) {
+        if (!m.has(sItem.beerKey)) m.set(sItem.beerKey, { key: sItem.beerKey, name: sItem.beerName, isNew: !!sItem.isNew, contactIds: [] });
+        m.get(sItem.beerKey).contactIds.push(cid);
+      }
+    }
+    return [...m.values()].sort((a, b) => b.contactIds.length - a.contactIds.length);
+  }, [sugg, contactByCustomer]);
   const allTags = useMemo(() => [...new Set(contacts.flatMap((c) => c.tags || []))].sort(), [contacts]);
   const beerNames = useMemo(() => [...new Set(batches.filter((b) => !b.mergedIntoBatchId).map((b) => String(b.name || "").replace(/\s*[—-]\s*(brew day.*|[AB])$/i, "").replace(/\s+\d+L$/i, "").trim()).filter(Boolean))].sort(), [batches]);
 
@@ -571,9 +595,9 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
   const needsSetup = !settings?.from_email || !settings?.business_address;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <style>{`@media (max-width: 800px){ .mkt-editor{ grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`@media (max-width: 900px){ .mkt-editor{ grid-template-columns: 1fr !important; } }`}</style>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {[["emails", "Emails"], ["contacts", `Contacts (${contacts.filter((c) => c.status === "subscribed").length})`], ["automations", "Automations"], ["settings", "Settings"]].map(([k, l]) => <button key={k} type="button" style={chip(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
+        {[["emails", "Emails"], ["contacts", `Contacts (${contacts.filter((c) => c.status === "subscribed").length})`], ...(suggestionsOn ? [["suggestions", "Suggestions"]] : []), ["automations", "Automations"], ["settings", "Settings"]].map(([k, l]) => <button key={k} type="button" style={chip(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {needsSetup && tab !== "settings" && <div style={{ ...card, background: "#FFF8E8", borderColor: "#E9D9A8", fontSize: 13.5 }}>Before sending: add your From email and business address in <button type="button" onClick={() => setTab("settings")} style={{ background: "none", border: "none", color: green, cursor: "pointer", padding: 0, fontWeight: 600 }}>Settings</button>.</div>}
 
@@ -598,6 +622,11 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
         </>
       )}
       {tab === "contacts" && <ContactsTab contacts={contacts} reload={reload} companyId={companyId} allTags={allTags} showToast={showToast} />}
+      {tab === "suggestions" && <SuggestionsTab sugg={sugg} customers={customers} contactByCustomer={contactByCustomer} likely={likely} onEmail={async (beer) => {
+        const { data, error } = await supabase.from("marketing_campaigns").insert({ company_id: companyId, name: `${beer.name} — suggested venues`, brand: "double-cone", theme: "fun", blocks: starterBlocks("new-release", "double-cone").map((b) => (b.type === "beer" ? { ...b, name: beer.name, tag: beer.isNew ? "New" : "Pouring now" } : b)), audience: { likely_beers: [beer.key], contact_ids: beer.contactIds }, created_by: userId || null }).select().single();
+        if (error) { showToast("error", error.message); return; }
+        setCampaigns((p) => [data, ...p]); setEditing(data); setTab("emails");
+      }} />}
       {tab === "automations" && <AutomationsTab automations={automations} reload={reload} companyId={companyId} settings={settings} beerNames={beerNames} showToast={showToast} />}
       {tab === "settings" && <SettingsTab settings={settings} companyId={companyId} reload={reload} showToast={showToast} />}
 
@@ -606,7 +635,7 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
           <NewEmailPicker onPick={create} />
         </Modal>
       )}
-      {editing && <CampaignEditor campaign={editing} onClose={() => { setEditing(null); reload(); }} onSaved={(d) => setCampaigns((p) => p.map((x) => (x.id === d.id ? d : x)))} companyId={companyId} settings={settings} allTags={allTags} beerNames={beerNames} showToast={showToast} />}
+      {editing && <CampaignEditor campaign={editing} onClose={() => { setEditing(null); reload(); }} onSaved={(d) => setCampaigns((p) => p.map((x) => (x.id === d.id ? d : x)))} companyId={companyId} settings={settings} allTags={allTags} beerNames={beerNames} showToast={showToast} likely={likely} />}
       {report && <CampaignReport campaign={report} contacts={contacts} onClose={() => setReport(null)} />}
     </div>
   );
@@ -615,11 +644,49 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
 function NewEmailPicker({ onPick }) {
   const [brand, setBrand] = useState("double-cone");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: "min(480px, 88vw)" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {Object.keys(BRANDS).length > 1 && <div style={{ display: "flex", gap: 6 }}>{Object.entries(BRANDS).map(([k, b]) => <button type="button" key={k} style={chip(brand === k)} onClick={() => setBrand(k)}>{b.name}</button>)}</div>}
       {[["new-release", "New release 🍺", "Big banner, the beer, a callout and an order button"], ["whats-pouring", "What's pouring", "A few beers with stock badges"], ["event", "Event invite 🎉", "Banner, details and an RSVP button"], ["blank", "Blank", "Start from scratch"]].map(([k, l, d]) => (
         <button type="button" key={k} onClick={() => onPick(k, brand)} style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}><div style={{ fontWeight: 600, color: ink }}>{l}</div><div style={{ fontSize: 12.5, color: muted }}>{d}</div></button>
       ))}
+    </div>
+  );
+}
+
+// ─── Suggestions: who to pitch what ─────────────────────────────────────────
+function SuggestionsTab({ sugg, customers, contactByCustomer, likely, onEmail }) {
+  const [beer, setBeer] = useState("");
+  const custName = new Map(customers.map((c) => [c.id, c.name]));
+  const rows = [...sugg.byCustomer.entries()]
+    .map(([cid, list]) => [cid, beer ? list.filter((x) => x.beerKey === beer) : list])
+    .filter(([, list]) => list.length)
+    .sort((a, b) => b[1][0].score - a[1][0].score);
+  const sel = likely.find((b) => b.key === beer);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 13.5, color: muted, lineHeight: 1.5 }}>Worked out from every order (Xero, Upstock and Brewpoint): what similar venues buy, what each venue has stopped ordering, the time of year, and new beers coming through the tanks. It updates itself as new orders come in.</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={beer} onChange={(e) => setBeer(e.target.value)} style={{ ...inputS, maxWidth: 260 }}>
+          <option value="">All beers</option>
+          {sugg.beers.map((b) => <option key={b.key} value={b.key}>{b.name}</option>)}
+        </select>
+        {sel && sel.contactIds.length > 0 && <button type="button" style={btn(true)} onClick={() => onEmail(sel)}>Email these {sel.contactIds.length} venues about {sel.name}</button>}
+      </div>
+      {rows.map(([cid, list]) => (
+        <div key={cid} style={card}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ fontWeight: 600, color: ink }}>{custName.get(cid) || "Customer"}</div>
+            {!contactByCustomer.get(cid) && <span style={{ fontSize: 11.5, color: muted }}>no email on file</span>}
+          </div>
+          {list.slice(0, beer ? 1 : 3).map((x) => (
+            <div key={x.beerKey} style={{ marginTop: 8, borderLeft: `3px solid ${x.isNew ? "#D9A441" : green}`, paddingLeft: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: ink }}>{x.beerName}{x.isNew ? " · new" : ""}</div>
+              <div style={{ fontSize: 12.5, color: muted, lineHeight: 1.45 }}>{x.reasons.join(" · ")}</div>
+            </div>
+          ))}
+        </div>
+      ))}
+      {!rows.length && <div style={{ color: muted, fontSize: 14 }}>Nothing to suggest right now.</div>}
     </div>
   );
 }

@@ -308,7 +308,7 @@ export function StageDateModal({ title, confirmLabel, onClose, onConfirm }) {
 export let openModalCount = 0;
 export let savedBodyOverflow = "";
 
-export function Modal({ title, onClose, children }) {
+export function Modal({ title, onClose, children, wide = false }) {
   // Stop the page behind from scrolling while a modal is open. On iPhone
   // the swipe otherwise gets shared between the page and the modal, which
   // makes long modals (like checklists) feel sticky to scroll.
@@ -354,7 +354,8 @@ export function Modal({ title, onClose, children }) {
           border: "1px solid #DDE0C8",
           borderRadius: 10,
           width: "100%",
-          maxWidth: 480,
+          maxWidth: wide ? 1120 : 480,
+          boxSizing: "border-box",
           maxHeight: "88dvh",
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
