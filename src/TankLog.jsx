@@ -2937,6 +2937,36 @@ function TankLogApp() {
     return true;
   };
 
+  // Back-sweetening actually going in: saves the record, bumps the batch
+  // volume to the new total (so stock, packaging and TSW see the extra
+  // litres) and takes the sweetening juice out of juice stock — all in one
+  // go so nothing reads stale state part way through.
+  const recordBackSweeten = async (batchId, entry) => {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return false;
+    const added = (Number(entry.juiceL) || 0) + (Number(entry.waterL) || 0);
+    const newVolume = Math.round(((Number(batch.volume) || 0) + added) * 100) / 100;
+    const backSweetenings = [...(batch.backSweetenings || []), { ...entry, volumeBefore: Number(batch.volume) || 0, volumeAfter: newVolume }];
+    const { error } = await supabase.from("batches").update({ back_sweetenings: backSweetenings, volume: newVolume }).eq("id", batchId);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    setBatches((prev) => prev.map((b) => (b.id === batchId ? { ...b, backSweetenings, volume: newVolume } : b)));
+    const invUpdates = [];
+    for (const j of entry.juices || []) {
+      const item = j.itemId ? inventory.find((it) => it.id === j.itemId) : null;
+      const f = item ? unitFactor("L", item.unit) : null;
+      if (!item || f == null || !(Number(j.litres) > 0)) continue;
+      const qty = Math.round(Number(j.litres) * f * 1000) / 1000;
+      const { updatedLots } = deductFromLotsFIFO(item.lots, qty);
+      const newQty = Math.max(0, Math.round((item.qty - qty) * 100) / 100);
+      const newHistory = [...(item.history || []), { id: uid(), date: stampForDate(entry.date), user: user.name, type: "batch", delta: -qty, note: `${batch.name} (#${batch.number}) — back-sweetening` }];
+      const { error: invError } = await supabase.from("inventory_items").update({ qty: newQty, lots: updatedLots, history: newHistory }).eq("id", item.id);
+      if (!invError) invUpdates.push({ id: item.id, qty: newQty, lots: updatedLots, history: newHistory });
+    }
+    if (invUpdates.length) setInventory((prev) => prev.map((it) => { const u = invUpdates.find((x) => x.id === it.id); return u ? { ...it, ...u } : it; }));
+    showToast("success", `${batch.name} is now ${newVolume}L${invUpdates.length ? " — juice taken out of stock" : ""}.`);
+    return true;
+  };
+
   const addBatchIngredient = async (batchId, entry) => {
     const batch = batches.find((b) => b.id === batchId);
     if (!batch) return;
@@ -5183,6 +5213,7 @@ function TankLogApp() {
                 focus={ciderFocus}
                 onCreateBatch={addBatch}
                 onSaveCider={saveCiderData}
+                onRecordSweeten={recordBackSweeten}
                 onSetBatchFigures={saveCiderData}
                 onLogAddition={addBatchIngredient}
                 onStartBatch={() => {
