@@ -149,6 +149,10 @@ export function renderEmail({ brand = "double-cone", theme = "classic", subject 
   const hasHeroFirst = blocks[0]?.type === "hero" && !!blocks[0].image;
   const body = blocks.map((b) => renderBlock(b, p, contact)).join("");
   const address = settings.business_address || settings.businessAddress || "";
+  // Every email ends with the ordering link (Upstock), set once in Settings.
+  const orderUrl = safeUrl(settings.order_url || settings.orderUrl);
+  const orderLabel = settings.order_label || settings.orderLabel || "Order on Upstock";
+  const orderBar = orderUrl ? `<tr><td align="center" style="padding:22px 32px 4px"><div style="border-top:1px solid ${p.theme.dark ? "#3A4042" : "#E4E1D8"};padding-top:20px;font-size:14px;color:${p.muted};padding-bottom:10px">Ready to order? All our orders go through Upstock.</div><a href="${esc(orderUrl)}" style="display:inline-block;background:${p.brand.ink};color:#FFFFFF;font-weight:700;font-size:15px;text-decoration:none;padding:12px 26px;border-radius:${p.theme.rounded ? 40 : 6}px">${esc(orderLabel)}</a></td></tr>` : "";
   const footer = `<tr><td style="padding:26px 32px 28px;font-size:12px;line-height:1.6;color:${p.muted};text-align:center">
 You're getting this because you buy from or work with ${esc(p.brand.name)}.<br>
 ${address ? `${esc(address)}<br>` : ""}<a href="${esc(unsubscribeUrl)}" style="color:${p.muted};text-decoration:underline">Unsubscribe</a></td></tr>`;
@@ -158,10 +162,11 @@ ${address ? `${esc(address)}<br>` : ""}<a href="${esc(unsubscribeUrl)}" style="c
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${p.page}"><tr><td align="center" style="padding:24px 10px">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:${p.card};border-radius:${p.radius}px;overflow:hidden">
 ${hasHeroFirst ? "" : header}${body}
+${orderBar}
 <tr><td style="height:14px;line-height:14px">&nbsp;</td></tr>
 ${footer}
 </table></td></tr></table></body></html>`;
-  const text = `${blocks.map((b) => blockText(b, contact)).filter(Boolean).join("\n")}\n\n—\n${p.brand.name}${address ? `\n${address}` : ""}\nUnsubscribe: ${unsubscribeUrl}\n`;
+  const text = `${blocks.map((b) => blockText(b, contact)).filter(Boolean).join("\n")}${orderUrl ? `\n${orderLabel}: ${orderUrl}\n` : ""}\n\n—\n${p.brand.name}${address ? `\n${address}` : ""}\nUnsubscribe: ${unsubscribeUrl}\n`;
   return { html, text, subject: mergeTags(subject, contact) };
 }
 
