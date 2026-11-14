@@ -6529,6 +6529,15 @@ function TankLogApp() {
                         </div>
 
                         <button
+                          onClick={() => { window.location.href = buildXeroAuthUrl(profile.companyId); }}
+                          style={{ background: "none", border: "1px solid #CFD6BC", borderRadius: 5, padding: "9px", color: "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, cursor: "pointer", width: "100%", marginBottom: 8 }}
+                        >
+                          Update Xero access
+                        </button>
+                        <div style={{ color: "#5C6B54", fontSize: 11.5, marginBottom: 10, lineHeight: 1.4 }}>
+                          Re-approves Brewpoint in Xero when it needs new permissions (like reading reports). Your connection and settings stay as they are.
+                        </div>
+                        <button
                           onClick={disconnectXero}
                           style={{ background: "none", border: "1px solid #E3D3A0", borderRadius: 5, padding: "9px", color: "#5C9A3C", fontFamily: "'Inter', sans-serif", fontSize: 12.5, cursor: "pointer", width: "100%" }}
                         >
