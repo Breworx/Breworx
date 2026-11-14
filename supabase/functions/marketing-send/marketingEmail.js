@@ -18,7 +18,6 @@
 
 export const BRANDS = {
   "double-cone": { name: "Double Cone Brewing", short: "Double Cone", ink: "#2A3324", accent: "#5C9A3C", soft: "#EEF3E6" },
-  "four-seasons": { name: "Four Seasons Cider Co", short: "Four Seasons", ink: "#3D2A1F", accent: "#C77D2E", soft: "#F7EEE3" },
 };
 
 export const THEMES = {

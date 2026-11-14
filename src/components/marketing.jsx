@@ -120,7 +120,7 @@ function ContentEditor({ value, onChange, companyId, settings, onError, beerName
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16 }} className="mkt-editor">
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <Field label="Brand"><select value={value.brand} onChange={(e) => onChange({ ...value, brand: e.target.value })} style={inputS}>{Object.entries(BRANDS).map(([k, b]) => <option key={k} value={k}>{b.name}</option>)}</select></Field>
+{Object.keys(BRANDS).length > 1 && <Field label="Brand"><select value={value.brand} onChange={(e) => onChange({ ...value, brand: e.target.value })} style={inputS}>{Object.entries(BRANDS).map(([k, b]) => <option key={k} value={k}>{b.name}</option>)}</select></Field>}
           <Field label="Look"><select value={value.theme || "classic"} onChange={(e) => onChange({ ...value, theme: e.target.value })} style={inputS}>{Object.entries(THEMES).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}</select></Field>
         </div>
         <div style={{ ...labelS, marginTop: 6 }}>Content</div>
@@ -168,10 +168,10 @@ function AudiencePicker({ audience, onChange, allTags, beerNames }) {
   }, [JSON.stringify(a)]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div>
+      {Object.keys(BRANDS).length > 1 && <div>
         <div style={labelS}>Lists</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{Object.entries(BRANDS).map(([k, b]) => <button type="button" key={k} style={chip((a.lists || []).includes(k))} onClick={() => toggle("lists", k)}>{b.short}</button>)}</div>
-      </div>
+      </div>}
       <div>
         <div style={labelS}>Tags (any of)</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{allTags.map((t) => <button type="button" key={t} style={chip((a.tags || []).includes(t))} onClick={() => toggle("tags", t)}>{t}</button>)}</div>
@@ -253,7 +253,7 @@ function CampaignEditor({ campaign, onClose, onSaved, companyId, settings, allTa
             <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 560 }}>
               <Text label="Send at (leave empty to send now)" type="datetime-local" value={c.scheduled_at ? toLocalInput(c.scheduled_at) : ""} onChange={(v) => setC({ ...c, scheduled_at: v ? new Date(v).toISOString() : null })} />
               <div style={{ fontSize: 13, color: muted, lineHeight: 1.5 }}>
-                From: <b>{settings?.from_email ? `${c.brand === "four-seasons" ? "Four Seasons Cider Co" : settings.from_name || "Double Cone Brewing"} <${settings.from_email}>` : "not set — add it in Settings"}</b><br />
+                From: <b>{settings?.from_email ? `${settings.from_name || "Double Cone Brewing"} <${settings.from_email}>` : "not set — add it in Settings"}</b><br />
                 Sends up to {settings?.daily_limit ?? 100} a day; anything over carries on the next day.
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -344,7 +344,7 @@ function ContactModal({ contact, onClose, onSave, allTags }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><Text label="First name" value={c.first_name} onChange={(v) => setC({ ...c, first_name: v })} /><Text label="Last name" value={c.last_name} onChange={(v) => setC({ ...c, last_name: v })} /></div>
         <Text label="Business / venue" value={c.company_name} onChange={(v) => setC({ ...c, company_name: v })} />
         <Text label="Tags (comma separated)" value={tagText} onChange={setTagText} placeholder={allTags.slice(0, 4).join(", ")} />
-        <div><div style={labelS}>Lists</div><div style={{ display: "flex", gap: 6, marginTop: 6 }}>{Object.entries(BRANDS).map(([k, b]) => <button type="button" key={k} style={chip((c.lists || []).includes(k))} onClick={() => setC({ ...c, lists: (c.lists || []).includes(k) ? c.lists.filter((x) => x !== k) : [...(c.lists || []), k] })}>{b.short}</button>)}</div></div>
+        {Object.keys(BRANDS).length > 1 && <div><div style={labelS}>Lists</div><div style={{ display: "flex", gap: 6, marginTop: 6 }}>{Object.entries(BRANDS).map(([k, b]) => <button type="button" key={k} style={chip((c.lists || []).includes(k))} onClick={() => setC({ ...c, lists: (c.lists || []).includes(k) ? c.lists.filter((x) => x !== k) : [...(c.lists || []), k] })}>{b.short}</button>)}</div></div>}
         <Field label="Status"><select value={c.status} onChange={(e) => setC({ ...c, status: e.target.value })} style={inputS}><option value="subscribed">Subscribed</option><option value="unsubscribed">Unsubscribed</option><option value="bounced">Bounced</option></select></Field>
         <Text label="How they agreed to emails" value={c.consent} onChange={(v) => setC({ ...c, consent: v })} placeholder="e.g. signed up at the bar, existing customer" />
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button type="button" style={btn(false)} onClick={onClose}>Cancel</button><button type="button" style={btn(true)} onClick={() => onSave({ ...c, email: String(c.email || "").trim().toLowerCase(), tags: tagText.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean) })}>Save</button></div>
@@ -552,7 +552,7 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
   const beerNames = useMemo(() => [...new Set(batches.filter((b) => !b.mergedIntoBatchId).map((b) => String(b.name || "").replace(/\s*[—-]\s*(brew day.*|[AB])$/i, "").replace(/\s+\d+L$/i, "").trim()).filter(Boolean))].sort(), [batches]);
 
   const create = async (kind, brand) => {
-    const { data, error } = await supabase.from("marketing_campaigns").insert({ company_id: companyId, name: `${kind === "blank" ? "New email" : kind === "new-release" ? "New release" : kind === "event" ? "Event invite" : "What's pouring"} — ${new Date().toLocaleDateString("en-NZ", { day: "numeric", month: "short" })}`, brand, theme: kind === "event" ? "bold" : "fun", blocks: starterBlocks(kind, brand), audience: { lists: [brand] }, created_by: userId || null }).select().single();
+    const { data, error } = await supabase.from("marketing_campaigns").insert({ company_id: companyId, name: `${kind === "blank" ? "New email" : kind === "new-release" ? "New release" : kind === "event" ? "Event invite" : "What's pouring"} — ${new Date().toLocaleDateString("en-NZ", { day: "numeric", month: "short" })}`, brand, theme: kind === "event" ? "bold" : "fun", blocks: starterBlocks(kind, brand), audience: {}, created_by: userId || null }).select().single();
     if (error) { showToast("error", error.message); return; }
     setNewKind(false); setCampaigns((p) => [data, ...p]); setEditing(data);
   };
@@ -584,7 +584,7 @@ export function MarketingView({ companyId, batches = [], showToast, userId }) {
             <div key={c.id} style={{ ...card, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 600, color: ink }}>{c.name}</div>
-                <div style={{ fontSize: 12.5, color: muted }}>{c.subject || "No subject yet"} · {BRANDS[c.brand]?.short}{c.status === "scheduled" && c.scheduled_at ? ` · ${new Date(c.scheduled_at).toLocaleString("en-NZ", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}{c.sent_at ? ` · sent ${new Date(c.sent_at).toLocaleDateString("en-NZ")}` : ""}</div>
+                <div style={{ fontSize: 12.5, color: muted }}>{c.subject || "No subject yet"}{c.status === "scheduled" && c.scheduled_at ? ` · ${new Date(c.scheduled_at).toLocaleString("en-NZ", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}{c.sent_at ? ` · sent ${new Date(c.sent_at).toLocaleDateString("en-NZ")}` : ""}</div>
               </div>
               <span style={{ fontSize: 12, color: STATUS_COLOR[c.status], fontWeight: 600 }}>{STATUS_LABEL[c.status]}</span>
               {["sending", "sent", "testing"].includes(c.status) && <button type="button" style={btn(false)} onClick={() => setReport(c)}>Results</button>}
@@ -616,7 +616,7 @@ function NewEmailPicker({ onPick }) {
   const [brand, setBrand] = useState("double-cone");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: "min(480px, 88vw)" }}>
-      <div style={{ display: "flex", gap: 6 }}>{Object.entries(BRANDS).map(([k, b]) => <button type="button" key={k} style={chip(brand === k)} onClick={() => setBrand(k)}>{b.name}</button>)}</div>
+      {Object.keys(BRANDS).length > 1 && <div style={{ display: "flex", gap: 6 }}>{Object.entries(BRANDS).map(([k, b]) => <button type="button" key={k} style={chip(brand === k)} onClick={() => setBrand(k)}>{b.name}</button>)}</div>}
       {[["new-release", "New release 🍺", "Big banner, the beer, a callout and an order button"], ["whats-pouring", "What's pouring", "A few beers with stock badges"], ["event", "Event invite 🎉", "Banner, details and an RSVP button"], ["blank", "Blank", "Start from scratch"]].map(([k, l, d]) => (
         <button type="button" key={k} onClick={() => onPick(k, brand)} style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "'Inter', sans-serif" }}><div style={{ fontWeight: 600, color: ink }}>{l}</div><div style={{ fontSize: 12.5, color: muted }}>{d}</div></button>
       ))}
