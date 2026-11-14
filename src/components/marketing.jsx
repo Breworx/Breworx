@@ -504,7 +504,7 @@ function SettingsTab({ settings, companyId, reload, showToast }) {
   const [status, setStatus] = useState(null);
   useEffect(() => { callEngine({ action: "status" }).then(setStatus).catch((e) => setStatus({ error: e.message })); }, []);
   const save = async () => {
-    const row = { company_id: companyId, from_name: s.from_name || null, from_email: (s.from_email || "").trim() || null, reply_to: (s.reply_to || "").trim() || null, business_address: s.business_address || null, daily_limit: Number(s.daily_limit) || 100, brand_logos: s.brand_logos || {}, suggestions_enabled: s.suggestions_enabled !== false, test_email: (s.test_email || "").trim() || null, updated_at: new Date().toISOString() };
+    const row = { company_id: companyId, from_name: s.from_name || null, from_email: (s.from_email || "").trim() || null, reply_to: (s.reply_to || "").trim() || null, business_address: s.business_address || null, daily_limit: Number(s.daily_limit) || 100, brand_logos: s.brand_logos || {}, suggestions_enabled: s.suggestions_enabled !== false, test_email: (s.test_email || "").trim() || null, order_url: (s.order_url || "").trim() || null, order_label: (s.order_label || "").trim() || null, updated_at: new Date().toISOString() };
     const { error } = await supabase.from("marketing_settings").upsert(row);
     if (error) showToast("error", error.message); else { showToast("success", "Saved."); reload(); }
   };
@@ -525,6 +525,8 @@ function SettingsTab({ settings, companyId, reload, showToast }) {
       <Text label="Replies go to" value={s.reply_to} onChange={(v) => setS({ ...s, reply_to: v })} placeholder="steve@doubleconebrewing.co.nz" />
       <Text label="Send tests to" value={s.test_email} onChange={(v) => setS({ ...s, test_email: v })} />
       <Area label="Business address (required in every marketing email by NZ law)" rows={2} value={s.business_address} onChange={(v) => setS({ ...s, business_address: v })} />
+      <Text label="Ordering link (added to the bottom of every email)" value={s.order_url} onChange={(v) => setS({ ...s, order_url: v })} placeholder="https://www.upstock.app/wholesalers/double-cone-brewing" />
+      <Text label="Ordering button text" value={s.order_label} onChange={(v) => setS({ ...s, order_label: v })} placeholder="Order on Upstock" />
       <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 14, lineHeight: 1.45 }}><input type="checkbox" checked={s.suggestions_enabled !== false} onChange={(e) => setS({ ...s, suggestions_enabled: e.target.checked })} style={{ marginTop: 3 }} /><span><b>Product suggestions</b> — suggest what to pitch each venue (on customer pages, the Suggestions tab and email audiences). Learns from every new order.</span></label>
       <Text label="Most emails per day" type="number" value={s.daily_limit} onChange={(v) => setS({ ...s, daily_limit: v })} />
       <div style={{ fontSize: 12.5, color: muted, marginTop: -6 }}>Resend's free plan allows 100 a day (3,000 a month). Bigger sends carry on the next day automatically.</div>
