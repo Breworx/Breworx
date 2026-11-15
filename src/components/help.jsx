@@ -276,7 +276,7 @@ export const HELP_ARTICLES = [
   {
     category: "Tasks & kegs",
     question: "How do I move a task?",
-    answer: "Tap Move on the task and pick a new date (or −1 day, +1, +2). Moving a kegging day moves its keg cleaning and canning with it.",
+    answer: "Tap Move on the task and pick a new date (or −1 day, +1, +2). Moving a kegging day moves its keg cleaning and canning with it. Anything not done by its day rolls forward to today (and shows on Home) marked overdue, until it's ticked off.",
   },
   {
     category: "Tasks & kegs",

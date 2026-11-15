@@ -31,7 +31,7 @@ function KindDot({ kind, hollow }) {
 // One task line: tick, text, detail, move date, dismiss/delete.
 export function TaskRow({ task, onAction, readOnly, showDate }) {
   const [moving, setMoving] = useState(false);
-  const overdue = !task.done && task.dueDate < today();
+  const overdue = !task.done && (task.dueDate < today() || !!task.carriedFrom);
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: task.suggested ? "#FBFAF4" : "#FFFFFF", border: `1px ${task.suggested ? "dashed" : "solid"} ${overdue ? warn : "#DDE0C8"}`, borderRadius: 6 }}>
       {!readOnly ? (
@@ -54,12 +54,12 @@ export function TaskRow({ task, onAction, readOnly, showDate }) {
         {task.detail && <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>{task.detail}</div>}
         <div style={{ fontSize: 11.5, color: overdue ? warn : faint, marginTop: 3 }}>
           {showDate ? fmtTaskDay(task.dueDate) : ""}
-          {overdue ? `${showDate ? " · " : ""}overdue` : ""}
+          {overdue ? `${showDate ? " · " : ""}overdue${task.carriedFrom ? ` (was due ${fmtTaskDay(task.carriedFrom)})` : ""}` : ""}
           {task.done && task.doneBy ? `${showDate || overdue ? " · " : ""}done by ${task.doneBy}${task.qty ? ` (${task.qty})` : ""}` : ""}
         </div>
         {moving && !readOnly && (
           <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input type="date" defaultValue={task.dueDate} onChange={(e) => { if (e.target.value) { onAction(task, "move", e.target.value); setMoving(false); } }} style={{ ...input, padding: "5px 8px", fontSize: 13 }} />
+            <input type="date" defaultValue={task.dueDate} min={today()} onChange={(e) => { if (e.target.value) { onAction(task, "move", e.target.value); setMoving(false); } }} style={{ ...input, padding: "5px 8px", fontSize: 13 }} />
             {[-1, 1, 2].map((n) => (
               <button key={n} type="button" style={{ ...btn(false), padding: "5px 9px", fontSize: 12 }} onClick={() => { onAction(task, "move", addDays(task.dueDate, n)); setMoving(false); }}>{n > 0 ? `+${n} day${n > 1 ? "s" : ""}` : "−1 day"}</button>
             ))}
