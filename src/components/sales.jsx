@@ -9,6 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { BackdateField, EmptyState, Modal, NumberField, StageDateModal, TextField } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
 import { batchCostPerContainer, canonicalBeerName, uid } from "../lib/production";
+import { batchFullCost } from "../lib/batchCost";
 import { today } from "../lib/utils";
 
 export function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, mixedPackStock, nextOrderNumber }) {
@@ -276,13 +277,27 @@ export function SalesOrderCard({ order, customerName, onOpen }) {
 }
 
 // Real sales performance, not just an order log — best-selling products,
-// top customers, and genuine margin using the same cost-per-container
-// math already shown on a batch's own packaging section. Counts only
+// top customers, and genuine margin using the full cost per can or keg
+// shown on a batch page (beer, excise, packaging, keg hire). Counts only
 // what's actually been fulfilled (using fulfilledQty where it's been
 // recorded, falling back to the full line for orders marked Fulfilled
 // before that field existed) — a Confirmed-but-not-yet-shipped order
 // isn't a realized sale yet, so it's deliberately excluded.
-export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner }) {
+export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, consumables, costing, recipes, packageTypes, exciseAbvMethod }) {
+  // Full cost per can / keg: beer, excise, cans, lids, labels, cartons, keg
+  // hire and delivery. Falls back to beer-only when that can't be worked out.
+  const fullCostCache = {};
+  const costEachFor = (batch, containerKey) => {
+    if (!(batch.id in fullCostCache)) {
+      let fc = null;
+      try { fc = batchFullCost(batch, { consumables, costing, abvMethod: exciseAbvMethod, recipes, packageTypes }); } catch (e) { fc = null; }
+      fullCostCache[batch.id] = fc;
+    }
+    const fc = fullCostCache[batch.id];
+    const c = fc && fc.containers.find((x) => x.key === containerKey);
+    if (c) return containerKey === "cans330" ? c.perCan : c.each;
+    return batchCostPerContainer(batch, containerKey);
+  };
   const relevantOrders = (salesOrders || []).filter((o) => o.status !== "Draft" && o.status !== "Cancelled");
 
   const effectiveQty = (line, order) => {
@@ -313,7 +328,7 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner })
       productMap[key].revenue += revenue;
       if (!l.mixedPackTypeId) {
         const batch = l.batchId ? batches.find((b) => b.id === l.batchId) : null;
-        const costEach = batch ? batchCostPerContainer(batch, l.containerKey) : null;
+        const costEach = batch ? costEachFor(batch, l.containerKey) : null;
         if (costEach != null) productMap[key].cogs += costEach * qty;
         else productMap[key].hasCost = false;
       } else {
