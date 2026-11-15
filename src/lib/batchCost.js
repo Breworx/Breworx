@@ -5,7 +5,8 @@
 //
 // Packaging items are priced, not counted from stock movements: older runs
 // were packaged before cans and labels were tracked, so the price per can
-// is what can + lid + label + a 24th of a carton cost at the time.
+// is what can + lid + label + a 24th of a carton cost at the time. Kegs
+// are one-way Kegstar kegs, so each keg carries its hire (Costing, $30).
 
 import { CONTAINERS, CANS_PER_CASE, packagingEvents, packagedTotalsByContainer, canonicalBeerName, normItemName } from "./production";
 import { exciseRowsForBatches } from "./excise";
@@ -31,7 +32,25 @@ const beerKey = (s) => normItemName(canonicalBeerName(String(s || "")).replace(/
 export function labelFor(batch, consumables) {
   const key = beerKey(batch.name);
   const labels = (consumables || []).filter((c) => c.category === "Label");
-  return labels.find((c) => beerKey(c.name) === key) || labels.find((c) => key && (beerKey(c.name).includes(key) || key.includes(beerKey(c.name)))) || null;
+  const names = [batch.name, batch.recipeName].filter(Boolean).map((n) => String(n).trim().toLowerCase());
+  const matched = (c) => (c.matchNames || []).map((m) => String(m).trim().toLowerCase()).filter(Boolean);
+  return (
+    labels.find((c) => beerKey(c.name) === key) ||
+    labels.find((c) => matched(c).some((m) => names.includes(m))) ||
+    labels.find((c) => matched(c).some((m) => names.some((n) => n.includes(m)))) ||
+    labels.find((c) => key && (beerKey(c.name).includes(key) || key.includes(beerKey(c.name)))) ||
+    null
+  );
+}
+
+// The label a canning run actually used: a pack with a set label (Gents,
+// Boutique) wins over the beer's own label.
+export function labelForEvent(batch, event, consumables, packageTypes) {
+  const ptId = event && event.packageTypes ? event.packageTypes.cans330 : null;
+  const pt = ptId ? (packageTypes || []).find((p) => p.id === ptId) : null;
+  const fixed = pt ? (pt.items || []).find((it) => !it.matchLabelByRecipeName && it.consumableId && (consumables || []).some((c) => c.id === it.consumableId && c.category === "Label")) : null;
+  if (fixed) return (consumables || []).find((c) => c.id === fixed.consumableId);
+  return labelFor(batch, consumables);
 }
 
 // The costing this batch belongs to: made from its recipe, else same beer name.
@@ -48,7 +67,7 @@ export function costingFor(batch, costing, recipes) {
 
 const FORMAT_FOR = { kegs50: "keg50", kegs30: "keg50", kegs20: "keg20", cans330: "case24" };
 
-export function batchFullCost(batch, { consumables, costing, abvMethod, recipes }) {
+export function batchFullCost(batch, { consumables, costing, abvMethod, recipes, packageTypes }) {
   const totals = packagedTotalsByContainer(batch);
   const totalL = CONTAINERS.reduce((s, c) => s + (totals[c.key] || 0) * c.volumeL, 0);
   if (totalL <= 0) return null;
@@ -67,7 +86,6 @@ export function batchFullCost(batch, { consumables, costing, abvMethod, recipes 
   // Cans: can + lid + label + 1/24 carton, priced at each run's date.
   const byCat = (cat) => (consumables || []).filter((c) => c.category === cat).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0] || null;
   const can = byCat("Can"), lid = byCat("Lid"), carton = byCat("Box");
-  const label = labelFor(batch, consumables);
   const costingLabel = product && product.casePack ? labelPriceEach(product.casePack.label) : null;
   let canPack = 0, cansCounted = 0;
   const missing = new Set();
@@ -75,6 +93,7 @@ export function batchFullCost(batch, { consumables, costing, abvMethod, recipes 
     const n = Number(e.cans330) || 0;
     if (!n) return;
     const p = (item, name) => { const v = consumablePriceOn(item, e.date); if (v == null) missing.add(name); return v || 0; };
+    const label = labelForEvent(batch, e, consumables, packageTypes);
     const labelEach = label ? p(label, "labels") : costingLabel != null ? costingLabel : (missing.add("labels"), 0);
     canPack += n * (p(can, "cans") + p(lid, "lids") + labelEach + p(carton, "cartons") / CANS_PER_CASE);
     cansCounted += n;

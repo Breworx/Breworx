@@ -13,7 +13,7 @@ import { CATEGORY_COLOR, latestReading } from "../lib/config";
 import { BREW_STAGE_INFO, COMMON_FAULTS, CONTAINERS, FAULT_SEVERITY_COLOR, STAGE_COLOR, aggregatePackagingCounts, batchTankIds, batchTankSummary, compareScheduleItems, currentFaults, formatQty, packagedVolume, packagingDiscarded, packagingEvents, remainingVolume, totalPackagedVolume } from "../lib/production";
 import { daysBetween, today } from "../lib/utils";
 
-export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner, onOpenCiderTools, consumables, costing, exciseAbvMethod }) {
+export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading, onDeleteReading, onEditBrewDayField, onOpenPackaging, onStartPackaging, onCancelPackagingRun, onUndoPackagingEvent, onDiscardRemaining, onAssignTank, onToggleScheduleStep, onDeleteBatch, stages, onLogDiacetylTest, onToggleFault, onUploadPhoto, onDeletePhoto, onStartTimer, onStopTimer, tanks, onStartRecirculation, onOpenVesselTransfer, onEditSplitTanks, onOpenFermenterTransfer, onSetCarbonationChecked, onSetBrewDayCheckbox, onAddNote, onDeleteNote, onOpenTastingLog, onOpenSensoryScore, onOpenQcApproval, onOpenLabMeasurement, onSetStillFermenting, onUpdateTankSettings, onLogDump, onUndoDump, onOpenTopUp, yeastHarvests, onOpenHarvestYeast, onAddSplitTankIngredient, onAddBatchIngredient, onAddBrewDay, recipes, allBatches, onOpenBatch, onConvertSplitTanks, isOwner, onOpenCiderTools, consumables, costing, exciseAbvMethod, packageTypes }) {
   // Cider gets its own version of this page: no mash, boil, hop or
   // diacetyl sections; juice, additions, back-sweetening and blends instead.
   const isCider = batch.productType === "Cider/Perry";
@@ -498,7 +498,7 @@ export function BatchDetail({ batch, onBack, onAdvance, onMoveBack, onLogReading
             </div>
 
             {isOwner && (() => {
-              const fc = batchFullCost(batch, { consumables, costing, abvMethod: exciseAbvMethod, recipes });
+              const fc = batchFullCost(batch, { consumables, costing, abvMethod: exciseAbvMethod, recipes, packageTypes });
               if (!fc) return null;
               const m = (n) => (n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`);
               const col = (p) => (p == null ? "#9BA88A" : p < 15 ? "#B5502F" : p < 30 ? "#8A6D0B" : "#3F7A2A");
