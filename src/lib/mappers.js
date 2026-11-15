@@ -819,6 +819,12 @@ export function rowToReminder(row) {
     userName: row.user_name,
     doneBy: row.done_by || null,
     createdAt: row.created_at || null,
+    kind: row.kind || null,
+    qty: row.qty != null ? Number(row.qty) : null,
+    batchId: row.batch_id || null,
+    sourceKey: row.source_key || null,
+    dismissed: !!row.dismissed,
+    doneAt: row.done_at || null,
   };
 }
 
@@ -832,7 +838,21 @@ export function reminderToRow(reminder, userId, userName, companyId) {
     due_date: reminder.dueDate,
     done: !!reminder.done,
     done_by: reminder.doneBy || null,
+    kind: reminder.kind || null,
+    qty: reminder.qty ?? null,
+    batch_id: reminder.batchId || null,
+    source_key: reminder.sourceKey || null,
+    dismissed: !!reminder.dismissed,
+    done_at: reminder.done ? reminder.doneAt || new Date().toISOString() : null,
   };
+}
+
+export function rowToKegPool(row) {
+  return { id: row.id, name: row.name, sizeL: Number(row.size_l), owner: row.owner || "kegstar", total: row.total || 0, dirty: row.dirty || 0, clean: row.clean || 0, sort: row.sort || 0 };
+}
+
+export function rowToKegPoolLog(row) {
+  return { id: row.id, poolId: row.pool_id, kind: row.kind, qty: row.qty, note: row.note || "", batchId: row.batch_id || null, userName: row.user_name || "", happenedOn: row.happened_on, createdAt: row.created_at };
 }
 
 export function rowToActivity(row) {

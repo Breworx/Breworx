@@ -3,12 +3,14 @@ import { Plus, Droplet, X, TrendingUp, Beaker, Package, AlertTriangle, Truck, Ch
 import { MarketingView } from "./components/marketing";
 import { supabase } from "./supabaseClient";
 import { productKeyForBatch } from "./lib/brewPlanner";
-import { rowToBatch, batchToRow, rowToInventoryItem, inventoryItemToRow, rowToPO, poToRow, rowToRecipe, recipeToRow, rowToProfile, rowToTank, tankToRow, rowToStockTake, stockTakeToRow, rowToFoodSafetyRecord, foodSafetyRecordToRow, rowToSupplier, supplierToRow, rowToCustomer, customerToRow, rowToCustomerPrice, customerPriceToRow, rowToYeastHarvest, yeastHarvestToRow, rowToMixedPackType, mixedPackTypeToRow, rowToMixedPackAssembly, mixedPackAssemblyToRow, rowToPestStation, pestStationToRow, rowToExciseItemCode, exciseItemCodeToRow, rowToExciseReturn, exciseReturnToRow, rowToAiFeedback, aiFeedbackToRow, rowToKeg, kegToRow, rowToTriangleTest, triangleTestToRow, rowToSalesOrder, salesOrderToRow, rowToSupplierDocument, supplierDocumentToRow, rowToConsumable, consumableToRow, rowToPackageType, packageTypeToRow, rowToReminder, reminderToRow, rowToActivity, activityToRow } from "./lib/mappers";
+import { rowToBatch, batchToRow, rowToInventoryItem, inventoryItemToRow, rowToPO, poToRow, rowToRecipe, recipeToRow, rowToProfile, rowToTank, tankToRow, rowToStockTake, stockTakeToRow, rowToFoodSafetyRecord, foodSafetyRecordToRow, rowToSupplier, supplierToRow, rowToCustomer, customerToRow, rowToCustomerPrice, customerPriceToRow, rowToYeastHarvest, yeastHarvestToRow, rowToMixedPackType, mixedPackTypeToRow, rowToMixedPackAssembly, mixedPackAssemblyToRow, rowToPestStation, pestStationToRow, rowToExciseItemCode, exciseItemCodeToRow, rowToExciseReturn, exciseReturnToRow, rowToAiFeedback, aiFeedbackToRow, rowToKeg, kegToRow, rowToTriangleTest, triangleTestToRow, rowToSalesOrder, salesOrderToRow, rowToSupplierDocument, supplierDocumentToRow, rowToConsumable, consumableToRow, rowToPackageType, packageTypeToRow, rowToReminder, reminderToRow, rowToActivity, activityToRow, rowToKegPool, rowToKegPoolLog } from "./lib/mappers";
 import { AuthScreen, DeleteAccountModal, DeleteCompanyModal, EmailConfirmedScreen } from "./components/account";
 import { AuditSharesModal } from "./components/auditor";
 import { BatchDetail } from "./components/batchDetail";
 import { AddBatchModal, AddBrewDayModal, AddSplitTankIngredientModal, DiacetylTestModal, DiscardRemainingModal, EditBrewDayFieldModal, LogReadingModal, PackagingModal, StartPackagingModal, sisterTankBatches, splitPackagingRun } from "./components/batches";
 import { BatchCard, InventoryItemCard } from "./components/cards";
+import { suggestTasks, mergeTasks, kegNeedsBySize, kegKeyForSize } from "./lib/tasks";
+import { KegCleanModal, KegPoolsPanel, TaskDayModal, TasksPanel } from "./components/tasks";
 import { CiderView } from "./components/cider";
 import { CustomerAccountFlow, CustomerDetail, CustomerFormModal, CustomerPortalPage, CustomersView } from "./components/customers";
 import { ExciseReportView, PackagedView } from "./components/excise";
@@ -28,7 +30,7 @@ import { AddKegsModal, AddSalesOrderModal, KegDetail, KegsView, PrintableOrderMo
 import { AddTankModal, AssignTankModal, ConfirmDeleteBatchModal, ConfirmDeleteRecipeModal, ConfirmDeleteSupplierModal, ConfirmDeleteTankModal, EditSplitTanksModal, EditTankModal, TankHistoryModal, TransferToFermenterModal, VesselTransferModal } from "./components/tanks";
 import { TraceabilityView, deductFromLotsFIFO, planXeroSalesHistory } from "./components/traceability";
 import { APP_VERSION, BreworxMark, BrewpointErrorBoundary, BrewpointLoadingMark, ConfirmDialogModal, EmptyState, OfflineBanner, SkeletonList, ToastStack, UpdateBanner, stampForDate } from "./components/ui";
-import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeededModal, ProductionManagerView, QuickJumpModal, ReminderDayModal, YeastView } from "./components/views";
+import { AgingOverviewView, EditScheduledBatchModal, HomeView, IngredientsNeededModal, ProductionManagerView, QuickJumpModal, YeastView } from "./components/views";
 import { ImportXeroContactsModal, SameBeerModal, XeroContactLinkModal, XeroHistoryImport, XeroItemMatchModal, XeroMappingModal, XeroProductMappingModal, XeroStockCompareModal, compareXeroStock, planXeroStockMatch } from "./components/xero";
 import { CATEGORIES, CATEGORY_COLOR, CONSUMABLE_CATEGORIES, buildXeroAuthUrl, findMissingIngredients, latestReading } from "./lib/config";
 import { levyForDeclaredLines, monthKeyFromDate, monthLabelFromKey } from "./lib/excise";
@@ -118,6 +120,9 @@ function TankLogApp() {
   const [exciseItemCodes, setExciseItemCodes] = useState([]);
   const [aiFeedback, setAiFeedback] = useState([]);
   const [kegs, setKegs] = useState([]);
+  const [kegPools, setKegPools] = useState([]);
+  const [kegPoolLog, setKegPoolLog] = useState([]);
+  const [kegCleanTask, setKegCleanTask] = useState(null); // task being ticked off, or {} for a plain clean
   const [triangleTests, setTriangleTests] = useState([]);
   const [exciseReturns, setExciseReturns] = useState([]);
   const [showClearStock, setShowClearStock] = useState(false);
@@ -722,6 +727,123 @@ function TankLogApp() {
     setReminders((prev) => prev.filter((r) => r.id !== id));
   };
 
+  // ─── Production tasks + keg pools ───────────────────────────────────────
+  useEffect(() => {
+    if (!profile?.companyId) return;
+    let cancelled = false;
+    (async () => {
+      const [poolsRes, logRes] = await Promise.all([
+        supabase.from("keg_pools").select("*").order("sort", { ascending: true }),
+        supabase.from("keg_pool_log").select("*").order("created_at", { ascending: false }).limit(500),
+      ]);
+      if (cancelled) return;
+      if (!poolsRes.error) setKegPools(poolsRes.data.map(rowToKegPool));
+      if (!logRes.error) setKegPoolLog(logRes.data.map(rowToKegPoolLog));
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.companyId]);
+
+  const taskSuggestions = useMemo(() => suggestTasks({ batches, poolLog: kegPoolLog }), [batches, kegPoolLog]);
+  const tasks = useMemo(() => mergeTasks(reminders, taskSuggestions), [reminders, taskSuggestions]);
+  const kegNeeds = useMemo(() => kegNeedsBySize(tasks, kegPools), [tasks, kegPools]);
+
+  const saveTaskRow = async (fields) => {
+    const row = reminderToRow({ done: false, ...fields }, user.id, user.name, profile.companyId);
+    delete row.id;
+    const { data, error } = await supabase.from("reminders").insert(row).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return null; }
+    const saved = rowToReminder(data);
+    setReminders((prev) => [...prev, saved].sort((a, b) => a.dueDate.localeCompare(b.dueDate)));
+    return saved;
+  };
+  const patchTaskRow = async (id, patch, local) => {
+    const { error } = await supabase.from("reminders").update(patch).eq("id", id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, ...local } : r)).sort((a, b) => a.dueDate.localeCompare(b.dueDate)));
+    return true;
+  };
+  const addTask = (text, dueDate, kind) => saveTaskRow({ text, dueDate, kind: kind || null });
+  // One entry point for ticking, moving, dismissing or deleting any task,
+  // saved or suggested. A suggestion is saved as a real task the first time
+  // anyone touches it, so it stays where they put it.
+  const taskAction = async (task, action, value) => {
+    if (action === "toggle" && !task.done && task.kind === "keg_clean" && kegPools.length > 0 && !value?.skipKegs) {
+      setKegCleanTask(task);
+      return;
+    }
+    if (task.suggested) {
+      const base = { text: task.text, dueDate: task.dueDate, kind: task.kind, batchId: task.batchId, sourceKey: task.sourceKey };
+      if (action === "toggle") return saveTaskRow({ ...base, done: true, doneBy: user.name, qty: value?.qty ?? null });
+      if (action === "move") return saveTaskRow({ ...base, dueDate: value });
+      if (action === "dismiss" || action === "delete") return saveTaskRow({ ...base, dismissed: true });
+      return;
+    }
+    if (action === "toggle") {
+      const done = !task.done;
+      const doneAt = done ? new Date().toISOString() : null;
+      return patchTaskRow(task.id, { done, done_by: done ? user.name : null, done_at: doneAt, ...(value?.qty != null ? { qty: value.qty } : {}) }, { done, doneBy: done ? user.name : null, doneAt });
+    }
+    if (action === "move") return patchTaskRow(task.id, { due_date: value }, { dueDate: value });
+    if (action === "dismiss" || (action === "delete" && task.sourceKey)) return patchTaskRow(task.id, { dismissed: true }, { dismissed: true });
+    if (action === "delete") return deleteReminder(task.id);
+  };
+
+  const logPoolMove = async (pool, kind, qty, patch, note, date, batchId) => {
+    const { error } = await supabase.from("keg_pools").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", pool.id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return false; }
+    const local = { ...(patch.dirty != null ? { dirty: patch.dirty } : {}), ...(patch.clean != null ? { clean: patch.clean } : {}), ...(patch.total != null ? { total: patch.total } : {}) };
+    setKegPools((prev) => prev.map((p) => (p.id === pool.id ? { ...p, ...local } : p)));
+    const { data } = await supabase.from("keg_pool_log").insert({ company_id: profile.companyId, pool_id: pool.id, kind, qty, note: note || null, batch_id: batchId || null, user_name: user.name, happened_on: date || today() }).select().single();
+    if (data) setKegPoolLog((prev) => [rowToKegPoolLog(data), ...prev]);
+    return true;
+  };
+  const saveKegPool = async (pool) => {
+    const row = { name: pool.name.trim(), size_l: Number(pool.sizeL), owner: pool.owner || "kegstar", total: Number(pool.total) || 0, dirty: Number(pool.dirty) || 0, clean: Number(pool.clean) || 0 };
+    if (pool.id) {
+      const { error } = await supabase.from("keg_pools").update({ ...row, updated_at: new Date().toISOString() }).eq("id", pool.id);
+      if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+      setKegPools((prev) => prev.map((p) => (p.id === pool.id ? { ...p, ...rowToKegPool({ id: p.id, sort: p.sort, ...row }) } : p)));
+      return;
+    }
+    const { data, error } = await supabase.from("keg_pools").insert({ ...row, company_id: profile.companyId, sort: kegPools.length }).select().single();
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegPools((prev) => [...prev, rowToKegPool(data)]);
+  };
+  const deleteKegPool = async (pool) => {
+    const { error } = await supabase.from("keg_pools").delete().eq("id", pool.id);
+    if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
+    setKegPools((prev) => prev.filter((p) => p.id !== pool.id));
+  };
+  // "in": kegs arriving to be cleaned (new Kegstar hire, own kegs back) · "clean": dirty → clean
+  // · "fill": clean → full (packaging does this by itself) · "count": set the piles after a count.
+  const moveKegs = async (pool, kind, qty, date, note) => {
+    const n = Math.max(0, Math.round(Number(qty) || 0));
+    if (kind === "count") return logPoolMove(pool, "count", 0, { dirty: Math.max(0, Math.round(Number(qty.dirty) || 0)), clean: Math.max(0, Math.round(Number(qty.clean) || 0)) }, `Counted: ${qty.dirty} dirty, ${qty.clean} clean`, date);
+    if (!n) return false;
+    if (kind === "in") return logPoolMove(pool, "in", n, { dirty: pool.dirty + n }, note, date);
+    if (kind === "clean") return logPoolMove(pool, "clean", n, { dirty: Math.max(0, pool.dirty - n), clean: pool.clean + n }, note, date);
+    if (kind === "fill") return logPoolMove(pool, "fill", n, { clean: Math.max(0, pool.clean - n) }, note, date);
+    return false;
+  };
+  // Packaging into kegs takes them off the clean pile of that size.
+  const fillKegsFromPools = async (batch, counts, date) => {
+    for (const [key, n] of Object.entries(counts || {})) {
+      if (!key.startsWith("kegs") || !(Number(n) > 0)) continue;
+      const pool = [...kegPools].filter((p) => kegKeyForSize(p.sizeL) === key).sort((a, b) => b.clean - a.clean)[0];
+      if (pool) await moveKegs(pool, "fill", Number(n), date, `Filled with ${batch.name}${batch.number ? ` #${batch.number}` : ""}`);
+    }
+  };
+  const finishKegClean = async (task, cleanedByPool, date) => {
+    let total = 0;
+    for (const [poolId, n] of Object.entries(cleanedByPool || {})) {
+      const pool = kegPools.find((p) => p.id === poolId);
+      if (pool && Number(n) > 0) { await moveKegs(pool, "clean", Number(n), date); total += Number(n); }
+    }
+    if (task && task.text) await taskAction(task, "toggle", { skipKegs: true, qty: total });
+    setKegCleanTask(null);
+    if (total) showToast("success", `${total} keg${total === 1 ? "" : "s"} added to the clean pile.`);
+  };
+
   const [inviteForm, setInviteForm] = useState(null); // { email, role } while filling in
   const [inviteSent, setInviteSent] = useState(null); // { email, role } of the last invite made
   // Team: when each person was last on, and invites not used yet.
@@ -1202,7 +1324,7 @@ function TankLogApp() {
   const BACKUP_TABLES = [
     "batches", "recipes", "tanks", "inventory_items", "consumables", "package_types", "purchase_orders", "suppliers",
     "supplier_documents", "stock_takes", "customers", "customer_prices", "sales_orders", "kegs", "mixed_pack_types",
-    "mixed_pack_assemblies", "yeast_harvests", "triangle_tests", "food_safety_records", "pest_stations", "reminders",
+    "mixed_pack_assemblies", "yeast_harvests", "triangle_tests", "food_safety_records", "pest_stations", "reminders", "keg_pools", "keg_pool_log",
     "excise_item_codes", "excise_returns", "label_strengths", "beer_aliases", "brew_plan_settings", "costing_settings", "xero_settings",
     "xero_item_mappings", "xero_sales_item_map", "xero_stock_sales", "profiles", "activity_log", "ai_helper_feedback",
   ];
@@ -4059,6 +4181,7 @@ function TankLogApp() {
         if (any(counts)) {
           syncPackagingToXero(b, counts);
           await deductConsumablesForPackaging(b, counts, packageTypeSelections, -1, date);
+          await fillKegsFromPools(b, counts, date);
         }
         return true;
       };
@@ -4077,6 +4200,7 @@ function TankLogApp() {
     setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, packaging: newPackaging, stage: "Packaged", packagingRun: null, stageDates } : b)));
     syncPackagingToXero(batch, sessionCounts);
     await deductConsumablesForPackaging(batch, sessionCounts, packageTypeSelections, -1, date);
+    await fillKegsFromPools(batch, sessionCounts, date);
     logActivity("packaged", "batch", batch.name, `${batch.name} (#${batch.number}) packaged`);
   };
 
@@ -5074,9 +5198,9 @@ function TankLogApp() {
                 activityLog={activityLog}
                 onCycleClean={cycleTankClean}
                 onSetCleanStage={setTankCleanStage}
-                reminders={reminders}
+                reminders={tasks}
                 onAddReminder={addReminder}
-                onToggleReminder={toggleReminderDone}
+                onToggleReminder={(id) => { const t = tasks.find((x) => x.id === id); if (t) taskAction(t, "toggle"); }}
                 onReorder={setReorderItem}
               />
             )}
@@ -5767,7 +5891,20 @@ function TankLogApp() {
             )}
 
             {!loadingData && view === "kegs" && !selectedKegId && (
-              <KegsView kegs={kegs} onOpen={(k) => setSelectedKegId(k.id)} onAddNew={() => setShowAddKegs(true)} />
+              <>
+                <KegPoolsPanel
+                  pools={kegPools}
+                  fullBySize={stockBeforeDrafts.filter((r) => r.containerKey.startsWith("kegs")).reduce((acc, r) => { const size = CONTAINERS.find((c) => c.key === r.containerKey)?.volumeL; if (size) acc[size] = (acc[size] || 0) + Math.max(0, r.available || 0); return acc; }, {})}
+                  kegNeeds={kegNeeds}
+                  log={kegPoolLog}
+                  onSave={saveKegPool}
+                  onDelete={deleteKegPool}
+                  onMove={moveKegs}
+                  readOnly={isSales}
+                />
+                <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 10 }}>Numbered kegs (optional)</div>
+                <KegsView kegs={kegs} onOpen={(k) => setSelectedKegId(k.id)} onAddNew={() => setShowAddKegs(true)} />
+              </>
             )}
 
             {!loadingData && view === "kegs" && selectedKegId && kegs.find((k) => k.id === selectedKegId) && (
@@ -6124,6 +6261,7 @@ function TankLogApp() {
 
             {!loadingData && view === "production" && (
               <>
+                <TasksPanel tasks={tasks} onAction={taskAction} onAdd={addTask} kegNeeds={kegNeeds} readOnly={isSales} onOpenKegs={isSales ? null : () => setView("kegs")} />
                 <ProductionManagerView
                   tanks={tanks}
                   batches={batches}
@@ -6136,8 +6274,8 @@ function TankLogApp() {
                     setShowScheduleModal(true);
                   }}
                   onEditScheduled={isSales ? null : setEditScheduledBatchId}
-                  reminders={reminders}
-                  onOpenDay={isSales ? null : setActiveReminderDay}
+                  reminders={tasks}
+                  onOpenDay={setActiveReminderDay}
                   recipes={recipes}
                   inventory={inventory}
                   onCheckIngredients={isSales ? null : () => (ingPlan ? setShowOrderList(true) : setShowIngredientsNeeded(true))}
@@ -6191,14 +6329,17 @@ function TankLogApp() {
             )}
 
             {activeReminderDay && (
-              <ReminderDayModal
+              <TaskDayModal
                 date={activeReminderDay}
-                reminders={reminders}
+                tasks={tasks}
                 onClose={() => setActiveReminderDay(null)}
-                onAdd={addReminder}
-                onToggle={toggleReminderDone}
-                onDelete={deleteReminder}
+                onAdd={addTask}
+                onAction={taskAction}
+                readOnly={isSales}
               />
+            )}
+            {kegCleanTask && (
+              <KegCleanModal task={kegCleanTask} pools={kegPools} onClose={() => setKegCleanTask(null)} onSave={finishKegClean} />
             )}
 
             {!loadingData && view === "settings" && (

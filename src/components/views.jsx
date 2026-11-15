@@ -17,6 +17,7 @@ import { formatHistoryStamp } from "../lib/brewing";
 import { monthKeyFromDate, monthLabelFromKey } from "../lib/excise";
 import { STAGE_COLOR, activeRecipesByFamily, batchTankIds, isScheduledBatch, learnedTankDays, nextBookedBatch, occupyingBatch, packagingEvents, remainingVolume, sortedTanks, tankIsOccupied, uid, userColor } from "../lib/production";
 import { addDays, daysBetween, today } from "../lib/utils";
+import { taskKind } from "../lib/tasks";
 
 export function QuickJumpModal({ onClose, batches, recipes, purchaseOrders, tanks, inventory, consumables, suppliers, foodSafetyRecords, onOpenBatch, onOpenRecipe, onOpenPO, onOpenTank, onOpenInventory, onOpenConsumable, onOpenSupplier, onOpenFoodSafety }) {
   const [query, setQuery] = useState("");
@@ -668,7 +669,7 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
 
             <div style={{ display: "flex", alignItems: "center", borderTop: "1px solid #EBE8D6", borderBottom: "2px solid #DDE0C8", minHeight: 40 }}>
               <div style={{ width: 120, flexShrink: 0, paddingRight: 10, position: "sticky", left: 0, zIndex: 3, background: "#F5F1E4" }}>
-                <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#5C6B54" }}>Reminders</div>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12.5, fontWeight: 500, color: "#5C6B54" }}>Tasks</div>
               </div>
               <div style={{ display: "flex" }}>
                 {dayList.map((d) => {
@@ -699,7 +700,9 @@ export function ProductionManagerView({ tanks, batches, onOpenBatch, onScheduleT
                             width: 7,
                             height: 7,
                             borderRadius: 4,
-                            background: userColor(r.userName),
+                            boxSizing: "border-box",
+                            background: r.suggested ? "transparent" : (taskKind(r.kind)?.color || userColor(r.userName)),
+                            border: `1.5px solid ${taskKind(r.kind)?.color || userColor(r.userName)}`,
                             opacity: r.done ? 0.35 : 1,
                           }}
                         />
