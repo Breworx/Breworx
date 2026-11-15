@@ -8,7 +8,7 @@ import { Plus, ChevronLeft, X, Truck, CheckCircle2, Trash2, FileText, Box } from
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { BackdateField, EmptyState, Modal, NumberField, StageDateModal, TextField } from "./ui";
 import { formatHistoryStamp } from "../lib/brewing";
-import { batchCostPerContainer, canonicalBeerName, uid } from "../lib/production";
+import { batchCostPerContainer, canonicalBeerName, packagedTotalsByContainer, uid } from "../lib/production";
 import { batchFullCost } from "../lib/batchCost";
 import { today } from "../lib/utils";
 
@@ -323,16 +323,17 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, c
       const beer = l.mixedPackTypeId ? "" : canonicalBeerName(l.batchName || "");
       const key = l.mixedPackTypeId ? `mp:${l.mixedPackTypeId}` : `${beer.toLowerCase()}:${l.containerKey}`;
       const label = l.mixedPackTypeId ? l.mixedPackTypeName : `${beer} — ${l.containerLabel}`;
-      if (!productMap[key]) productMap[key] = { label, qty: 0, revenue: 0, cogs: 0, hasCost: true };
+      if (!productMap[key]) productMap[key] = { label, beer, containerKey: l.containerKey, mixed: !!l.mixedPackTypeId, qty: 0, revenue: 0, cogs: 0, costedQty: 0, batchIds: new Set(), hasCost: false };
       productMap[key].qty += qty;
       productMap[key].revenue += revenue;
       if (!l.mixedPackTypeId) {
         const batch = l.batchId ? batches.find((b) => b.id === l.batchId) : null;
         const costEach = batch ? costEachFor(batch, l.containerKey) : null;
-        if (costEach != null) productMap[key].cogs += costEach * qty;
-        else productMap[key].hasCost = false;
-      } else {
-        productMap[key].hasCost = false; // a mixed pack draws from several beers — no single cost basis to show here
+        if (costEach != null) {
+          productMap[key].cogs += costEach * qty;
+          productMap[key].costedQty += qty;
+          productMap[key].batchIds.add(batch.id);
+        }
       }
     });
 
@@ -341,6 +342,28 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, c
       customerMap[o.customerId].revenue += orderRevenue;
       customerMap[o.customerId].orders += 1;
       if (month) monthMap[month] = (monthMap[month] || 0) + orderRevenue;
+    }
+  });
+
+  // Margin per beer: the average cost per can / keg across the batches its
+  // sales came from, applied to everything sold. Sales with no batch
+  // linked (older Xero invoices) use the same average; if none of a beer's
+  // sales are linked, average across every batch of that beer packaged in
+  // that container. Mixed packs draw from several beers, so they're left out.
+  Object.values(productMap).forEach((p) => {
+    if (p.mixed) return;
+    if (p.costedQty <= 0) {
+      const key = p.beer.toLowerCase();
+      (batches || []).filter((b) => !b.mergedIntoBatchId && canonicalBeerName(b.name || "").toLowerCase() === key).forEach((b) => {
+        const made = packagedTotalsByContainer(b)[p.containerKey] || 0;
+        const each = made > 0 ? costEachFor(b, p.containerKey) : null;
+        if (each != null) { p.cogs += each * made; p.costedQty += made; p.batchIds.add(b.id); }
+      });
+    }
+    if (p.costedQty > 0) {
+      p.avgCost = p.cogs / p.costedQty;
+      p.cogs = p.avgCost * p.qty;
+      p.hasCost = p.revenue > 0;
     }
   });
 
@@ -413,7 +436,9 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, c
             {isOwner && (
               <div style={{ color: "#9BA88A", fontSize: 11.5, marginTop: 3 }}>
                 ${p.revenue.toFixed(2)} revenue
-                {p.hasCost ? ` · $${(p.revenue - p.cogs).toFixed(2)} margin (${((1 - p.cogs / p.revenue) * 100).toFixed(0)}%)` : " · margin unavailable"}
+                {p.hasCost
+                  ? ` · $${(p.revenue - p.cogs).toFixed(2)} margin (${((1 - p.cogs / p.revenue) * 100).toFixed(0)}%) · avg cost $${p.avgCost.toFixed(2)} each across ${p.batchIds.size} batch${p.batchIds.size === 1 ? "" : "es"}`
+                  : p.mixed ? " · mixed pack, no single cost" : " · margin unavailable (no batch costs yet)"}
               </div>
             )}
           </div>
