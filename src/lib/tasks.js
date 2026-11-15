@@ -142,14 +142,17 @@ export function suggestTasks({ batches, poolLog, horizonDays = 45 }) {
 export function mergeTasks(saved, suggestions) {
   const byKey = new Map((saved || []).filter((r) => r.sourceKey).map((r) => [r.sourceKey, r]));
   const sugByKey = new Map((suggestions || []).map((s) => [s.sourceKey, s]));
+  const t = today();
   const real = (saved || [])
     .filter((r) => !r.dismissed)
     .map((r) => {
       const s = r.sourceKey ? sugByKey.get(r.sourceKey) : null;
-      return { ...r, suggested: false, detail: r.detail || s?.detail || null, kegs: s?.kegs || null };
+      // Not done and its day has passed: it rolls forward to today (and shows
+      // on Home) until it's ticked, keeping the day it was meant for.
+      const late = !r.done && r.dueDate && r.dueDate < t;
+      return { ...r, suggested: false, detail: r.detail || s?.detail || null, kegs: s?.kegs || null, ...(late ? { dueDate: t, carriedFrom: r.dueDate } : {}) };
     });
   // Moving the kegging moves its keg-cleaning (and canning) suggestion with it.
-  const t = today();
   const fresh = (suggestions || [])
     .filter((s) => !byKey.has(s.sourceKey))
     .map((s) => {
