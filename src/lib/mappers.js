@@ -769,6 +769,7 @@ export function rowToConsumable(row) {
     history: row.history || [],
     supplierId: row.supplier_id || null,
     costPerUnit: row.cost_per_unit ?? null,
+    matchNames: row.match_names || [],
   };
 }
 
@@ -786,6 +787,7 @@ export function consumableToRow(item, userId, companyId) {
     lots: item.lots || [],
     history: item.history || [],
     cost_per_unit: item.costPerUnit ?? null,
+    match_names: item.matchNames && item.matchNames.length ? item.matchNames : null,
   };
 }
 
