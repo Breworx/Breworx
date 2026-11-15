@@ -1,3 +1,4 @@
+import { nthWorkingDayFrom } from "./workdays";
 import { calcABV } from "./brewing";
 import { latestReading } from "./config";
 import { CONTAINERS, packagedVolume, packagingEvents } from "./production";
@@ -158,9 +159,11 @@ export function addMonthsToKey(key, n) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// Customs' standard due date for a monthly excise return is the 20th of
-// the following month — shown as a guide, since arrangements can differ.
-export const exciseDueDate = (period) => `${addMonthsToKey(period, 1)}-20`;
+// A monthly excise return can be filed from the 1st of the next month and
+// is due 15 working days later (weekends and national holidays skipped).
+export const EXCISE_WORKING_DAYS = 15;
+export const exciseOpenDate = (period) => `${addMonthsToKey(period, 1)}-01`;
+export const exciseDueDate = (period) => nthWorkingDayFrom(exciseOpenDate(period), EXCISE_WORKING_DAYS);
 
 // Differences this small are rounding, not a real discrepancy.
 export const litresTolerance = (expected) => Math.max(1, Math.abs(expected) * 0.005);

@@ -5,7 +5,7 @@
 // (batch.xeroSold) or the history tracing (batch.salesHistory), matched by
 // Xero line id. These orders never move stock themselves — the Xero sync
 // already did that — so soldTotalsByContainer skips them.
-import { CONTAINERS, productKeyFor } from "./production";
+import { CONTAINERS, canonicalBeerName, packagingEvents, productKeyFor } from "./production";
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 
@@ -32,6 +32,29 @@ export function planXeroOrders({ docs, batches, salesMap, itemMappings, customer
       (byLine[e.lineId] = byLine[e.lineId] || []).push({ batch: b, containerKey: e.containerKey, qty: Number(e.qty) });
     })
   );
+
+  // Sales the stock check couldn't tie to a batch (sold before stock was
+  // tracked, or more than was recorded): best guess is the latest batch of
+  // that beer packaged in that size on or before the sale, else the first
+  // one after. Marked batchGuess so it reads as a guess, not a stock record.
+  const runsByProduct = {};
+  (batches || []).forEach((b) => {
+    if (b.mergedIntoBatchId) return;
+    const beer = norm(canonicalBeerName(b.name || ""));
+    packagingEvents(b).forEach((e) => {
+      CONTAINERS.forEach((c) => {
+        if (!(Number(e[c.key]) > 0)) return;
+        (runsByProduct[`${beer}::${c.key}`] = runsByProduct[`${beer}::${c.key}`] || []).push({ batch: b, date: String(e.date || b.startDate || "") });
+      });
+    });
+  });
+  Object.values(runsByProduct).forEach((runs) => runs.sort((a, b) => a.date.localeCompare(b.date)));
+  const guessBatch = (beerName, containerKey, date) => {
+    const runs = runsByProduct[`${norm(canonicalBeerName(beerName))}::${containerKey}`] || [];
+    if (!runs.length) return null;
+    const before = runs.filter((r) => r.date && r.date <= String(date || ""));
+    return (before.length ? before[before.length - 1] : runs[0]).batch;
+  };
 
   const customerByXeroId = {};
   const customerByName = {};
@@ -75,7 +98,10 @@ export function planXeroOrders({ docs, batches, salesMap, itemMappings, customer
           lines.push({ id: `${line.lineId}-${i}`, batchId: a.batch.id, batchName: a.batch.name, batchNumber: a.batch.number || "", containerKey: map.containerKey, containerLabel, qty, fulfilledQty: qty, unitPrice, xeroLineId: line.lineId, xeroItemCode: map.code });
         });
       if (left > 0) {
-        lines.push({ id: `${line.lineId}-x`, batchId: null, batchName: map.beerName, batchNumber: "", containerKey: map.containerKey, containerLabel, qty: left, fulfilledQty: left, unitPrice, xeroLineId: line.lineId, xeroItemCode: map.code, noBatch: true });
+        const g = guessBatch(map.beerName, map.containerKey, doc.date);
+        lines.push(g
+          ? { id: `${line.lineId}-x`, batchId: g.id, batchName: g.name, batchNumber: g.number || "", containerKey: map.containerKey, containerLabel, qty: left, fulfilledQty: left, unitPrice, xeroLineId: line.lineId, xeroItemCode: map.code, batchGuess: true }
+          : { id: `${line.lineId}-x`, batchId: null, batchName: map.beerName, batchNumber: "", containerKey: map.containerKey, containerLabel, qty: left, fulfilledQty: left, unitPrice, xeroLineId: line.lineId, xeroItemCode: map.code, noBatch: true });
       }
     });
     if (!lines.length) return;

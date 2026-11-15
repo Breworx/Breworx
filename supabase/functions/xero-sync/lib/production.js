@@ -642,19 +642,33 @@ export function activeRecipesByFamily(recipes) {
   });
 }
 
+// "Occupied" means something is physically in the tank now. Planned brews
+// that haven't started (future date, or today with nothing done yet) are
+// pencilled-in bookings, not contents — they used to make an empty tank
+// look full (e.g. a December Cold IPA blocking Tank 6 in November).
 export function tankIsOccupied(batches, tankId, excludeBatchId) {
   return batches.some((b) => {
     if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
+    if (isScheduledBatch(b)) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
   });
+}
+
+// The next planned (not yet started) brew booked into a tank, if any — for
+// "next up" notes on otherwise empty tanks.
+export function nextBookedBatch(batches, tankId) {
+  return batches
+    .filter((b) => batchTankIds(b).includes(tankId) && isScheduledBatch(b))
+    .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))[0];
 }
 
 export function occupyingBatch(batches, tankId, excludeBatchId) {
   const candidates = batches.filter((b) => {
     if (!batchTankIds(b).includes(tankId)) return false;
     if (excludeBatchId && b.id === excludeBatchId) return false;
+    if (isScheduledBatch(b)) return false;
     const fullyDone = b.stage === "Packaged" && remainingVolume(b) === 0;
     return !fullyDone;
   });
@@ -665,7 +679,7 @@ export function occupyingBatch(batches, tankId, excludeBatchId) {
   // always win here; only fall back to a scheduled one if nothing has
   // actually started yet. Without this, batch order (not reality) would
   // decide which one showed.
-  return candidates.find((b) => b.startDate <= today()) || candidates[0];
+  return candidates.find((b) => !isScheduledBatch(b)) || candidates[0];
 }
 
 export function aggregatePackagingCounts(batch) {
@@ -711,17 +725,79 @@ export function unitFactor(from, to) {
   return a[1] / b[1];
 }
 
+// Converts an addition (e.g. 400 mL of Super F) into the stock item's own
+// unit (kg) before it's taken out of stock. Mass <-> volume is treated as
+// 1 g per mL — close enough for finings, acids and salts solutions, and far
+// better than the old behaviour of taking 400 kg. Returns { qty, note }:
+// note is set when a mass/volume swap was assumed. Unknown units (ea, pkg)
+// that don't match the item are left as-is with a note.
+export function additionQtyInItemUnit(qty, fromUnit, itemUnit) {
+  const n = Number(qty) || 0;
+  if (!fromUnit || !itemUnit || fromUnit === itemUnit) return { qty: n, note: null };
+  const f = unitFactor(fromUnit, itemUnit);
+  if (f != null) return { qty: Math.round(n * f * 10000) / 10000, note: null };
+  const a = UNIT_TO_BASE[fromUnit];
+  const b = UNIT_TO_BASE[itemUnit];
+  if (a && b) {
+    const base = n * a[1];
+    return { qty: Math.round((base / b[1]) * 10000) / 10000, note: `taken as ${a[0] === "vol" ? "1 mL = 1 g" : "1 g = 1 mL"}` };
+  }
+  return { qty: n, note: `units differ (${fromUnit} vs ${itemUnit}) — check stock` };
+}
+
 // A planned brew stays "scheduled" (movable on the calendar) on its own day
 // until something is actually done to it: ingredients taken, a reading, a
 // brew day logged, an OG or packaging. Before, it counted as started the
 // moment its date arrived, so it couldn't be dragged on the day.
+// A plan whose date has passed without being brewed stays a plan (overdue)
+// rather than quietly turning into a "started" brew sitting in a tank.
 export function isScheduledBatch(b) {
   if (!b || b.stage !== "Brewing") return false;
   const t = today();
   if (b.startDate > t) return true;
-  if (b.startDate !== t) return false;
   const touched =
     (b.ingredients || []).length > 0 || Number(b.ingredientCost) > 0 || (b.readings || []).length > 0 ||
     (b.brewDays || []).length > 0 || !!b.og || packagingEvents(b).length > 0;
   return !touched;
+}
+
+// ─── Days in tank, learned ───────────────────────────────────────────────────
+// How long a beer usually takes from brew day to packaging, from its own
+// past brews: the average of the last 6, leaving out any that are way off
+// the usual (a brew left sitting, say). It updates every time a batch is
+// packaged, so estimates follow what really happens instead of a typed guess.
+export function typicalDays(list) {
+  const xs = (list || []).filter((d) => d > 0 && d < 365);
+  if (!xs.length) return null;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = sorted[Math.floor(sorted.length / 2)];
+  const kept = xs.filter((d) => d >= mid * 0.5 && d <= mid * 1.75);
+  const use = kept.length ? kept : xs;
+  return Math.round(use.reduce((a, b) => a + b, 0) / use.length);
+}
+
+export function learnedTankDays(batches) {
+  const byBeer = {};
+  const all = [];
+  (batches || [])
+    .filter((b) => !b.mergedIntoBatchId && b.startDate)
+    .map((b) => {
+      const first = packagingEvents(b).map((e) => e.date).filter(Boolean).sort()[0];
+      return first ? { b, days: daysBetween(b.startDate, first) } : null;
+    })
+    .filter((x) => x && x.days > 0 && x.days < 365)
+    .sort((x, y) => String(y.b.startDate).localeCompare(String(x.b.startDate)))
+    .forEach(({ b, days }) => {
+      const k = canonicalBeerName(b.name).trim().toLowerCase();
+      (byBeer[k] = byBeer[k] || []).push(days);
+      all.push(days);
+    });
+  const learned = {};
+  Object.entries(byBeer).forEach(([k, list]) => (learned[k] = { days: typicalDays(list.slice(0, 6)), count: Math.min(6, list.length) }));
+  const overall = typicalDays(all.slice(0, 30));
+  const forName = (name) => learned[canonicalBeerName(name || "").trim().toLowerCase()] || null;
+  // Days to use for a batch: its beer's learned average; a typed guess only
+  // when the beer has never been packaged; else the brewery-wide average.
+  const daysFor = (b) => forName(b?.name)?.days || b?.plannedDays || overall || null;
+  return { forName, daysFor, overall };
 }

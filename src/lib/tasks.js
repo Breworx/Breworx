@@ -10,12 +10,17 @@
 // shifted around and never comes back once dealt with.
 import { CONTAINERS, canonicalBeerName, isScheduledBatch, learnedTankDays, packagingEvents, remainingVolume } from "./production";
 import { addDays, daysBetween, today } from "./utils";
+import { reorderForecast } from "./reorder";
+import { exciseDueDate, exciseOpenDate } from "./excise";
+import { workingDaysUntil } from "./workdays";
 
 export const TASK_KINDS = [
   { key: "keg_clean", label: "Keg cleaning", color: "#3E7CB1" },
   { key: "kegging", label: "Kegging", color: "#5C9A3C" },
   { key: "canning", label: "Canning", color: "#C98A2B" },
   { key: "tank_clean", label: "Tank clean (CIP)", color: "#7A6FB0" },
+  { key: "order", label: "Order stock", color: "#B5502F" },
+  { key: "excise", label: "Excise return", color: "#8A6D0B" },
   { key: "other", label: "Other", color: "#9BA88A" },
 ];
 export const taskKind = (k) => TASK_KINDS.find((x) => x.key === k) || null;
@@ -99,7 +104,38 @@ const packLabel = (pack, kinds) =>
     .join(", ");
 
 // The suggestions, before merging with saved tasks.
-export function suggestTasks({ batches, poolLog, horizonDays = 45 }) {
+const fmtDay = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
+const monthName = (period) => new Date(`${period}-01T00:00:00`).toLocaleDateString("en-NZ", { month: "long", year: "numeric" });
+const prevMonth = (iso) => { const [y, m] = iso.split("-").map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`; };
+export const exciseFiled = (exciseReturns, period) => (exciseReturns || []).some((r) => r.period === period && (r.declaredOnTsw || r.filedDate));
+
+// Last month's excise return: on the list from the 1st (when it can be
+// filed) until it's marked declared on TSW, with the working days left.
+export function exciseTaskFor({ exciseReturns, todayStr }) {
+  const t = todayStr || today();
+  const period = prevMonth(t);
+  if (exciseFiled(exciseReturns, period)) return null;
+  const open = exciseOpenDate(period), due = exciseDueDate(period);
+  if (t < open) return null;
+  const left = workingDaysUntil(t, due);
+  const when = t > due ? `was due ${fmtDay(due)} — overdue` : `due ${fmtDay(due)} · ${left} working day${left === 1 ? "" : "s"} left`;
+  return { sourceKey: `excise:${period}`, kind: "excise", dueDate: t, text: `File the ${monthName(period)} excise return`, detail: `On TSW, ${when}. Ticks itself off once it's marked declared in Excise.`, period, due };
+}
+
+// Cans, lids, cartons and labels to order before they run out.
+export function orderTasks({ consumables, batches, packageTypes, salesOrders, todayStr, horizonDays = 45 }) {
+  const t = todayStr || today();
+  const until = addDays(t, horizonDays);
+  return reorderForecast({ consumables, batches, packageTypes, salesOrders, todayStr: t })
+    .filter((f) => f.orderBy && f.orderBy <= until)
+    .map((f) => ({
+      sourceKey: `order:${f.item.id}:${f.runOut.slice(0, 7)}`, kind: "order", dueDate: f.orderBy < t ? t : f.orderBy,
+      text: `Order ${f.item.name}`,
+      detail: `${Math.round(f.qty)} left, using about ${Math.round(f.perMonth)} a month — runs out around ${fmtDay(f.runOut)}, and takes about ${f.lead} days to arrive`,
+    }));
+}
+
+export function suggestTasks({ batches, poolLog, horizonDays = 45, consumables, packageTypes, salesOrders, exciseReturns }) {
   const tankDays = learnedTankDays(batches);
   const mix = learnedPackMix(batches);
   const lead = learnedCleanLead(poolLog, batches);
@@ -134,6 +170,8 @@ export function suggestTasks({ batches, poolLog, horizonDays = 45 }) {
         out.push({ sourceKey: `canning:${b.id}`, kind: "canning", batchId: b.id, dueDate: date, text: `Can ${who}${planned}`, detail: `About ${packLabel(pack, ["cans330"])} (${learned})`, cans: pack.cans330 });
       }
     });
+  if (consumables) out.push(...orderTasks({ consumables, batches, packageTypes, salesOrders, todayStr: t, horizonDays }));
+  if (exciseReturns) { const ex = exciseTaskFor({ exciseReturns, todayStr: t }); if (ex) out.push(ex); }
   return out;
 }
 

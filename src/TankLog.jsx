@@ -9,7 +9,8 @@ import { AuditSharesModal } from "./components/auditor";
 import { BatchDetail } from "./components/batchDetail";
 import { AddBatchModal, AddBrewDayModal, AddSplitTankIngredientModal, DiacetylTestModal, DiscardRemainingModal, EditBrewDayFieldModal, LogReadingModal, PackagingModal, StartPackagingModal, sisterTankBatches, splitPackagingRun } from "./components/batches";
 import { BatchCard, InventoryItemCard } from "./components/cards";
-import { suggestTasks, mergeTasks, kegNeedsBySize, kegKeyForSize } from "./lib/tasks";
+import { ReorderPanel } from "./components/reorder";
+import { suggestTasks, mergeTasks, kegNeedsBySize, kegKeyForSize, exciseFiled } from "./lib/tasks";
 import { KegCleanModal, KegPoolsPanel, TaskDayModal, TasksPanel } from "./components/tasks";
 import { CiderView } from "./components/cider";
 import { CustomerAccountFlow, CustomerDetail, CustomerFormModal, CustomerPortalPage, CustomersView } from "./components/customers";
@@ -743,8 +744,15 @@ function TankLogApp() {
     return () => { cancelled = true; };
   }, [profile?.companyId]);
 
-  const taskSuggestions = useMemo(() => suggestTasks({ batches, poolLog: kegPoolLog }), [batches, kegPoolLog]);
-  const tasks = useMemo(() => mergeTasks(reminders, taskSuggestions), [reminders, taskSuggestions]);
+  const taskSuggestions = useMemo(
+    () => suggestTasks({ batches, poolLog: kegPoolLog, consumables, packageTypes, salesOrders, exciseReturns }),
+    [batches, kegPoolLog, consumables, packageTypes, salesOrders, exciseReturns]
+  );
+  // An excise task goes away by itself once that month is declared on TSW.
+  const tasks = useMemo(
+    () => mergeTasks(reminders, taskSuggestions).filter((t) => !(t.kind === "excise" && t.sourceKey && !t.done && exciseFiled(exciseReturns, t.sourceKey.split(":")[1]))),
+    [reminders, taskSuggestions, exciseReturns]
+  );
   const kegNeeds = useMemo(() => kegNeedsBySize(tasks, kegPools), [tasks, kegPools]);
 
   const saveTaskRow = async (fields) => {
@@ -3510,6 +3518,13 @@ function TankLogApp() {
     setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, supplierId } : it)));
   };
 
+  const setConsumableLeadDays = async (id, leadDays) => {
+    const { error } = await supabase.from("consumables").update({ lead_days: leadDays }).eq("id", id);
+    if (error) { showToast("error", error.message); return; }
+    setConsumables((prev) => prev.map((it) => (it.id === id ? { ...it, leadDays } : it)));
+    showToast("success", `Lead time set to ${leadDays} days.`);
+  };
+
   const updateConsumableCost = async (id, costPerUnit) => {
     const { error } = await supabase.from("consumables").update({ cost_per_unit: costPerUnit }).eq("id", id);
     if (error) { showToast("error", "Something didn't save — check your connection and try again."); return; }
@@ -5748,6 +5763,9 @@ function TankLogApp() {
                         Based on what's still in stock at its most recent cost — a rough figure, not a formal stocktake valuation.
                       </div>
                     </div>
+                  )}
+                  {!consumableQuery.trim() && (
+                    <ReorderPanel consumables={consumables} batches={batches} packageTypes={packageTypes} salesOrders={salesOrders} onSetLeadDays={setConsumableLeadDays} />
                   )}
                   <button
                     onClick={() => setShowBulkOpeningStockConsumables(true)}
