@@ -770,6 +770,8 @@ export function rowToConsumable(row) {
     supplierId: row.supplier_id || null,
     costPerUnit: row.cost_per_unit ?? null,
     matchNames: row.match_names || [],
+    leadDays: row.lead_days ?? null,
+    salesCodes: row.sales_codes || [],
   };
 }
 
@@ -788,6 +790,8 @@ export function consumableToRow(item, userId, companyId) {
     history: item.history || [],
     cost_per_unit: item.costPerUnit ?? null,
     match_names: item.matchNames && item.matchNames.length ? item.matchNames : null,
+    ...(item.leadDays !== undefined ? { lead_days: item.leadDays } : {}),
+    ...(item.salesCodes !== undefined ? { sales_codes: item.salesCodes && item.salesCodes.length ? item.salesCodes : null } : {}),
   };
 }
 

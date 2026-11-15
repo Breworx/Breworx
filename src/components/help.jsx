@@ -270,6 +270,16 @@ export const HELP_ARTICLES = [
   },
   {
     category: "Tasks & kegs",
+    question: "Why is there a task to order labels, cans or cartons?",
+    answer: "Brewpoint works out how fast each one is being used: cans, lids and cartons from your canning runs, and labels from cans sold under that label's Xero item codes (so Gents and house labels on the same beer are counted apart). It then works out when you'll run out, and puts an \"Order …\" task on the day you need to order, allowing for how long it takes to arrive plus a week spare. See every run-out date, or change how long something takes to arrive, in the box at the top of Consumables.",
+  },
+  {
+    category: "Tasks & kegs",
+    question: "When does the excise return task show up?",
+    answer: "On the 1st of each month, for last month's return. It stays on your list every day, showing how many working days you have left (it's due 15 working days after the 1st, skipping weekends and public holidays), and goes away by itself once you mark the month as declared on TSW in Excise.",
+  },
+  {
+    category: "Tasks & kegs",
     question: "Where do the suggested (dashed) tasks come from?",
     answer: "Brewpoint works them out from what's in the tanks: when each beer is usually ready (from how long it's taken before), how you usually package it (kegs and cans), and how many days before packaging you usually clean kegs. Tick one, move it or tap ✕ if it's not needed, and it's saved. The more you brew, package and clean, the better the guesses get.",
   },

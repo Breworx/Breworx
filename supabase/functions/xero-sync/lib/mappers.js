@@ -148,6 +148,9 @@ export function rowToInventoryItem(row) {
     history: row.history || [],
     supplierId: row.supplier_id || null,
     juiceSg: row.juice_sg != null ? Number(row.juice_sg) : null,
+    packSize: row.pack_size != null ? Number(row.pack_size) : null,
+    packLabel: row.pack_label || null,
+    supplierProduct: row.supplier_product || null,
   };
 }
 
@@ -272,6 +275,8 @@ export function rowToProfile(row) {
     role: row.role,
     createdAt: row.created_at || null,
     toursSeen: row.tours_seen || [],
+    lastSeenAt: row.last_seen_at || null,
+    joinedAt: row.joined_at || null,
   };
 }
 
@@ -537,6 +542,7 @@ export function rowToSupplier(row) {
     notes: row.notes,
     approved: row.approved || false,
     approvedNotes: row.approved_notes || "",
+    orderUrl: row.order_url || null,
     createdAt: row.created_at || null,
   };
 }
@@ -721,6 +727,7 @@ export function supplierToRow(supplier, companyId) {
     notes: supplier.notes || null,
     approved: supplier.approved ?? false,
     approved_notes: supplier.approvedNotes || null,
+    order_url: supplier.orderUrl || null,
   };
 }
 
@@ -762,6 +769,9 @@ export function rowToConsumable(row) {
     history: row.history || [],
     supplierId: row.supplier_id || null,
     costPerUnit: row.cost_per_unit ?? null,
+    matchNames: row.match_names || [],
+    leadDays: row.lead_days ?? null,
+    salesCodes: row.sales_codes || [],
   };
 }
 
@@ -779,6 +789,9 @@ export function consumableToRow(item, userId, companyId) {
     lots: item.lots || [],
     history: item.history || [],
     cost_per_unit: item.costPerUnit ?? null,
+    match_names: item.matchNames && item.matchNames.length ? item.matchNames : null,
+    ...(item.leadDays !== undefined ? { lead_days: item.leadDays } : {}),
+    ...(item.salesCodes !== undefined ? { sales_codes: item.salesCodes && item.salesCodes.length ? item.salesCodes : null } : {}),
   };
 }
 
@@ -812,6 +825,12 @@ export function rowToReminder(row) {
     userName: row.user_name,
     doneBy: row.done_by || null,
     createdAt: row.created_at || null,
+    kind: row.kind || null,
+    qty: row.qty != null ? Number(row.qty) : null,
+    batchId: row.batch_id || null,
+    sourceKey: row.source_key || null,
+    dismissed: !!row.dismissed,
+    doneAt: row.done_at || null,
   };
 }
 
@@ -825,7 +844,21 @@ export function reminderToRow(reminder, userId, userName, companyId) {
     due_date: reminder.dueDate,
     done: !!reminder.done,
     done_by: reminder.doneBy || null,
+    kind: reminder.kind || null,
+    qty: reminder.qty ?? null,
+    batch_id: reminder.batchId || null,
+    source_key: reminder.sourceKey || null,
+    dismissed: !!reminder.dismissed,
+    done_at: reminder.done ? reminder.doneAt || new Date().toISOString() : null,
   };
+}
+
+export function rowToKegPool(row) {
+  return { id: row.id, name: row.name, sizeL: Number(row.size_l), owner: row.owner || "kegstar", total: row.total || 0, dirty: row.dirty || 0, clean: row.clean || 0, sort: row.sort || 0 };
+}
+
+export function rowToKegPoolLog(row) {
+  return { id: row.id, poolId: row.pool_id, kind: row.kind, qty: row.qty, note: row.note || "", batchId: row.batch_id || null, userName: row.user_name || "", happenedOn: row.happened_on, createdAt: row.created_at };
 }
 
 export function rowToActivity(row) {

@@ -1165,7 +1165,7 @@ export function SalesOrderDetail({ order, customer, allocation, onBack, onAdvanc
               <span>
                 {l.mixedPackTypeId ? l.mixedPackTypeName : `${l.batchName} — ${l.containerLabel}`}
                 {l.batchNumber ? <span style={{ color: "#9BA88A" }}> · batch #{l.batchNumber}</span> : null}
-                {fromXero && l.noBatch ? <span style={{ color: "#B5502F" }}> · batch not recorded</span> : null}
+                {fromXero && l.noBatch ? <span style={{ color: "#B5502F" }}> · batch not recorded</span> : fromXero && l.batchGuess ? <span style={{ color: "#8A6D0B" }}> · batch guessed (latest packaged before the sale)</span> : null}
               </span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#5C6B54" }}>
                 {l.qty} × ${Number(l.unitPrice).toFixed(2)} = ${(l.qty * l.unitPrice).toFixed(2)}
