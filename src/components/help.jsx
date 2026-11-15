@@ -264,14 +264,34 @@ export const HELP_ARTICLES = [
     answer: "Yes. Settings → Modules → \"Sales & Orders.\" Switching it off hides Customers, Orders, and Stock from the sidebar entirely.",
   },
   {
-    category: "Reminders",
-    question: "How do I add a reminder or task?",
-    answer: "Tap any day on the Reminders row above your tanks on Production, or use the \"+ Add\" button under Today on Home for something due today.",
+    category: "Tasks & kegs",
+    question: "How do I add a task?",
+    answer: "On Production, tap \"+ Add task\" in the Tasks box, or tap any day on the Tasks row above your tanks. Pick what kind it is (keg cleaning, kegging, canning, tank clean or other). For something due today you can also use \"+ Add\" under Today on Home.",
   },
   {
-    category: "Reminders",
-    question: "How do I tell whose reminder is whose?",
-    answer: "Each person gets their own color, consistent every time — no need to open anything to see who added what. Checking one off also records who completed it.",
+    category: "Tasks & kegs",
+    question: "Where do the suggested (dashed) tasks come from?",
+    answer: "Brewpoint works them out from what's in the tanks: when each beer is usually ready (from how long it's taken before), how you usually package it (kegs and cans), and how many days before packaging you usually clean kegs. Tick one, move it or tap ✕ if it's not needed, and it's saved. The more you brew, package and clean, the better the guesses get.",
+  },
+  {
+    category: "Tasks & kegs",
+    question: "How do I move a task?",
+    answer: "Tap Move on the task and pick a new date (or −1 day, +1, +2). Moving a kegging day moves its keg cleaning and canning with it.",
+  },
+  {
+    category: "Tasks & kegs",
+    question: "How does the keg pool work?",
+    answer: "Sales → Kegs → Set up your kegs. Add each kind (e.g. Kegstar 50L) with how many you have, and how many are dirty and clean right now. \"Kegs in to clean\" adds to the dirty pile (a new Kegstar delivery or your own kegs coming back). \"Cleaned some\" moves them to the clean pile, and ticking off a keg-cleaning task asks how many you did. Packaging into kegs takes them off the clean pile by itself. Full kegs come from your finished stock, and the rest are out (at venues or back with Kegstar).",
+  },
+  {
+    category: "Tasks & kegs",
+    question: "How does it warn me about kegs?",
+    answer: "The Tasks box on Production and the Kegs page show how many kegs of each size the next two weeks of kegging need, against your clean pile, and how many more to clean.",
+  },
+  {
+    category: "Tasks & kegs",
+    question: "How do I tell whose task is whose?",
+    answer: "Each kind of task has its own colour on the calendar, and ticking one off records who did it.",
   },
   {
     category: "Account",
