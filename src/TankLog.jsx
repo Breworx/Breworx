@@ -4120,8 +4120,14 @@ function TankLogApp() {
       for (const item of packageType.items) {
         let consumableId = item.consumableId;
         if (item.matchLabelByRecipeName) {
-          const beerName = (batch.recipeName || batch.name || "").trim().toLowerCase();
-          const match = consumables.find((co) => co.category === "Label" && co.name.trim().toLowerCase() === beerName);
+          // A label matches the batch by its name, or by any of the beer
+          // names it's set to be used for (e.g. "pilsner" → Gadabout label).
+          const names = [batch.name, batch.recipeName].filter(Boolean).map((n) => n.trim().toLowerCase());
+          const labels = consumables.filter((co) => co.category === "Label");
+          const match =
+            labels.find((co) => names.includes(co.name.trim().toLowerCase())) ||
+            labels.find((co) => (co.matchNames || []).some((m) => names.includes(String(m).trim().toLowerCase()))) ||
+            labels.find((co) => (co.matchNames || []).some((m) => names.some((n) => n.includes(String(m).trim().toLowerCase()))));
           if (!match) { missingLabel = true; continue; }
           consumableId = match.id;
         }
