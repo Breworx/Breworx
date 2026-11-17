@@ -100,6 +100,101 @@ async function listSales(since, accessToken, tenantId) {
   return { docs };
 }
 
+
+// ── Branded codes share stock with the house beer ──
+// Craftys Hazy (CHAZY) is Base Camp (BC50) in a different name, but Xero
+// counts each item code separately and won't approve a draft for a code
+// it thinks it has none of. So before a draft is approved, move what's
+// needed across in Xero from a code for the same beer that has spare:
+// a $0 supplier credit note takes it off the house code and a $0 bill puts
+// it on the branded one (Xero's own way to adjust stock), both to the
+// "Inventory Adjustments" contact with an offset line on the adjustment
+// account. Codes only count as the same beer when they're mapped to the
+// same product and container with the same pack size.
+async function xeroPut(endpoint, body, accessToken, tenantId) {
+  const res = await fetch(`https://api.xero.com/api.xro/2.0/${endpoint}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Xero-tenant-id": tenantId, Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+export function planStockMoves({ docs, salesMap, items }) {
+  const demand = {};
+  const forDocs = {};
+  (docs || []).forEach((d) => {
+    if (d.docType !== "invoice" || !(d.status === "DRAFT" || d.status === "SUBMITTED")) return;
+    d.lines.forEach((l) => {
+      const code = String(l.itemCode);
+      demand[code] = (demand[code] || 0) + Math.abs(Number(l.qty) || 0);
+      (forDocs[code] = forDocs[code] || new Set()).add(d.number || "draft");
+    });
+  });
+  const groups = {};
+  (salesMap || []).forEach((m) => {
+    if (m.ignore || !m.product_key) return;
+    const key = `${m.product_key}|${Number(m.units_per_xero_unit) || 1}`;
+    (groups[key] = groups[key] || []).push(String(m.xero_item_code));
+  });
+  const stock = {};
+  (items || []).forEach((i) => { if (i.IsTrackedAsInventory) stock[String(i.Code)] = Number(i.QuantityOnHand) || 0; });
+  const moves = [];
+  Object.values(groups).forEach((codes) => {
+    const tracked = [...new Set(codes)].filter((c) => c in stock);
+    if (tracked.length < 2) return;
+    const qoh = Object.fromEntries(tracked.map((c) => [c, stock[c]]));
+    tracked.forEach((code) => {
+      let short = (demand[code] || 0) - qoh[code];
+      if (short <= 0) return;
+      tracked
+        .filter((c) => c !== code)
+        .map((c) => ({ c, spare: qoh[c] - (demand[c] || 0) }))
+        .filter((x) => x.spare > 0)
+        .sort((a, b) => b.spare - a.spare)
+        .forEach(({ c, spare }) => {
+          if (short <= 0) return;
+          const qty = Math.min(short, spare);
+          moves.push({ from: c, to: code, qty, refs: [...(forDocs[code] || [])] });
+          qoh[c] -= qty; qoh[code] += qty; short -= qty;
+        });
+    });
+  });
+  return moves;
+}
+
+async function balanceBrandedStock(supabase, companyId, settings, docs, salesMap, xc) {
+  const hasDrafts = (docs || []).some((d) => d.docType === "invoice" && (d.status === "DRAFT" || d.status === "SUBMITTED"));
+  if (!hasDrafts || !settings.adjustment_account_code) return [];
+  const itemsRes = await xeroGet("Items", xc.accessToken, xc.tenantId);
+  if (!itemsRes.ok) return [];
+  const moves = planStockMoves({ docs, salesMap, items: itemsRes.data.Items || [] });
+  if (!moves.length) return [];
+  const where = encodeURIComponent('Name=="Inventory Adjustments"');
+  const contactRes = await xeroGet(`Contacts?where=${where}`, xc.accessToken, xc.tenantId);
+  const contactId = contactRes.ok && contactRes.data.Contacts && contactRes.data.Contacts[0] ? contactRes.data.Contacts[0].ContactID : null;
+  if (!contactId) return [];
+  const today = todayNZ();
+  const done = [];
+  for (const mv of moves) {
+    const ref = `Brewpoint stock move: ${mv.qty} x ${mv.from} to ${mv.to}${mv.refs.length ? ` for ${mv.refs.join(", ")}` : ""}`;
+    const doc = (type, code) => ({
+      Type: type, Contact: { ContactID: contactId }, Date: today, DueDate: today, Status: "AUTHORISED", LineAmountTypes: "NoTax", Reference: ref,
+      LineItems: [
+        { ItemCode: code, Quantity: mv.qty, UnitAmount: 0, Description: ref },
+        { Description: "Inventory adjustment offset", Quantity: 1, UnitAmount: 0, AccountCode: settings.adjustment_account_code },
+      ],
+    });
+    const out = await xeroPut("CreditNotes", { CreditNotes: [doc("ACCPAYCREDIT", mv.from)] }, xc.accessToken, xc.tenantId);
+    if (!out.ok) { console.error("stock move out failed", JSON.stringify(out.data).slice(0, 500)); continue; }
+    const inn = await xeroPut("Invoices", { Invoices: [doc("ACCPAY", mv.to)] }, xc.accessToken, xc.tenantId);
+    if (!inn.ok) { console.error("stock move in failed", JSON.stringify(inn.data).slice(0, 500)); continue; }
+    done.push(mv);
+  }
+  return done;
+}
+
 const all = async (q) => {
   const { data, error } = await q;
   if (error) throw new Error(error.message);
@@ -188,6 +283,10 @@ async function syncCompany(supabase, conn) {
     const gone = salesOrders.filter((o) => o.source === "xero" && removeIds.has(o.xeroDocId)).map((o) => o.id);
     if (gone.length) await supabase.from("sales_orders").delete().in("id", gone);
 
+    // Keep branded codes (Craftys Hazy etc.) stocked from the house beer in Xero.
+    let moved = [];
+    try { moved = await balanceBrandedStock(supabase, companyId, settings, docs, salesMap, xc); } catch (e) { console.error("stock moves", e); }
+
     const now = new Date().toISOString();
     await supabase.from("xero_settings").update({ last_sales_sync: now }).eq("company_id", companyId);
     const s = plan.summary;
@@ -198,10 +297,11 @@ async function syncCompany(supabase, conn) {
     if (s.reversed > 0) parts.push(`gave back ${s.reversed} voided`);
     if (newDrafts > 0) parts.push(`${newDrafts} new draft order${newDrafts === 1 ? "" : "s"} holding stock`);
     if (gone.length > 0) parts.push(`${gone.length} order${gone.length === 1 ? "" : "s"} removed (deleted in Xero)`);
+    moved.forEach((mv) => parts.push(`moved ${mv.qty} ${mv.from} to ${mv.to} in Xero${mv.refs.length ? ` for ${mv.refs.join(", ")}` : ""}`));
     if (parts.length && ownerId) {
       await supabase.from("activity_log").insert({ id: uid(), user_id: ownerId, company_id: companyId, action: "synced", entity_type: "stock", entity_name: "Xero sales", description: `Xero check: ${parts.join(", ")}`, user_name: "Xero (automatic)" });
     }
-    return { companyId, applied: s.applied, reversed: s.reversed, short: s.short, unmapped: s.unmapped, units: s.units, orders: op.orders.length, removed: gone.length, newDrafts, summary: parts.join(", ") };
+    return { companyId, applied: s.applied, reversed: s.reversed, short: s.short, unmapped: s.unmapped, units: s.units, orders: op.orders.length, removed: gone.length, newDrafts, moved, summary: parts.join(", ") };
   } finally {
     await supabase.rpc("release_xero_sync_lock", { p_company: companyId });
   }
