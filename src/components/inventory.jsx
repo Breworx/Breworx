@@ -143,6 +143,57 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
       return { ...prev, [itemId]: list };
     });
   const addLot = (itemId) => setLotEdits((prev) => ({ ...prev, [itemId]: [...(prev[itemId] || []), { id: `new-${Math.random().toString(36).slice(2, 8)}`, lotNumber: "", origNumber: "", count: "", orig: 0, isNew: true }] }));
+  // Count as you go: add each bag/box/pack as you come across it, in any
+  // order. An item's count becomes the total of what's been added to it.
+  const [tally, setTally] = useState({}); // itemId -> [amounts]
+  const [recent, setRecent] = useState([]); // [{ itemId, amount }]
+  const [qaQuery, setQaQuery] = useState("");
+  const [qaItemId, setQaItemId] = useState(null);
+  const [qaAmount, setQaAmount] = useState("");
+  const lastAmount = {};
+  recent.forEach((r) => { if (lastAmount[r.itemId] == null) lastAmount[r.itemId] = r.amount; });
+  const tallyTotal = (list) => Math.round(list.reduce((t, n) => t + n, 0) * 1000) / 1000;
+  // "25", "3x25" or "3*25" (three 25 kg bags).
+  const parseAmount = (s) => {
+    const m = String(s).trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*[x*×]\s*(\d+(?:\.\d+)?)$/);
+    if (m) return Array(Math.min(500, Math.round(Number(m[1])))).fill(Number(m[2]));
+    const n = Number(s);
+    return Number.isFinite(n) && n > 0 ? [n] : [];
+  };
+  const addToTally = (itemId, amounts) => {
+    if (!amounts.length) return;
+    setTally((prev) => {
+      const list = [...(prev[itemId] || []), ...amounts];
+      setCounts((c) => ({ ...c, [itemId]: String(tallyTotal(list)) }));
+      return { ...prev, [itemId]: list };
+    });
+    setRecent((prev) => [...amounts.map((amount) => ({ itemId, amount })).reverse(), ...prev].slice(0, 30));
+  };
+  const undoLast = (itemId) => {
+    const it = inventory.find((x) => x.id === itemId);
+    setTally((prev) => {
+      const list = (prev[itemId] || []).slice(0, -1);
+      const next = { ...prev };
+      if (list.length) next[itemId] = list; else delete next[itemId];
+      setCounts((c) => ({ ...c, [itemId]: list.length ? String(tallyTotal(list)) : String(it ? it.qty : "") }));
+      return next;
+    });
+    setRecent((prev) => { const i = prev.findIndex((r) => r.itemId === itemId); return i === -1 ? prev : [...prev.slice(0, i), ...prev.slice(i + 1)]; });
+  };
+  const qaMatches = useMemo(() => {
+    const q = qaQuery.trim().toLowerCase();
+    if (!q || qaItemId) return [];
+    return inventory.filter((it) => !it.casePack && it.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [qaQuery, qaItemId, inventory]);
+  const qaItem = inventory.find((x) => x.id === qaItemId) || null;
+  const pickQa = (it) => { document.getElementById("stocktake-quickadd")?.scrollIntoView({ behavior: "smooth", block: "start" }); setQaItemId(it.id); setQaQuery(it.name); setQaAmount(lastAmount[it.id] != null ? String(lastAmount[it.id]) : ""); };
+  const submitQa = () => {
+    if (!qaItem) return;
+    const amounts = parseAmount(qaAmount);
+    if (!amounts.length) return;
+    addToTally(qaItem.id, amounts);
+    setQaItemId(null); setQaQuery(""); setQaAmount("");
+  };
   // Grouped by category (Grain, Hops, Yeast, Juice, Other, then any others),
   // A–Z within each, so you can count one area of the brewery at a time.
   const [closed, setClosed] = useState({});
@@ -188,6 +239,41 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
         <div style={{ color: "#5C6B54", fontSize: 13, lineHeight: 1.5 }}>
           Walk the brewery and enter what you actually count for each {itemLabel}. Anything left unchanged is
           assumed correct as-is.
+        </div>
+        <div id="stocktake-quickadd" style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 6, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, color: "#2A3324" }}>Count as you go</div>
+          <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
+            Add each bag or box as you find it, in any order. Type 25 for one bag, or 3x25 for three. Each {itemLabel}'s count becomes the total you've added.
+          </div>
+          <div style={{ position: "relative" }}>
+            <input value={qaQuery} onChange={(e) => { setQaQuery(e.target.value); setQaItemId(null); }} placeholder={`Find ${itemLabel}…`} style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }} />
+            {qaMatches.length > 0 && (
+              <div style={{ position: "absolute", left: 0, right: 0, top: "100%", zIndex: 5, background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
+                {qaMatches.map((it) => (
+                  <button key={it.id} type="button" onClick={() => pickQa(it)} style={{ display: "flex", justifyContent: "space-between", width: "100%", background: "none", border: "none", borderBottom: "1px solid #EEF0E2", padding: "9px 10px", fontSize: 13.5, color: "#2A3324", cursor: "pointer", textAlign: "left" }}>
+                    <span>{it.name}</span>
+                    {tally[it.id] && <span style={{ color: "#5C9A3C", fontSize: 12 }}>{tallyTotal(tally[it.id])} {it.unit} so far</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {qaItem && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input autoFocus type="text" inputMode="decimal" value={qaAmount} onChange={(e) => setQaAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitQa()} placeholder="e.g. 25 or 3x25" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }} />
+              <span style={{ color: "#5C6B54", fontSize: 12 }}>{qaItem.unit}</span>
+              <button type="button" onClick={submitQa} disabled={!parseAmount(qaAmount).length} style={{ background: "#5C9A3C", border: "none", borderRadius: 4, padding: "9px 14px", color: "#16191A", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: parseAmount(qaAmount).length ? 1 : 0.5 }}>Add</button>
+            </div>
+          )}
+          {recent.length > 0 && (
+            <div style={{ fontSize: 12, color: "#5C6B54", display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ color: "#9BA88A" }}>Just added</span>
+              {recent.slice(0, 4).map((r, i) => {
+                const it = inventory.find((x) => x.id === r.itemId);
+                return it ? <span key={i}>+{r.amount} {it.unit} {it.name} <span style={{ color: "#9BA88A" }}>(now {tallyTotal(tally[it.id] || [])} {it.unit})</span></span> : null;
+              })}
+            </div>
+          )}
         </div>
         {groups.length > 1 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -242,7 +328,7 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
                     type="number"
                     step="0.01"
                     value={counted}
-                    onChange={(e) => updateCount(it.id, e.target.value)}
+                    onChange={(e) => { updateCount(it.id, e.target.value); setTally((p) => { if (!p[it.id]) return p; const n = { ...p }; delete n[it.id]; return n; }); }}
                     style={{
                       flex: 1,
                       boxSizing: "border-box",
@@ -263,6 +349,23 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
                     </span>
                   )}
                 </div>
+                )}
+                {!it.casePack && !lotEdits[it.id] && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap", fontSize: 12 }}>
+                    {tally[it.id] ? (
+                      <>
+                        <span style={{ color: "#5C6B54", fontFamily: "'JetBrains Mono', monospace" }}>
+                          {tally[it.id].length > 8 ? `${tally[it.id].length} added` : tally[it.id].join(" + ")} = {tallyTotal(tally[it.id])} {it.unit}
+                        </span>
+                        {lastAmount[it.id] != null && (
+                          <button type="button" onClick={() => addToTally(it.id, [lastAmount[it.id]])} style={{ background: "none", border: "1px solid #5C9A3C", borderRadius: 999, padding: "2px 9px", color: "#5C9A3C", fontSize: 12, cursor: "pointer" }}>+{lastAmount[it.id]}</button>
+                        )}
+                        <button type="button" onClick={() => undoLast(it.id)} style={{ background: "none", border: "none", padding: 0, color: "#9BA88A", fontSize: 12, cursor: "pointer" }}>Undo last</button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => pickQa(it)} style={{ background: "none", border: "none", padding: 0, color: "#5C9A3C", fontSize: 12, cursor: "pointer" }}>+ Add a bag/box as you find it</button>
+                    )}
+                  </div>
                 )}
                 {withLots && !it.casePack && (
                   lotEdits[it.id] ? (
