@@ -153,12 +153,23 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
   const lastAmount = {};
   recent.forEach((r) => { if (lastAmount[r.itemId] == null) lastAmount[r.itemId] = r.amount; });
   const tallyTotal = (list) => Math.round(list.reduce((t, n) => t + n, 0) * 1000) / 1000;
-  // "25", "3x25" or "3*25" (three 25 kg bags).
-  const parseAmount = (s) => {
-    const m = String(s).trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*[x*×]\s*(\d+(?:\.\d+)?)$/);
-    if (m) return Array(Math.min(500, Math.round(Number(m[1])))).fill(Number(m[2]));
-    const n = Number(s);
-    return Number.isFinite(n) && n > 0 ? [n] : [];
+  // "25", "12kg", "500g", "3x25" or "3 x 25kg" (three 25 kg bags). A unit
+  // typed in is converted to the item's own unit (500g on a kg item = 0.5).
+  const parseAmount = (s, itemUnit) => {
+    const m = String(s).trim().toLowerCase().replace(",", ".").match(/^(?:(\d+(?:\.\d+)?)\s*[x*×]\s*)?(\d+(?:\.\d+)?)\s*(kg|g|l|ml)?$/);
+    if (!m) return [];
+    const each = Number(m[2]);
+    if (!(each > 0)) return [];
+    let f = 1;
+    if (m[3]) {
+      const typed = m[3] === "l" ? "L" : m[3] === "ml" ? "mL" : m[3];
+      const conv = unitFactor(typed, itemUnit === "l" ? "L" : itemUnit === "ml" ? "mL" : itemUnit);
+      if (conv == null) return [];
+      f = conv;
+    }
+    const n = Math.round(each * f * 1000) / 1000;
+    const times = m[1] ? Math.min(500, Math.round(Number(m[1]))) : 1;
+    return times > 0 ? Array(times).fill(n) : [];
   };
   const addToTally = (itemId, amounts) => {
     if (!amounts.length) return;
@@ -189,7 +200,7 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
   const pickQa = (it) => { document.getElementById("stocktake-quickadd")?.scrollIntoView({ behavior: "smooth", block: "start" }); setQaItemId(it.id); setQaQuery(it.name); setQaAmount(lastAmount[it.id] != null ? String(lastAmount[it.id]) : ""); };
   const submitQa = () => {
     if (!qaItem) return;
-    const amounts = parseAmount(qaAmount);
+    const amounts = parseAmount(qaAmount, qaItem.unit);
     if (!amounts.length) return;
     addToTally(qaItem.id, amounts);
     setQaItemId(null); setQaQuery(""); setQaAmount("");
@@ -243,7 +254,7 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
         <div id="stocktake-quickadd" style={{ background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 6, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 14, color: "#2A3324" }}>Count as you go</div>
           <div style={{ fontSize: 12, color: "#5C6B54", lineHeight: 1.45 }}>
-            Add each bag or box as you find it, in any order. Type 25 for one bag, or 3x25 for three. Each {itemLabel}'s count becomes the total you've added.
+            Add each bag or box as you find it, in any order. Type 25 for one bag, 12kg or 500g for a part bag, or 3x25 for three. Each {itemLabel}'s count becomes the total you've added.
           </div>
           <div style={{ position: "relative" }}>
             <input value={qaQuery} onChange={(e) => { setQaQuery(e.target.value); setQaItemId(null); }} placeholder={`Find ${itemLabel}…`} style={{ width: "100%", boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324" }} />
@@ -260,9 +271,9 @@ export function StockTakeModal({ inventory, onClose, onComplete, itemLabel = "in
           </div>
           {qaItem && (
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input autoFocus type="text" inputMode="decimal" value={qaAmount} onChange={(e) => setQaAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitQa()} placeholder="e.g. 25 or 3x25" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }} />
+              <input autoFocus type="text" inputMode="decimal" value={qaAmount} onChange={(e) => setQaAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitQa()} placeholder="e.g. 25, 12kg or 3x25" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: "#F5F1E4", border: "1px solid #DDE0C8", borderRadius: 4, padding: "9px 10px", fontSize: 14, color: "#2A3324", fontFamily: "'JetBrains Mono', monospace" }} />
               <span style={{ color: "#5C6B54", fontSize: 12 }}>{qaItem.unit}</span>
-              <button type="button" onClick={submitQa} disabled={!parseAmount(qaAmount).length} style={{ background: "#5C9A3C", border: "none", borderRadius: 4, padding: "9px 14px", color: "#16191A", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: parseAmount(qaAmount).length ? 1 : 0.5 }}>Add</button>
+              <button type="button" onClick={submitQa} disabled={!parseAmount(qaAmount, qaItem.unit).length} style={{ background: "#5C9A3C", border: "none", borderRadius: 4, padding: "9px 14px", color: "#16191A", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: parseAmount(qaAmount, qaItem.unit).length ? 1 : 0.5 }}>Add</button>
             </div>
           )}
           {recent.length > 0 && (
