@@ -5578,6 +5578,11 @@ function TankLogApp() {
                       </div>
                     </div>
                   )}
+                  {!isSales && ingPlan && (
+                    <button type="button" onClick={() => setShowOrderList(true)} style={{ width: "100%", marginBottom: 8, background: ingPlan.toOrder.length ? "#5C9A3C" : "#EBE8D6", border: ingPlan.toOrder.length ? "none" : "1px solid #C9D1AC", borderRadius: 5, padding: "10px", color: ingPlan.toOrder.length ? "#16191A" : "#2A3324", fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
+                      {ingPlan.toOrder.length ? `Order list: ${ingPlan.toOrder.length} ingredient${ingPlan.toOrder.length === 1 ? "" : "s"} to order` : "Order list: you're stocked for the order period"}
+                    </button>
+                  )}
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <button
                       data-tour="page-inventory-stocktake"
