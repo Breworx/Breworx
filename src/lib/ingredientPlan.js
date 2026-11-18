@@ -53,20 +53,33 @@ export function ingredientPlan({ batches, recipes, inventory, suggestions = [], 
       if (row.left < 0) (perBrew[br.id] = perBrew[br.id] || []).push({ name: row.name, short: round(Math.min(qty, -row.left)), unit });
     });
   });
+  // Already on order (Draft or Sent purchase orders) counts towards what you
+  // have, so making the POs from this list doesn't order the same thing twice.
+  const openPOs = (purchaseOrders || []).filter((po) => po.status === "Draft" || po.status === "Sent");
   const list = Object.values(items).map((r) => {
+    let onOrder = 0;
+    const onOrderPOs = [];
+    openPOs.forEach((po) => (po.lines || []).forEach((l) => {
+      if (!sameItemName(l.name, r.name)) return;
+      const f = unitFactor(l.unit, r.unit);
+      const q = (Number(l.qty) || 0) * (f == null ? 1 : f);
+      if (q > 0) { onOrder += q; if (!onOrderPOs.includes(po.poNumber)) onOrderPOs.push(po.poNumber); }
+    }));
+    onOrder = round(onOrder);
+    const have = r.onHand + onOrder;
     const withBuffer = r.needed * (1 + (Number(bufferPct) || 0) / 100);
-    let shortfall = r.needed > r.onHand ? round(Math.max(0, withBuffer - r.onHand)) : 0;
+    let shortfall = r.needed > have ? round(Math.max(0, withBuffer - have)) : 0;
     // Whole packs (a 25kg bag, a 500g yeast pack): round down when that still
     // covers the real need for the period, otherwise up.
     let packs = null;
     if (shortfall > 0 && r.packSize > 0) {
       const down = Math.floor(shortfall / r.packSize);
       const up = Math.ceil(shortfall / r.packSize - 1e-9);
-      packs = down > 0 && r.onHand + down * r.packSize >= r.needed ? down : Math.max(1, up);
+      packs = down > 0 && have + down * r.packSize >= r.needed ? down : Math.max(1, up);
       shortfall = round(packs * r.packSize);
     }
     const orderBy = r.shortBy ? addDays(r.shortBy, -(r.leadDays ?? 7)) : null;
-    return { ...r, needed: round(r.needed), shortfall, packs, orderBy, late: orderBy ? orderBy < start : false };
+    return { ...r, needed: round(r.needed), onOrder, onOrderPOs, shortfall, packs, orderBy, late: orderBy ? orderBy < start : false };
   });
   list.sort((a, b) => (b.shortfall > 0) - (a.shortfall > 0) || String(a.orderBy || "9999").localeCompare(String(b.orderBy || "9999")) || a.name.localeCompare(b.name));
   return { brews, items: list, toOrder: list.filter((r) => r.shortfall > 0), perBrew, noRecipe, start, end, days, bufferPct };

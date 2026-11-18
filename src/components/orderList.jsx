@@ -11,7 +11,16 @@ const card = { background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius:
 const btn = { background: "#5C9A3C", border: "none", borderRadius: 5, padding: "7px 12px", color: "#16191A", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 const btn2 = { background: "#FFFFFF", border: "1px solid #C9D1AC", borderRadius: 5, padding: "7px 12px", color: "#2A3324", fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" };
 
-export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack, suppliers = [], onSetOrderUrl }) {
+export function OrderListModal({ plan, onClose, onNewPO, onCreatePOs, onSettings, onSetPack, suppliers = [], onSetOrderUrl }) {
+  const [making, setMaking] = useState(null); // supplier name or "all"
+  const [made, setMade] = useState({}); // supplier name -> PO number(s)
+  const makePOs = async (groups, tag) => {
+    if (!onCreatePOs || making) return;
+    setMaking(tag);
+    const numbers = await onCreatePOs(groups);
+    setMaking(null);
+    if (numbers) setMade((p) => { const n = { ...p }; groups.forEach((g, i) => (n[g.supplier] = numbers[i])); return n; });
+  };
   const [urlEdit, setUrlEdit] = useState({}); // supplier name -> text
   const [packEdit, setPackEdit] = useState({}); // key -> size text
   const [copied, setCopied] = useState(null);
@@ -47,7 +56,10 @@ export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack, 
             <div key={sup}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9A5A2E" }}>{sup}</span>
-                <span style={{ display: "flex", gap: 6 }}>
+                <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {onCreatePOs && sup !== "No supplier set" && (made[sup]
+                    ? <span style={{ fontSize: 12, color: "#5C9A3C", alignSelf: "center" }}>{made[sup]} drafted ✓</span>
+                    : <button type="button" disabled={!!making} onClick={() => makePOs([{ supplier: sup, rows }], sup)} style={{ ...btn, padding: "4px 10px", fontSize: 12, opacity: making ? 0.6 : 1 }}>{making === sup ? "Making…" : "Make draft PO"}</button>)}
                   <button type="button" onClick={() => { navigator.clipboard?.writeText(orderText(rows)); setCopied(sup); }} style={{ ...btn2, padding: "4px 10px", fontSize: 12 }}>{copied === sup ? "Copied ✓" : "Copy order"}</button>
                   {(() => {
                     const s = suppliers.find((x) => x.name === sup);
@@ -71,7 +83,7 @@ export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack, 
                       <strong style={{ whiteSpace: "nowrap" }}>{r.packs ? `${r.packs} × ${r.packLabel || `${r.packSize}${r.unit}`}` : `order ${num(Math.ceil(r.shortfall * 10) / 10)} ${r.unit}`}</strong>
                     </div>
                     <div style={{ fontSize: 12, color: "#5C6B54", marginTop: 2 }}>
-                      Need {num(r.needed)} {r.unit}, have {num(r.onHand)}. Runs out for the {fmt(r.shortBy)} brew
+                      Need {num(r.needed)} {r.unit}, have {num(r.onHand)}{r.onOrder > 0 ? ` + ${num(r.onOrder)} on order (${r.onOrderPOs.join(", ")})` : ""}. Runs out for the {fmt(r.shortBy)} brew
                       {r.orderBy ? <> · <strong style={{ color: r.late ? "#B5502F" : "#2A3324" }}>{r.late ? "order now" : `order by ${fmt(r.orderBy)}`}</strong></> : null}
                     </div>
                     <div style={{ fontSize: 11.5, color: "#9BA88A", marginTop: 2 }}>
@@ -109,12 +121,22 @@ export function OrderListModal({ plan, onClose, onNewPO, onSettings, onSetPack, 
             </button>
             {showCovered && covered.map((r) => (
               <div key={r.key} style={{ fontSize: 12.5, color: "#2A3324", padding: "4px 0", borderTop: "1px solid #F0EDE0" }}>
-                {r.name}: need {num(r.needed)} {r.unit}, have {num(r.onHand)}
+                {r.name}: need {num(r.needed)} {r.unit}, have {num(r.onHand)}{r.onOrder > 0 ? ` + ${num(r.onOrder)} on order (${r.onOrderPOs.join(", ")})` : ""}
               </div>
             ))}
           </div>
         )}
-        {onNewPO && plan.toOrder.length > 0 && <button type="button" onClick={onNewPO} style={{ ...btn, padding: "11px" }}>Start a purchase order</button>}
+        {onCreatePOs && (() => {
+          const groups = Object.entries(bySupplier).filter(([sup]) => sup !== "No supplier set" && !made[sup]).map(([supplier, rows]) => ({ supplier, rows }));
+          return groups.length > 0 ? (
+            <button type="button" disabled={!!making} onClick={() => makePOs(groups, "all")} style={{ ...btn, padding: "11px", opacity: making ? 0.6 : 1 }}>
+              {making === "all" ? "Making…" : `Make draft POs for all ${groups.length} supplier${groups.length === 1 ? "" : "s"}`}
+            </button>
+          ) : null;
+        })()}
+        {onCreatePOs && bySupplier["No supplier set"] && <div style={{ fontSize: 12, color: "#9A5A2E" }}>Items with no supplier set aren't put on a PO — set their supplier on the inventory item, or add them to a PO by hand.</div>}
+        {onCreatePOs && Object.keys(made).length > 0 && <div style={{ fontSize: 12, color: "#5C6B54" }}>Drafts are in Purchasing — check them, then send to the supplier. Nothing is ordered until you do.</div>}
+        {onNewPO && plan.toOrder.length > 0 && <button type="button" onClick={onNewPO} style={{ ...btn2, padding: "11px" }}>Start a blank purchase order</button>}
       </div>
     </Modal>
   );

@@ -5177,7 +5177,32 @@ function TankLogApp() {
               />
             )}
             {showOrderList && ingPlan && (
-              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} onSettings={isOwner ? (patch) => saveBrewPlanSettings({ ...(brewPlanSettings || {}), ...patch }) : undefined} onSetPack={async (itemId, size, label) => {
+              <OrderListModal plan={ingPlan} onClose={() => setShowOrderList(false)} onNewPO={() => { setShowOrderList(false); setShowAddPO(true); }} onCreatePOs={isSales ? undefined : async (groups) => {
+                // One Draft PO per supplier from the order list. Cost per unit is
+                // the last price paid on a received PO, where there is one.
+                const lastCost = (name, unit) => {
+                  for (const po of [...purchaseOrders].filter((p) => p.status === "Received").sort((a, b) => String(b.receivedDate || b.orderDate || "").localeCompare(String(a.receivedDate || a.orderDate || "")))) {
+                    const l = (po.lines || []).find((x) => sameItemName(x.name, name) && x.costPerUnit != null);
+                    if (l) { const f = unitFactor(unit, l.unit); return f == null ? null : Math.round(Number(l.costPerUnit) * f * 10000) / 10000; }
+                  }
+                  return null;
+                };
+                let n = Math.max(100, ...purchaseOrders.map((p) => { const m = /^PO-(\d+)$/i.exec(String(p.poNumber || "").trim()); return m ? parseInt(m[1], 10) : 0; }));
+                const made = [];
+                for (const g of groups) {
+                  n += 1;
+                  const po = { id: uid(), poNumber: `PO-${n}`, supplier: g.supplier, orderDate: today(), receivedDate: null, status: "Draft", deliveryCost: null,
+                    lines: g.rows.map((r) => ({ id: uid(), name: r.name, category: r.category || "Other", qty: Math.ceil(r.shortfall * 10) / 10, unit: r.unit, costPerUnit: lastCost(r.name, r.unit), lotNumber: null })) };
+                  const { data, error } = await supabase.from("purchase_orders").insert(poToRow(po, user.id, profile.companyId)).select().single();
+                  if (error) { showToast("error", `Couldn't make the ${g.supplier} PO — check your connection and try again.`); made.push(null); continue; }
+                  setPurchaseOrders((prev) => [rowToPO(data), ...prev]);
+                  logActivity("created", "purchase order", po.poNumber, `Draft ${po.poNumber} for ${g.supplier} made from the order list`);
+                  made.push(po.poNumber);
+                }
+                const ok = made.filter(Boolean);
+                if (ok.length) showToast("success", `${ok.join(", ")} drafted — check them in Purchasing before sending.`);
+                return made;
+              }} onSettings={isOwner ? (patch) => saveBrewPlanSettings({ ...(brewPlanSettings || {}), ...patch }) : undefined} onSetPack={async (itemId, size, label) => {
                 const { error } = await supabase.from("inventory_items").update({ pack_size: size, pack_label: label }).eq("id", itemId);
                 if (error) { showToast("error", "That didn't save — check your connection and try again."); return; }
                 setInventory((prev) => prev.map((it) => (it.id === itemId ? { ...it, packSize: size, packLabel: label } : it)));
