@@ -51,7 +51,7 @@ async function getValidConnection(supabase, conn) {
 async function xeroGet(path, accessToken, tenantId) {
   const res = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, { headers: { Authorization: `Bearer ${accessToken}`, "Xero-tenant-id": tenantId, Accept: "application/json" } });
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok, status: res.status, data, retryAfter: Number(res.headers.get("retry-after")) || null, limitProblem: res.headers.get("x-rate-limit-problem") || null };
 }
 
 // Same shape as xero-api's listSales.
@@ -64,7 +64,7 @@ async function listSales(since, accessToken, tenantId) {
     for (let page = 1; page <= 50; page += 1) {
       const where = encodeURIComponent(`Type=="${type}" AND ${extraWhere || dateWhere}`);
       const res = await xeroGet(`${endpoint}?where=${where}&page=${page}`, accessToken, tenantId);
-      if (!res.ok) return { error: res.data };
+      if (!res.ok) return { error: res.data, status: res.status, retryAfter: res.retryAfter, limitProblem: res.limitProblem };
       const list = res.data[key] || [];
       list.forEach((doc) => {
         const status = doc.Status;
@@ -93,9 +93,11 @@ async function listSales(since, accessToken, tenantId) {
     }
     return {};
   };
-  for (const [ep, key, type, extra] of [["Invoices", "Invoices", "ACCREC"], ["Invoices", "Invoices", "ACCREC", `(Status=="DRAFT" OR Status=="SUBMITTED")`], ["CreditNotes", "CreditNotes", "ACCRECCREDIT"]]) {
+  // One invoice query for recent invoices plus any open drafts (older drafts
+  // included), and one for credit notes — 2 Xero calls per check.
+  for (const [ep, key, type, extra] of [["Invoices", "Invoices", "ACCREC", `(${dateWhere} OR Status=="DRAFT" OR Status=="SUBMITTED")`], ["CreditNotes", "CreditNotes", "ACCRECCREDIT"]]) {
     const r = await collect(ep, key, type, extra);
-    if (r.error) return { error: r.error };
+    if (r.error) return r;
   }
   return { docs };
 }
@@ -167,6 +169,20 @@ export function planStockMoves({ docs, salesMap, items }) {
 async function balanceBrandedStock(supabase, companyId, settings, docs, salesMap, xc) {
   const hasDrafts = (docs || []).some((d) => d.docType === "invoice" && (d.status === "DRAFT" || d.status === "SUBMITTED"));
   if (!hasDrafts || !settings.adjustment_account_code) return [];
+  // Only worth asking Xero for stock when a draft uses a code that shares its
+  // product with another code, and then only when those drafts changed or
+  // every hour — Xero allows 5,000 calls a day and this runs every 2 minutes.
+  const groupSize = {};
+  (salesMap || []).forEach((m) => { if (!m.ignore && m.product_key) { const k = `${m.product_key}|${Number(m.units_per_xero_unit) || 1}`; groupSize[k] = (groupSize[k] || 0) + 1; } });
+  const codeGroup = {};
+  (salesMap || []).forEach((m) => { if (!m.ignore && m.product_key) codeGroup[String(m.xero_item_code)] = `${m.product_key}|${Number(m.units_per_xero_unit) || 1}`; });
+  const relevant = [];
+  (docs || []).forEach((d) => { if (d.docType === "invoice" && (d.status === "DRAFT" || d.status === "SUBMITTED")) d.lines.forEach((l) => { const g = codeGroup[String(l.itemCode)]; if (g && groupSize[g] > 1) relevant.push(`${d.docId}:${l.itemCode}:${l.qty}`); }); });
+  if (!relevant.length) return [];
+  const sig = relevant.sort().join("|");
+  const recent = settings.stock_move_checked_at && Date.now() - new Date(settings.stock_move_checked_at).getTime() < 60 * 60 * 1000;
+  if (sig === settings.stock_move_sig && recent) return [];
+  await supabase.from("xero_settings").update({ stock_move_sig: sig, stock_move_checked_at: new Date().toISOString() }).eq("company_id", companyId);
   const itemsRes = await xeroGet("Items", xc.accessToken, xc.tenantId);
   if (!itemsRes.ok) return [];
   const moves = planStockMoves({ docs, salesMap, items: itemsRes.data.Items || [] });
@@ -209,6 +225,7 @@ async function syncCompany(supabase, conn) {
   const settingsRows = await all(supabase.from("xero_settings").select("*").eq("company_id", companyId));
   const settings = settingsRows[0];
   if (!settings || !settings.sales_sync_enabled) return { companyId, skipped: "sales check off" };
+  if (settings.sync_paused_until && new Date(settings.sync_paused_until).getTime() > Date.now()) return { companyId, skipped: `waiting out Xero's rate limit until ${settings.sync_paused_until}` };
   const { data: locked } = await supabase.rpc("try_xero_sync_lock", { p_company: companyId, p_seconds: 120 });
   if (!locked) return { companyId, skipped: "already running" };
   try {
@@ -216,7 +233,17 @@ async function syncCompany(supabase, conn) {
     if (xc.error) return { companyId, error: xc.error };
     const since = settings.sales_sync_from || todayNZ();
     const sales = await listSales(since, xc.accessToken, xc.tenantId);
-    if (sales.error) return { companyId, error: "Could not read sales from Xero" };
+    if (sales.error) {
+      if (sales.status === 429) {
+        // Xero's rate limit: wait as long as it asks (at least 5 minutes)
+        // before trying again, so the retries don't keep the limit pinned.
+        const wait = Math.max(300, Math.min(86400, sales.retryAfter || 0));
+        const until = new Date(Date.now() + wait * 1000).toISOString();
+        await supabase.from("xero_settings").update({ sync_paused_until: until }).eq("company_id", companyId);
+        return { companyId, error: `Xero rate limit (${sales.limitProblem || "unknown"}) — paused until ${until}` };
+      }
+      return { companyId, error: "Could not read sales from Xero" };
+    }
     const docs = sales.docs;
 
     const [batchRows, orderRows, mpaRows, salesMap, itemMappings, ledger, customerRows, aliasRows] = await Promise.all([
