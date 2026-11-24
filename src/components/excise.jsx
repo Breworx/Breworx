@@ -1118,7 +1118,7 @@ export function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv, lock
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>TSW lines — {monthLabel}</div>
       <div style={{ color: "#9BA88A", fontSize: 11.5, marginBottom: 8, lineHeight: 1.45 }}>
         One line per product and strength, as entered in TSW. LAL is litres × ABV, cut to 3 decimals the way TSW does.
-        {locked ? " This month is ticked as declared, so strengths are locked." : canEdit ? " Change a strength here and it's saved as the label ABV on every batch on that line this month — LAL and duty update straight away." : " Switch the ABV method to Label to edit strengths here."}
+        {locked ? " This month is ticked as declared, so strengths are locked." : canEdit ? " Change a strength here and it's saved as the label ABV on every batch on that line this month — LAL and duty update straight away." : " Switch the ABV method to Label to edit beer strengths here. Cider and other products can always be set to their label strength (back-sweetening throws off gravity readings)."}
       </div>
       {tick && <div style={{ marginBottom: 8 }}>{tick}</div>}
       <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 6, overflow: "hidden" }}>
@@ -1138,7 +1138,7 @@ export function TswLinesTable({ rows, monthLabel, abvMethod, onSetLabelAbv, lock
               </span>
             </span>
             <span style={{ textAlign: "right" }}>
-              {canEdit && l.productType === "Beer" ? (
+              {!locked && (l.productType === "Beer" ? canEdit : !!onSetLabelAbv) ? (
                 <input
                   type="number"
                   inputMode="decimal"
@@ -1445,7 +1445,7 @@ export function ExciseCalculateView({ batches, exciseItemCodes, onSaveItemCode, 
                     {r.levy != null && <div style={{ fontSize: 11, color: "#9BA88A" }}>+${r.levy.toFixed(2)} levy</div>}
                   </span>
                 </div>
-                {abvMethod === "label" && r.productType === "Beer" && !lockedPeriods.has(monthKeyFromDate(r.date)) && (
+                {(r.productType === "Beer" ? abvMethod === "label" : true) && !lockedPeriods.has(monthKeyFromDate(r.date)) && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                     <span style={{ color: "#9BA88A", fontSize: 11.5 }}>Label ABV:</span>
                     <input
