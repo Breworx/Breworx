@@ -120,9 +120,14 @@ export function exciseRowsForBatches(batches, abvMethod) {
     // a real label value was actually available and used, so a non-beer
     // row can never be mistaken for "used label" just because it wasn't
     // a fallback either.
-    const eligibleForLabel = abvMethod === "label" && (b.productType || "Beer") === "Beer";
+    // Cider, RTDs and other non-beer products are often back-sweetened or
+    // have juice/sugar added after fermentation, so gravity can't measure
+    // their strength — their recorded label ABV is always used when there
+    // is one, whatever the beer ABV method is set to.
+    const isBeer = (b.productType || "Beer") === "Beer";
+    const eligibleForLabel = isBeer ? abvMethod === "label" : !!b.labelAbv;
     const usedLabel = eligibleForLabel && !!b.labelAbv;
-    const usedFallback = eligibleForLabel && !b.labelAbv;
+    const usedFallback = isBeer && eligibleForLabel && !b.labelAbv;
     const abv = usedLabel ? Number(b.labelAbv) : measuredAbv;
     // No label strength and no gravity to measure from — left out here and
     // flagged by the self-audit instead.
