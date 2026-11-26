@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:#000}
+#f{position:relative;width:1080px;height:1920px;overflow:hidden}
+#bg{position:absolute;top:0;left:0;height:2208px;transform-origin:0 0}
+#lup{position:absolute;bottom:-30px;left:0;width:1700px;transform-origin:0 100%}
+#v{position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,30,70,.35) 0%,rgba(0,0,0,0) 35%,rgba(0,0,0,0) 70%,rgba(20,30,70,.25) 100%)}
+.t{position:absolute;left:0;right:0;text-align:center;opacity:0;font-family:'Luckiest Guy';color:#fff;-webkit-text-stroke:4px #26314A;paint-order:stroke fill;text-shadow:7px 7px 0 #26314A}
+#t1{top:300px;font-size:110px;line-height:1.0}
+#t1 .y{color:#FFD23F;font-size:128px}
+#t2{top:330px;font-size:84px;line-height:1.08}
+#t3{top:250px;line-height:.92}
+#t3 .a{font-size:110px}#t3 .r{font-size:150px;color:#FFD23F;-webkit-text-stroke:5px #26314A;text-shadow:10px 10px 0 #26314A}#t3 .g{font-size:170px;-webkit-text-stroke:5px #26314A;text-shadow:10px 10px 0 #26314A}
+#t3 .p{display:inline-block;margin-top:34px;background:#26314A;color:#FFD23F;font:900 42px Nunito;letter-spacing:.14em;padding:14px 40px;border-radius:60px;-webkit-text-stroke:0;text-shadow:none}
+#t3 .s{margin-top:22px;font-size:54px;letter-spacing:.06em;-webkit-text-stroke:3px #26314A;text-shadow:5px 5px 0 #26314A}
+#h{position:absolute;left:0;right:0;bottom:90px;text-align:center;opacity:0;font:900 46px Nunito;color:#fff;-webkit-text-stroke:2px #26314A;paint-order:stroke fill;text-shadow:3px 3px 0 #26314A}
+</style></head><body><div id="f">
+<img id="bg" src="bg.png"><div id="v"></div><img id="lup" src="lup.png">
+<div class="t" id="t1">Something<br><span class="y">remarkable</span><br>is coming…</div>
+<div class="t" id="t2">Brewed on the shores<br>of Lake Wakatipu<br>with a ridiculous<br>amount of ginger</div>
+<div class="t" id="t3"><div class="a">THE</div><div class="r">REMARKABLE</div><div class="g">GINGER</div><div class="p">ALCOHOLIC GINGER BEER</div><div class="s">LANDING SUMMER 2026</div></div>
+<div id="h">@remarkableginger · 18+</div>
+</div><script>
+function e(x){return x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2}
+function fade(t,a,b,f){if(t<a||t>b)return 0;return Math.min(1,(t-a)/f,(b-t)/f)}
+window.frame=function(t){var T=10.5,k=t/T;
+ var s=1.10-0.10*e(k), x=-1300-1100*e(k);
+ document.getElementById('bg').style.transform='translate('+x+'px,'+(-200+120*k)+'px) scale('+s+')';
+ document.getElementById('lup').style.transform='translateX('+(-200-1100*k)+'px) scale('+(1.0+0.05*k)+')';
+ var a=fade(t,.3,3.3,.45),b=fade(t,3.5,6.4,.45),c=fade(t,6.7,11,.5);
+ var el=document.getElementById('t1');el.style.opacity=a;el.style.transform='translateY('+(20*(1-Math.min(1,(t-.3)/.6)))+'px)';
+ el=document.getElementById('t2');el.style.opacity=b;
+ el=document.getElementById('t3');el.style.opacity=c;var sc=Math.min(1,Math.max(0,(t-6.7)/.5));el.style.transform='scale('+(0.85+0.15*e(sc))+')';
+ document.getElementById('h').style.opacity=fade(t,7.2,11,.5);
+};window.frame(0);
+</script></body></html>
