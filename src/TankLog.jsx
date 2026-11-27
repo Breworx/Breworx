@@ -2043,7 +2043,7 @@ function TankLogApp() {
 
   // Beer moved from declared kegs into cans or other kegs — one entry on the
   // batch: source units off (positive), new units on (negative).
-  const repackStock = async ({ batchId, batchName, fromKey, fromQty, toKey, toQty, lossL, note, summary }) => {
+  const repackStock = async ({ batchId, batchName, fromKey, fromQty, toKey, toQty, lossL, partKeg, kegLeftL, note, summary }) => {
     const b = batches.find((x) => x.id === batchId);
     if (!b) return false;
     const entry = {
@@ -2052,8 +2052,9 @@ function TankLogApp() {
       date: new Date().toISOString(),
       user: user?.name || "Someone",
       reason: note ? `${summary} — ${note}` : summary,
-      counts: { [fromKey]: fromQty, [toKey]: -toQty },
-      repack: { fromKey, fromQty, toKey, toQty, lossL },
+      // A part keg stays in stock, so only the new units go on.
+      counts: fromQty > 0 ? { [fromKey]: fromQty, [toKey]: -toQty } : { [toKey]: -toQty },
+      repack: { fromKey, fromQty, toKey, toQty, lossL, ...(partKeg ? { partKeg: true, kegLeftL } : {}) },
     };
     const list = [...(b.stockCleared || []), entry];
     const done = await updateStockCleared([{ id: batchId, stockCleared: list }]);
