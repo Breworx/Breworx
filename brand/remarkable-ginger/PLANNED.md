@@ -6,7 +6,7 @@ After a day is posted, it stays here. Don't repost it (check Instagram first).
 
 | Date | Type | File(s) | Caption |
 |---|---|---|---|
-| Sat 28 Nov | image ("who we are", ask Steve to pin) | rg-2026-11-28.jpg | Real ginger. Ridiculous amounts. 🫚 Our 4% alcoholic ginger beer is bright, zingy and brewed right here in Kingston on Lake Wakatipu. Landing this summer. How do you like your ginger beer: mild or proper fiery? 👇 #GingerBeer #NZCraftBeer #LakeWakatipu #Queenstown #Kingston 18+, enjoy responsibly. |
+| Sat 28 Nov | image ("who we are", ask Steve to pin) | rg-2026-11-28b.jpg | Real ginger. Ridiculous amounts. 🫚 Our 4% alcoholic ginger beer is bright, zingy and brewed right here in Kingston on Lake Wakatipu. Landing this summer. How do you like your ginger beer: mild or proper fiery? 👇 #GingerBeer #NZCraftBeer #LakeWakatipu #Queenstown #Kingston 18+, enjoy responsibly. |
 | Sun 29 Nov | image | rg-2026-11-29.jpg | Where's your first Remarkable Ginger going? 🤔 A) The lake 🌊 B) The deck ☀️ C) The bach 🏡 Comment A, B or C 👇 #GingerBeer #NZCraftBeer #LakeWakatipu #Queenstown #Kingston 18+, enjoy responsibly. |
 | Mon 30 Nov | reel (also the TikTok file) | rg-2026-11-30-reel.mp4 | Born on Lake Wakatipu ⛰️🫚 Brewed in Kingston with a ridiculous amount of real ginger. 4%, bright and zingy, landing this summer. Who's keen? 👇 #GingerBeer #NZCraftBeer #LakeWakatipu #Queenstown #Kingston 18+, enjoy responsibly. |
 | Tue 1 Dec | image | rg-2026-12-01.jpg | 4% and proper ginger 🫚 Brewed in Kingston, real ginger (loads of it), made for summer arvos. What's your perfect summer arvo? 👇 #GingerBeer #NZCraftBeer #LakeWakatipu #Queenstown #Kingston 18+, enjoy responsibly. |
