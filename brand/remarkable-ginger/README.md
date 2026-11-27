@@ -1,5 +1,7 @@
 # The Remarkable Ginger: brand kit for social posts
 
+> **Daily post task: check [PLANNED.md](PLANNED.md) first.** If today has a planned post there, use it exactly.
+
 Brand: **The Remarkable Ginger**, a 4% alcoholic ginger beer brewed by Double Cone Brewing in Kingston, on Lake Wakatipu, NZ. It launches summer 2026, with cans expected around mid-December 2026.
 Handle: @remarkableginger (Instagram, Facebook, TikTok).
 Look: bright, playful and illustrated. The scene shows purple mountains (the Remarkables), a turquoise lake and a colourful lupin foreground.
