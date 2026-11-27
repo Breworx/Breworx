@@ -462,15 +462,21 @@ export function RepackModal({ availableStock, onClose, onConfirm }) {
   const [toQty, setToQty] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  // What happened to beer left over: still in the keg (a part keg stays in
+  // stock) or tipped out. Only a single keg can be a part keg.
+  const [leftover, setLeftover] = useState("keep");
 
   const fromN = Math.max(0, Math.floor(Number(fromQty) || 0));
   const fromVol = CONTAINERS.find((c) => c.key === source?.containerKey)?.volumeL || 0;
   const litres = fromN * fromVol;
   const suggested = target ? Math.floor(litres / target.volumeL) : 0;
   const toN = toQty === "" ? suggested : Math.max(0, Math.floor(Number(toQty) || 0));
-  const lossL = Math.round((litres - toN * (target?.volumeL || 0)) * 10) / 10;
+  const leftL = Math.round((litres - toN * (target?.volumeL || 0)) * 10) / 10;
+  const canKeep = fromN === 1 && leftL > 0;
+  const partKeg = canKeep && leftover === "keep";
+  const lossL = partKeg ? 0 : leftL;
   const tooMany = source && fromN > source.available;
-  const canSave = source && target && fromN > 0 && toN > 0 && !tooMany && lossL >= 0 && !saving;
+  const canSave = source && target && fromN > 0 && toN > 0 && !tooMany && leftL >= 0 && !saving;
 
   const save = async () => {
     setSaving(true);
@@ -478,12 +484,16 @@ export function RepackModal({ availableStock, onClose, onConfirm }) {
       batchId: source.batchId,
       batchName: source.batchName,
       fromKey: source.containerKey,
-      fromQty: fromN,
+      fromQty: partKeg ? 0 : fromN,
       toKey: target.key,
       toQty: toN,
       lossL,
+      partKeg,
+      kegLeftL: partKeg ? leftL : 0,
       note: note.trim(),
-      summary: `Repacked ${unitText(source.containerKey, fromN)} into ${unitText(target.key, toN)}${lossL > 0 ? ` · ${lossL} L lost` : ""}`,
+      summary: partKeg
+        ? `Took ${unitText(target.key, toN)} out of a ${CONTAINERS.find((c) => c.key === source.containerKey)?.shortLabel || "keg"} · keg kept with about ${leftL} L left`
+        : `Repacked ${unitText(source.containerKey, fromN)} into ${unitText(target.key, toN)}${lossL > 0 ? ` · ${lossL} L lost` : ""}`,
     });
     setSaving(false);
     if (ok) onClose();
@@ -529,10 +539,25 @@ export function RepackModal({ availableStock, onClose, onConfirm }) {
               <span style={labelStyle}>{target?.key === "cans330" ? "Cans filled" : "Kegs filled"}</span>
               <input type="number" inputMode="numeric" min="1" value={toQty} placeholder={String(suggested)} onChange={(e) => setToQty(e.target.value)} style={inputStyle} />
               <span style={{ fontSize: 12, color: "#9BA88A" }}>
-                {litres} L in · {target ? unitText(target.key, toN) : ""} out{lossL > 0 ? ` · ${lossL} L lost` : ""}
-                              </span>
-              {lossL < 0 && <span style={{ fontSize: 12, color: "#B5502F" }}>That's more beer out than went in.</span>}
+                {litres} L in · {target ? unitText(target.key, toN) : ""} out{leftL > 0 ? (partKeg ? ` · ${leftL} L left in the keg` : ` · ${leftL} L lost`) : ""}
+              </span>
+              {leftL < 0 && <span style={{ fontSize: 12, color: "#B5502F" }}>That's more beer out than went in.</span>}
             </label>
+            {leftL > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={labelStyle}>The other {leftL} L</span>
+                {canKeep ? (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {[["keep", "Still in the keg"], ["lost", "Tipped / lost"]].map(([k, l]) => (
+                      <button key={k} type="button" onClick={() => setLeftover(k)} style={{ ...inputStyle, flex: 1, cursor: "pointer", fontWeight: leftover === k ? 600 : 400, background: leftover === k ? "#42703E" : "#F5F1E4", color: leftover === k ? "#fff" : "#2A3324" }}>{l}</button>
+                    ))}
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 12, color: "#9BA88A" }}>Counted as lost. To keep a part keg, repack one keg at a time.</span>
+                )}
+                {partKeg && <span style={{ fontSize: 12, color: "#9BA88A" }}>The keg stays in stock. Repack it again when you can or sell the rest.</span>}
+              </div>
+            )}
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={labelStyle}>Note (optional)</span>
               <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. canned for the market" style={inputStyle} />
