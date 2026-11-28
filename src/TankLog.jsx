@@ -13,6 +13,7 @@ import { ReorderPanel } from "./components/reorder";
 import { suggestTasks, mergeTasks, kegNeedsBySize, kegKeyForSize, exciseFiled } from "./lib/tasks";
 import { KegCleanModal, KegPoolsPanel, TaskDayModal, TasksPanel } from "./components/tasks";
 import { CiderView } from "./components/cider";
+import { DueToOrder } from "./components/dueToOrder";
 import { CustomerAccountFlow, CustomerDetail, CustomerFormModal, CustomerPortalPage, CustomersView } from "./components/customers";
 import { ExciseReportView, PackagedView } from "./components/excise";
 import { AssembleMixedPackModal, ClearStockModal, FinishedGoodsStockView, MixedPackTypeModal, RepackModal } from "./components/finishedStock";
@@ -6301,6 +6302,7 @@ function TankLogApp() {
               </div>
             )}
 
+            {!loadingData && view === "salesUpstock" && <DueToOrder salesOrders={salesOrders} customers={customers} />}
             {!loadingData && view === "salesUpstock" && (
               <SalesOpenOrdersView
                 salesOrders={salesOrders}
