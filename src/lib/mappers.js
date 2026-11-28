@@ -561,6 +561,8 @@ export function rowToCustomer(row) {
     xeroContactName: row.xero_contact_name || null,
     portalToken: row.portal_token || null,
     authUserId: row.auth_user_id || null,
+    stoppedOrdering: !!row.stopped_ordering,
+    stoppedOrderingNote: row.stopped_ordering_note || null,
     createdAt: row.created_at || null,
   };
 }

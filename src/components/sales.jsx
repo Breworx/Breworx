@@ -285,7 +285,7 @@ export function SalesOrderCard({ order, customerName, onOpen }) {
 // recorded, falling back to the full line for orders marked Fulfilled
 // before that field existed) — a Confirmed-but-not-yet-shipped order
 // isn't a realized sale yet, so it's deliberately excluded.
-export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, consumables, costing, recipes, packageTypes, exciseAbvMethod }) {
+export function SalesAnalyticsView({ onCustomerStopped, salesOrders, customers, batches, isOwner, consumables, costing, recipes, packageTypes, exciseAbvMethod }) {
   // Full cost per can / keg: beer, excise, cans, lids, labels, cartons, keg
   // hire and delivery. Falls back to beer-only when that can't be worked out.
   const fullCostCache = {};
@@ -399,7 +399,7 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, c
 
   return (
     <div>
-      {isOwner && <DueToOrder salesOrders={salesOrders} customers={customers} />}
+      {isOwner && <DueToOrder salesOrders={salesOrders} customers={customers} onStopped={onCustomerStopped} />}
       {isOwner && <SalesByVenue salesOrders={salesOrders} customers={customers} />}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
         {summaryCard("Volume sold", `${totalVolume} units`)}
