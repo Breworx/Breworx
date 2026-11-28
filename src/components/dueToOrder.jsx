@@ -2,14 +2,14 @@ import { useMemo } from "react";
 import { canonicalBeerName, CANS_PER_CASE } from "../lib/production";
 
 // Regular venues that have gone quiet: venues that order often (at least
-// 4 separate orders in the last year) and are now well past their usual
+// 4 separate orders in the last two years) and are now well past their usual
 // gap between orders. Occasional buyers are left out on purpose.
 const DAY = 86400000;
 const fmtDate = (d) => new Date(d).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" });
 const weeks = (days) => (days < 14 ? `${Math.round(days)} days` : `${Math.round(days / 7)} weeks`);
 
 export function dueToOrderList(salesOrders, customers, now = new Date()) {
-  const cutoff = now.getTime() - 365 * DAY;
+  const cutoff = now.getTime() - 730 * DAY;
   const byVenue = {};
   (salesOrders || []).forEach((o) => {
     if (o.status === "Draft" || o.status === "Cancelled" || !o.orderDate) return;
@@ -40,7 +40,7 @@ export function dueToOrderList(salesOrders, customers, now = new Date()) {
     const last = all[all.length - 1];
     const since = (now.getTime() - new Date(last + "T12:00:00").getTime()) / DAY;
     const dueAfter = Math.max(usual * 1.5, usual + 10);
-    if (since < dueAfter) return;
+    if (since < dueAfter || since > 548) return; // over 18 months: long gone, not a nudge
     const usually = Object.entries(v.items).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k);
     out.push({ name: v.name, usual, last, since, overdueBy: since - usual, orders: recent.length, usually, level: since >= usual * 3 ? "quiet" : "due" });
   });
@@ -52,7 +52,7 @@ export function DueToOrder({ salesOrders, customers }) {
   return (
     <div style={{ marginBottom: 26 }}>
       <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A", marginBottom: 4 }}>Regulars who are overdue</div>
-      <div style={{ color: "#9BA88A", fontSize: 12, marginBottom: 8, lineHeight: 1.45 }}>Venues that order regularly (4+ orders in the last year) and are now well past their usual gap. Worth a call or a visit.</div>
+      <div style={{ color: "#9BA88A", fontSize: 12, marginBottom: 8, lineHeight: 1.45 }}>Venues that order regularly (4+ orders in the last two years) and are now well past their usual gap. Worth a call or a visit.</div>
       {list.length === 0 && <div style={{ background: "#FFFFFF", border: "1px solid #DDE0C8", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#5C6B54" }}>All your regulars are ordering on time. 👍</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {list.map((v) => (
