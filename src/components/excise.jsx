@@ -10,7 +10,7 @@ import { productKeyForBatch, cleanProductName } from "../lib/brewPlanner";
 import { downloadExciseReportPdf } from "../lib/excisePdf";
 import { BackdateField, EmptyState, Modal, NumberField, SHEET_BACKDROP_STYLE, SHEET_PANEL_STYLE, TextField } from "./ui";
 import { AUDIT_STATUS, PRODUCT_TYPES, addMonthsToKey, completeTswLine, exciseAbvComparison, exciseAuditMonths, exciseLal, exciseRateOn, exciseRowsForBatches, groupScreenshotReadings, imagesFromZip, isZipFile, lalTolerance, lineLevy, litresTolerance, mergeTswLines, monthKeyFromDate, monthLabelFromKey, packagingByMonth, payableText, returnPayable, round2, round3, shrinkImageFile, tswTotals } from "../lib/excise";
-import { CANS_PER_CASE, CONTAINERS, aggregatePackagingCounts, packagingEvents, remainingVolume, totalPackagedVolume } from "../lib/production";
+import { canonicalBeerName, CANS_PER_CASE, CONTAINERS, aggregatePackagingCounts, packagingEvents, remainingVolume, totalPackagedVolume } from "../lib/production";
 import { downloadCSV, today } from "../lib/utils";
 
 export const auditLabelStyle = { fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "#9BA88A" };
@@ -1034,8 +1034,10 @@ export function tswLinesForRows(rows) {
   const lines = {};
   rows.forEach((r) => {
     const abv = Math.round(r.abv * 100) / 100;
-    const key = `${r.productType}::${r.batchName.trim().toLowerCase()}::${abv}`;
-    if (!lines[key]) lines[key] = { key, name: r.batchName.trim(), productType: r.productType, abv, litres: 0, batchIds: new Set(), usedLabel: true, band: r.band, rate: exciseRateOn(r.band, r.date), date: r.date };
+    // Batches grouped as one beer (Settings → Same beer) share one line.
+    const name = canonicalBeerName(r.batchName).trim();
+    const key = `${r.productType}::${name.toLowerCase()}::${abv}`;
+    if (!lines[key]) lines[key] = { key, name, productType: r.productType, abv, litres: 0, batchIds: new Set(), usedLabel: true, band: r.band, rate: exciseRateOn(r.band, r.date), date: r.date };
     const l = lines[key];
     l.litres += r.volumeL;
     l.batchIds.add(r.batchId);
