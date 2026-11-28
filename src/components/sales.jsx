@@ -10,6 +10,7 @@ import { BackdateField, EmptyState, Modal, NumberField, StageDateModal, TextFiel
 import { formatHistoryStamp } from "../lib/brewing";
 import { batchCostPerContainer, canonicalBeerName, packagedTotalsByContainer, uid } from "../lib/production";
 import { batchFullCost } from "../lib/batchCost";
+import { SalesByVenue } from "./salesByVenue";
 import { today } from "../lib/utils";
 
 export function AddSalesOrderModal({ onClose, onAdd, customers, availableStock, mixedPackStock, nextOrderNumber }) {
@@ -397,6 +398,7 @@ export function SalesAnalyticsView({ salesOrders, customers, batches, isOwner, c
 
   return (
     <div>
+      {isOwner && <SalesByVenue salesOrders={salesOrders} customers={customers} />}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 }}>
         {summaryCard("Volume sold", `${totalVolume} units`)}
         {summaryCard("Orders", totalOrders)}
