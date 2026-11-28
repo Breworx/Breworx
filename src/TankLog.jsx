@@ -301,6 +301,12 @@ function TankLogApp() {
   const [xeroMappingQueue, setXeroMappingQueue] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [customers, setCustomers] = useState([]);
+  // "No longer a customer": hides a venue from the overdue-regulars list.
+  const markCustomerStopped = async (customerId, note) => {
+    const { error } = await supabase.from("customers").update({ stopped_ordering: true, stopped_ordering_note: note || null }).eq("id", customerId);
+    if (error) { showToast("error", "Couldn't update that customer"); return; }
+    setCustomers((prev) => prev.map((c) => (c.id === customerId ? { ...c, stoppedOrdering: true, stoppedOrderingNote: note || null } : c)));
+  };
   const [salesOrders, setSalesOrders] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [supplierDocuments, setSupplierDocuments] = useState([]);
@@ -5943,7 +5949,7 @@ function TankLogApp() {
               <MarketingView companyId={profile.companyId} batches={batches} salesOrders={salesOrders} availableStock={availableStock} customers={customers} showToast={showToast} userId={profile?.id} />
             )}
             {!loadingData && view === "salesAnalytics" && (
-              <SalesAnalyticsView salesOrders={salesOrders} customers={customers} batches={batches} isOwner={isOwner} consumables={consumables} costing={costingData} recipes={recipes} packageTypes={packageTypes} exciseAbvMethod={exciseAbvMethod} />
+              <SalesAnalyticsView onCustomerStopped={isOwner ? markCustomerStopped : undefined} salesOrders={salesOrders} customers={customers} batches={batches} isOwner={isOwner} consumables={consumables} costing={costingData} recipes={recipes} packageTypes={packageTypes} exciseAbvMethod={exciseAbvMethod} />
             )}
 
             {!loadingData && view === "kegs" && !selectedKegId && (

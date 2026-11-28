@@ -16,9 +16,10 @@ export function dueToOrderList(salesOrders, customers, now = new Date()) {
     const t = new Date(o.orderDate + "T12:00:00").getTime();
     if (t > now.getTime() + 60 * DAY) return;
     const cust = customers.find((c) => c.id === o.customerId);
+    if (cust?.stoppedOrdering) return; // marked as no longer a customer
     const name = cust?.name || o.customerName;
     if (!name) return;
-    const v = byVenue[name] || (byVenue[name] = { name, dates: new Set(), items: {} });
+    const v = byVenue[name] || (byVenue[name] = { name, customerId: cust?.id || null, dates: new Set(), items: {} });
     v.dates.add(o.orderDate);
     if (t >= cutoff) (o.lines || []).forEach((l) => {
       const beer = l.mixedPackTypeId ? l.mixedPackTypeName : canonicalBeerName(l.batchName || "");
@@ -42,12 +43,12 @@ export function dueToOrderList(salesOrders, customers, now = new Date()) {
     const dueAfter = Math.max(usual * 1.5, usual + 10);
     if (since < dueAfter || since > 548) return; // over 18 months: long gone, not a nudge
     const usually = Object.entries(v.items).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k);
-    out.push({ name: v.name, usual, last, since, overdueBy: since - usual, orders: recent.length, usually, level: since >= usual * 3 ? "quiet" : "due" });
+    out.push({ name: v.name, customerId: v.customerId, usual, last, since, overdueBy: since - usual, orders: recent.length, usually, level: since >= usual * 3 ? "quiet" : "due" });
   });
   return out.sort((a, b) => b.since / b.usual - a.since / a.usual);
 }
 
-export function DueToOrder({ salesOrders, customers }) {
+export function DueToOrder({ salesOrders, customers, onStopped }) {
   const list = useMemo(() => dueToOrderList(salesOrders, customers), [salesOrders, customers]);
   return (
     <div style={{ marginBottom: 26 }}>
@@ -65,6 +66,11 @@ export function DueToOrder({ salesOrders, customers }) {
               Usually orders every {weeks(v.usual)} · last order {fmtDate(v.last)} ({weeks(v.since)} ago)
               {v.usually.length > 0 && <><br />Usually gets: {v.usually.join(", ")}</>}
             </div>
+            {onStopped && v.customerId && (
+              <button type="button" onClick={() => { const note = window.prompt(`Take ${v.name} off this list? Add a short reason (optional):`, ""); if (note !== null) onStopped(v.customerId, note); }} style={{ marginTop: 6, background: "none", border: "none", padding: 0, color: "#9BA88A", fontSize: 12, textDecoration: "underline", cursor: "pointer" }}>
+                No longer a customer
+              </button>
+            )}
           </div>
         ))}
       </div>
