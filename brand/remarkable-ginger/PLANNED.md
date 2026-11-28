@@ -2,6 +2,13 @@
 
 **Read this before making anything.** If today's date (Pacific/Auckland) is listed below, post THAT file with THAT caption. Don't make a new design. The files are already live at `https://breworx.vercel.app/social/<file>`. Still do every other step of the run: the first comment, Facebook, comment replies, the message to Steve, and the TikTok file on Mon/Wed/Fri.
 
+## Instagram growth settings (Steve, 28 Nov: "do whatever you think to grow the brand")
+
+- **Mon 30 Nov reel: post as a COLLAB with Double Cone.** In create_video_post set `collaborators: ["doubleconebrewing"]` (share_to_feed true). Tell Steve to accept the collab invite on the Double Cone Instagram (Notifications or DMs → Accept).
+- **Fri 4 Dec reel: post as a TRIAL reel** (shown only to non-followers): `trial_params: {"graduation_strategy": "SS_PERFORMANCE"}`. No collaborators on trial reels.
+- From 5 Dec onward, alternate: one reel a week as a collab with @doubleconebrewing, the other reels as SS_PERFORMANCE trial reels, until Ginger has 300+ Instagram followers.
+- Facebook is unchanged (normal reel posts).
+
 After a day is posted, it stays here. Don't repost it (check Instagram first).
 
 | Date | Type | File(s) | Caption |
